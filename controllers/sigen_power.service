@@ -1,0 +1,17 @@
+[Unit]
+Description=Raspberry Pi Home Automation SigenStor Inverter Data Ingestion Engine
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/HomeAutomation_G1
+ExecStart=/usr/bin/python3 /home/pi/HomeAutomation_G1/controllers/sigen_daemon.py
+Restart=always
+RestartSec=10
+User=pi
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

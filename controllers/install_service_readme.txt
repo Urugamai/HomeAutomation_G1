@@ -31,3 +31,9 @@ sudo systemctl start blinds.service
 
 # Verify the live background execution metrics
 sudo journalctl -u charger.service -f -n 15
+
+# SIGEN DAEMON
+sudo systemctl daemon-reload
+sudo systemctl enable sigen_power.service
+sudo systemctl start sigen_power.service
+
