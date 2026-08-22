@@ -42,17 +42,19 @@ class MqttTelemetryListener(QObject):
             print("[MQTT ERROR] Cannot establish loop. 'paho-mqtt' package is missing.")
             return
 
-        # Initialize standard Paho client signature profiles
         self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
 
         try:
             print(f"[MQTT CONNECTING] Establishing link to network broker at {self.broker}:{self.port}...")
-            # Use non-blocking connections combined with a native GUI servicing timer
+            # 1. Initialize the asynchronous connection parameters
             self.client.connect_async(self.broker, self.port, keepalive=60)
 
-            # Non-blocking event processor ticks (fires every 50ms on the main GUI loop)
+            # 2. ADD THIS CRITICAL LINE TO CLEAR THE HANDSHAKE LOCKOUT:
+            self.client.loop_start()  # <--- ARMS THE PAHO CLIENT CORES FOR RECEPTION
+
+            # 3. Maintain the native GUI servicing timer loop to process incoming packets safely
             self.network_timer = QTimer(self)
             self.network_timer.timeout.connect(self._service_mqtt_io)
             self.network_timer.start(50)
