@@ -1,8 +1,23 @@
 import sys
-import time
+import time as pytime
 import json
+import asyncio
 from pathlib import Path
 import configparser
+
+# Safe import configuration for your custom package folder placement
+try:
+    from libraries.sigen_library import Sigen
+
+    SIGEN_LIB_AVAILABLE = True
+except ImportError:
+    # Fallback to local root search rules if libraries namespace package isn't linked
+    try:
+        from sigen_library import Sigen
+
+        SIGEN_LIB_AVAILABLE = True
+    except ImportError:
+        SIGEN_LIB_AVAILABLE = False
 
 try:
     import paho.mqtt.client as mqtt
@@ -10,34 +25,29 @@ except ImportError:
     print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     sys.exit(1)
 
-# Import your working local Sigen python library source components
-try:
-    # This assumes your fixed sigen files or package exist in your python environment paths
-    # or inside your local project libraries folder structure
-    import sigen
-
-    SIGEN_LIB_AVAILABLE = True
-except ImportError:
-    SIGEN_LIB_AVAILABLE = False
-
 
 class SigenPowerAutomationDaemon:
     """
-    Background supervisor pulling asset metrics directly from your SigenStor system.
-    Normalises solar generation, grid consumption, and battery SOC to update the MQ bus.
+    Headless asyncio background supervisor interacting with your custom Sigen library.
+    Normalises asynchronous solar statistics and updates the centralized home MQ endpoints.
     """
 
     def __init__(self):
-        print("[INIT] Launching SigenStor Web Data Ingestion Daemon...")
+        print("[INIT] Launching SigenStor Inverter Data Ingestion Daemon...")
 
-        # Load credentials and connection parameters from config.ini
+        # Load centralized configuration variables
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
-        self.api_endpoint = self._get_config_str("SIGEN", "api_endpoint", "https://sigenstor.com")
-        self.username = self._get_config_str("SIGEN", "username", "")
-        self.password = self._get_config_str("SIGEN", "password", "")
+        self.username = self._get_config_str("SIGEN", "username", "Junkmail_MWW@Internode.on.net")
+        self.password = self._get_config_str("SIGEN", "password", "b$JJPX6!Lg8*cmr")
+        self.region = self._get_config_str("SIGEN", "region", "au")
+
+        self.sigstore = None
+        self.mqtt_client = None
 
         if not SIGEN_LIB_AVAILABLE:
-            print("[WARN] Sigen library wrapper not detected globally. Running simulation templates.")
+            print("[CRITICAL] 'sigen_library' folder was not found inside your libraries package path.")
+            print("Please ensure libraries/sigen_library/__init__.py exists.")
+            sys.exit(1)
 
     def _get_config_str(self, section, key, fallback) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -50,74 +60,80 @@ class SigenPowerAutomationDaemon:
                 pass
         return fallback
 
-    def start(self):
+    def init_mqtt(self):
+        """Initializes standard Paho connections synchronous link targets."""
         self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         try:
-            print(f"[MQTT] Connecting Sigen daemon to broker at {self.broker_ip}...")
+            print(f"[MQTT] Connecting Sigen data loop to broker at {self.broker_ip}...")
             self.mqtt_client.connect(self.broker_ip, 1883, keepalive=60)
             self.mqtt_client.loop_start()
         except Exception as e:
             print(f"[NETWORK ERROR] Sigen Daemon failed connecting to broker: {e}")
+            sys.exit(1)
 
-        # Authenticate your Sigen client session hook if hardware library is available
-        if SIGEN_LIB_AVAILABLE:
-            try:
-                print(f"[SIGEN] Authenticating account token for user: {self.username}...")
-                # Update this configuration syntax to precisely match your local fixed library call profile
-                self.sigen_client = sigen.Client(endpoint=self.api_endpoint, username=self.username, password=self.password)
-                self.sigen_client.login()
-                print("[SIGEN SUCCESS] Hardware API token session established.")
-            except Exception as e:
-                print(f"[SIGEN ERROR] Failed to connect to Sigen portal: {e}")
-                sys.exit(1)
+    async def run_async_loop(self):
+        """Orchestrates asynchronous initializations and periodic query schedules."""
+        # 1. Instantiate your custom api connection framework
+        self.sigstore = Sigen(username=self.username, password=self.password, region=self.region)
+
+        try:
+            print("[SIGEN] Initializing asynchronous portal network sockets...")
+            await self.sigstore.async_initialize()
+            print("[SIGEN SUCCESS] Remote API session token obtained successfully.")
+        except Exception as e:
+            print(f"[SIGEN CRITICAL] Initialization sequence aborted by remote host: {e}")
+            return
 
         print("[ARMED] Sigen data sync loop active. Refreshing solar stats every 15 seconds.")
-        try:
-            while True:
-                self._fetch_and_publish_sigen_telemetry()
-                time.sleep(15.0)  # Query the solar portal every 15 seconds
-        except KeyboardInterrupt:
-            print("[SHUTDOWN] Halting Sigen energy tracking loops.")
-            self.mqtt_client.loop_stop()
 
-    def _fetch_and_publish_sigen_telemetry(self):
-        """Fetches raw inverter data, maps values onto a standard payload dictionary, and posts to MQ."""
-        if SIGEN_LIB_AVAILABLE and hasattr(self, 'sigen_client'):
+        # 2. Continuous data gathering loop using clean asyncio scheduling wrappers
+        while True:
             try:
-                # Query your working local library functions to pull fresh production attributes
-                # Update these exact fields to line up with your fixed dictionary structure:
-                realtime_stats = self.sigen_client.get_realtime_data()
+                # Trigger simultaneous async calls natively to maximize performance
+                await self.sigstore.refresh()
 
-                battery_soc = int(realtime_stats.get("battery_soc", 0))
-                battery_flow = int(realtime_stats.get("battery_power_watts", 0))  # Positive=Charging, Negative=Discharging
-                grid_flow = int(realtime_stats.get("grid_power_watts", 0))  # Positive=Importing, Negative=Exporting
-                solar_kwh_today = float(realtime_stats.get("solar_yield_kwh", 0.0))
+                # Safely extract dictionary nodes using your wrapper attributes
+                station_info = getattr(self.sigstore, 'station_info', {}) or {}
+                energy_flow = getattr(self.sigstore, 'energy_flow', {}) or {}
+
+                # Extract your custom property values safely, handling possible None responses
+                battery_soc = energy_flow.get("batterySoc", 0)
+                battery_power = energy_flow.get("batteryPower", 0)
+                grid_power = energy_flow.get("buySellPower", 0)
+                solar_yield_today = energy_flow.get("pvDayNrg", 0.0)
+
+                # 3. Compile the canonical system JSON packet format matching your UI expectations
+                unified_sigen_payload = {
+                    "battery_soc": int(battery_soc) if battery_soc is not None else 0,
+                    "battery_flow": int(battery_power) if battery_power is not None else 0,
+                    "grid_flow": int(grid_power) if grid_power is not None else 0,
+                    "solar_kwh_today": float(solar_yield_today) if solar_yield_today is not None else 0.0
+                }
+
+                # 4. Broadcast the metrics over the shared UI telemetry topics with retention enabled
+                json_data = json.dumps(unified_sigen_payload)
+                self.mqtt_client.publish("home/power/sigen", json_data, retain=True)
+                print(f"[SIGEN SYNC] Broadcasted metrics to 'home/power/sigen': {json_data}")
 
             except Exception as e:
-                print(f"[SIGEN FETCH ERROR] API extraction failed, skipping tick: {e}")
-                return
-        else:
-            # High-fidelity fallback testing values if executing offline on your Windows desktop
-            import random
-            battery_soc = 82
-            battery_flow = random.randint(-1800, 2400)
-            grid_flow = random.randint(-1200, 3100)
-            solar_kwh_today = 16.4
+                print(f"[SIGEN UPDATE EXCEPTION] Processing cycle skipped on this tick: {e}")
 
-        # Structure the standardized data packet expected by your UI and Charger daemon
-        sigen_payload = {
-            "battery_soc": battery_soc,
-            "battery_flow": battery_flow,
-            "grid_flow": grid_flow,
-            "solar_kwh_today": solar_kwh_today
-        }
+            # Yield system resources cleanly for 15 seconds before launching the next sync check
+            await asyncio.sleep(15.0)
 
-        # Broadcast the payload with retention flagged true so touch panels match instantly on power-on
-        json_data = json.dumps(sigen_payload)
-        self.mqtt_client.publish("home/power/sigen", json_data, retain=True)
-        print(f"[SIGEN REFRESH] Synced metrics to broker: {json_data}")
+
+def main():
+    daemon = SigenPowerAutomationDaemon()
+    daemon.init_mqtt()
+
+    # Fire up the asynchronous runtime loop engine cleanly
+    try:
+        asyncio.run(daemon.run_async_loop())
+    except KeyboardInterrupt:
+        print("\n[SHUTDOWN] Halting Sigen energy tracking daemon loops safely.")
+        if daemon.mqtt_client:
+            daemon.mqtt_client.loop_stop()
 
 
 if __name__ == "__main__":
-    daemon = SigenPowerAutomationDaemon()
-    daemon.start()
+    main()
