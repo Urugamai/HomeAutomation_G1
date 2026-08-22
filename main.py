@@ -2,7 +2,9 @@ import sys
 import os
 import configparser
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QStatusBar
+
+# Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard
 from libraries.mqtt_engine import MqttTelemetryListener
 
@@ -12,14 +14,29 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
 
+        # Initialize the main Tab layout container
         self.tabs = QTabWidget()
         self.dashboard = AdaptiveDashboard()
         self.tabs.addTab(self.dashboard, "Status Core")
         self.setCentralWidget(self.tabs)
 
+        # Append a structural native QStatusBar layout element onto the base margin footer
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Initializing system connection profile...")
+
+        # Initialize and bind the environment-aware listener engine
         self.mqtt_listener = MqttTelemetryListener(broker=broker_ip)
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
         self.mqtt_listener.start()
+
+        # Query the operational mode flag state immediately to update the footer message
+        if self.mqtt_listener.is_windows:
+            self.status_bar.showMessage("Simulated Data Mode (Offline Testing)")
+            self.status_bar.setStyleSheet("background-color: #fff3cd; color: #856404; font-weight: bold;")
+        else:
+            self.status_bar.showMessage("Live Data Mode (Connected to MQ)")
+            self.status_bar.setStyleSheet("background-color: #d4edda; color: #155724; font-weight: bold;")
 
     def showEvent(self, event):
         super().showEvent(event)
