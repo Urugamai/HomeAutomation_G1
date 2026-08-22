@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import QTimer, QTime, QDate, Qt
 from PyQt6.QtGui import QFont, QColor, QPalette
-from hvac_page import HvacConfigurationPage
+from .hvac_page import HvacConfigurationPage
 
 
 class AdaptiveFlowWidget(QWidget):

@@ -3,8 +3,8 @@ import os
 import configparser
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
-from adaptive_ui import AdaptiveDashboard
-from mqtt_engine import MqttTelemetryListener
+from ui.adaptive_ui import AdaptiveDashboard
+from libraries.mqtt_engine import MqttTelemetryListener
 
 
 class MainWindow(QMainWindow):

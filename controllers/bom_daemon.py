@@ -31,7 +31,7 @@ class BomForecastXmlDaemon:
         self.target_file = self._get_config_str("BOM", "forecast_file", "IDV71073.xml")
 
     def _get_config_str(self, section, key, fallback) -> str:
-        config_path = Path(__file__).resolve().parent / "config.ini"
+        config_path = Path(__file__).resolve().parent.parent / "config.ini"
         if config_path.exists():
             try:
                 config = configparser.ConfigParser()
