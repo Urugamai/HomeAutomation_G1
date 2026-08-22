@@ -6,9 +6,8 @@ from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 class MqttTelemetryListener(QObject):
     """
-    Environment-aware telemetry listener.
-    Runs 100% network-free on Windows to completely bypass 0xC0000409 crashes,
-    while remaining ready to plug into real hardware loops on your Raspberry Pi.
+    Unified cross-platform telemetry processor.
+    Injects internal forecast set caching targets seamlessly into layout panels.
     """
     telemetry_received = pyqtSignal(dict)
 
@@ -26,7 +25,12 @@ class MqttTelemetryListener(QObject):
             "battery_flow": 1200,
             "grid_flow": -450,
             "hvac_state": "OFF",
-            "hvac_in_rest": False
+            "hvac_in_rest": False,
+            # Placeholder structure keeping UI calls from dropping fields
+            "forecast_set": [
+                {"day_index": 0, "expected_min": None, "expected_max": 15.0, "summary": "Cloudy (Simulated)"},
+                {"day_index": 1, "expected_min": 9.0, "expected_max": 17.0, "summary": "Mostly Sunny (Simulated)"}
+            ]
         }
 
     def start(self):
@@ -57,13 +61,19 @@ class MqttTelemetryListener(QObject):
 
             def on_message(client, userdata, msg):
                 try:
+                    topic = msg.topic
                     data = json.loads(msg.payload.decode('utf-8'))
-                    if msg.topic == "home/environment/inside":
+
+                    if topic == "home/environment/inside":
                         self.cached_data["inside_temp"] = float(data.get("temperature", 0.0))
-                    elif msg.topic == "home/power/sigen":
+                    elif topic == "home/environment/forecast":
+                        # Directly catch multi-day forecast loops emitted by bom_daemon
+                        self.cached_data["forecast_set"] = data.get("forecast_set", [])
+                    elif topic == "home/power/sigen":
                         self.cached_data["battery_soc"] = int(data.get("battery_soc", 0))
                         self.cached_data["battery_flow"] = int(data.get("battery_flow", 0))
                         self.cached_data["grid_flow"] = int(data.get("grid_flow", 0))
+
                     self.telemetry_received.emit(self.cached_data.copy())
                 except Exception:
                     pass
