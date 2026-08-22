@@ -1,0 +1,19 @@
+[Unit]
+Description=Raspberry Pi Smart Home HVAC Core Engine & Relay Supervisor
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+# Adjust this file path to match exactly where your script is stored on the Pi
+WorkingDirectory=/home/pi/raspi_home_automation
+ExecStart=/usr/bin/python3 /home/pi/raspi_home_automation/hvac_daemon.py
+Restart=always
+RestartSec=5
+User=pi
+# Redirect stdout/stderr directly into your system logging engine
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

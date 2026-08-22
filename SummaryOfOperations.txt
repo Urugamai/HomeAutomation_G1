@@ -1,0 +1,74 @@
+Design concepts
+	- Create an interface class so that interactions with the various data sources is done through consistent calls uniquely implemented for each type of source.
+	- Create a library per facility
+	- Create UI for a 10" touch screen on a RasPI with separate pages for each functional area
+	- Use PYQT6 library for UI (display, input, etc)
+	- Use a configuration file to hold all relatively static settings (such as web site addresses for the Ecowitt, BOM, etc sources)
+	- Read/write dynamic settings from the MQ bus (such as min/max temperature settings, start/end times for off-peak power, etc)
+	
+	- Interfaces needed
+		- MQ Controller
+			- Use MQTT (Mosquitto)
+			- send data for delivery
+			- Read data from message queues
+
+		- Ocular Controller (Car Charger)
+			- Use ModBus
+				- Send commands
+				- Read status
+			- Use MQ to provide status updates
+			- Use MQ to recieve commands to deliver to device
+
+		- CBus Controller
+			- Use MQ
+				- send commands
+				- Receive CBus messages
+
+		- Environment
+			- Use MQ to provide status updates
+			- Use MQ to recieve last readings
+			- RasPI Devices
+				- Temperature, humidity, pressure, light level and gas sensors on I2C bus
+			- Ecowitt Device
+				- Use Ecowitt library to access web site to get data from my local device
+					- Data includes outside light, temperature, humidity, pressure, rain received today and wind speed
+			- BOM Data source
+				- FTP fetch of data file
+					- Load csv and update MQ with latest data hourly
+
+		- Power
+			- Use Sigen web site
+				- MQ option desired but problematic to get going - help needed
+				- Get Solar generation data
+				- Get Grid consumption data
+				- Get battery charge level data
+
+	- User interfaces
+		- Use PyQT6
+
+		- Clock
+			- Displays time and date to second
+			- Optionally (if screen size permits) display
+				- Inside, outside, min expected, max expected temperatures for today and tomorrow, include the date being predicted
+				- Solar generation in KWh, Battery SOC in percent, Battery power flow (plus/minus), grid power flow (plus/minus)
+					- possibly show SOC as a progress like bar
+					- possibly show Battery flow as a bar with left of zero being red (draining) and right of zero being green (charging) with a 100 Wh margin around zero
+					- Possibly show the Grid Power flow as a left/right bar similar to Battery flow
+		
+		- HVAC Controller
+			- I2C comms to 3 relays used to turn on/off the Heating, Cooling
+				- Wire relays so only Heating OR cooling OR OFF can be triggered - i.e. heating and cooling relays cannot be ON at the same time
+			- Gets data off the MQ bus to determine if heating, cooling or off is the required state
+			- User settings for target temperature min and max (with temp between being OFF)
+			- Must not run units for more than 10 minutes before taking a 5 minute rest
+			- Should close blinds at least 1 degree before starting heating/cooling
+			- Other sensible HVAC control options
+
+	- Background monitoring and controllers
+		- Blind Controller
+			- Use MQ interface to monitor room and outside light and temperature settings
+		- Car charger
+			- Off during peak power costs
+			- On if battery gets to 100%, off if it drops to 80%
+				- Limit to excess solar generation only if possible
+			- On during off-peak power cost period (2300 to 0700 weekdays and all weekend)
