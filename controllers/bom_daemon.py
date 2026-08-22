@@ -9,26 +9,24 @@ import configparser
 try:
     import paho.mqtt.client as mqtt
 except ImportError:
-    print("[CRITICAL] 'paho-mqtt' library missing. Run 'pip install paho-mqtt'.")
+    print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     sys.exit(1)
 
 
 class BomForecastXmlDaemon:
     """
     Background supervisor parsing official BOM XML structural forecast products hourly.
-    Extracts multi-day predictive weather metrics tailored for touchscreen display pipelines.
+    Tracks location attributes directly to prevent node parsing drops across Windows and Pi.
     """
 
     def __init__(self):
         print("[INIT] Launching Bureau of Meteorology (BOM) XML Forecast Sync Daemon...")
 
-        # Load centralized path configurations
+        # Load centralized configuration variables
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
         self.ftp_host = self._get_config_str("BOM", "ftp_host", "ftp.bom.gov.au")
         self.remote_dir = self._get_config_str("BOM", "remote_dir", "/anon/gen/fwo/")
-
-        # Point to the official XML 7-day forecast file for the Victorian/Altona area
-        self.target_file = self._get_config_str("BOM", "forecast_file", "IDV71073.xml")
+        self.target_file = self._get_config_str("BOM", "forecast_file", "IDV10450.xml")
 
     def _get_config_str(self, section, key, fallback) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -44,81 +42,83 @@ class BomForecastXmlDaemon:
     def start(self):
         self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         try:
+            print(f"[MQTT] Connecting data pipeline to broker at {self.broker_ip}...")
             self.mqtt_client.connect(self.broker_ip, 1883, keepalive=60)
             self.mqtt_client.loop_start()
         except Exception as e:
-            print(f"[NETWORK ERROR] BOM XML Daemon failed connecting to broker: {e}")
+            print(f"[NETWORK ERROR] BOM Daemon failed connecting to broker: {e}")
 
-        print(f"[RUNNING] Hourly BOM XML engine armed. Tracking target file: {self.target_file}")
+        print(f"[ARMED] Hourly BOM XML engine active. Tracking file: {self.target_file}")
         try:
             while True:
-                # Trigger an data execution cycle immediately on launch, then sleep
                 self._fetch_and_parse_bom_xml()
-                print("[STANDBY] Forecast matrix synchronized. Sleeping for 60 minutes.")
+                print("[STANDBY] Forecast matrix synchronized. Next update in 60 minutes.")
                 time.sleep(3600.0)
         except KeyboardInterrupt:
             print("[SHUTDOWN] Halting BOM XML forecast monitoring loops.")
             self.mqtt_client.loop_stop()
 
     def _fetch_and_parse_bom_xml(self):
-        """Pulls down the target XML text payload over public anonymous FTP channels cleanly."""
-        print(f"[FTP CONNECT] Querying forecast data blocks -> {self.ftp_host}")
-        xml_bytes = io_bytes = bytearray()
+        print(f"[FTP FETCH] Requesting weather package from {self.ftp_host}...")
+        xml_bytes = bytearray()
         ftp = ftplib.FTP()
 
         try:
             ftp.connect(self.ftp_host, 21, timeout=15)
-            ftp.login()  # Free anonymous access point
+            ftp.login()  # Free public anonymous access link
             ftp.cwd(self.remote_dir)
-
-            # Read structural binary streams into local system data structures
             ftp.retrbinary(f"RETR {self.target_file}", xml_bytes.extend)
             ftp.quit()
 
-            # Process string conversions safely
             raw_xml_text = xml_bytes.decode('utf-8', errors='ignore')
             self._process_xml_tree(raw_xml_text)
 
         except Exception as e:
-            print(f"[FTP XML ERROR] Remote transfer pipeline stalled or dropped: {e}")
+            print(f"[FTP ERROR] Remote transfer pipeline failed or timed out: {e}")
             try:
                 ftp.close()
             except:
                 pass
 
     def _process_xml_tree(self, xml_string: str):
-        """Parses the nested BOM schema elements to harvest structured forecast parameters."""
+        """Parses nested schemas matching literal BOM description elements safely."""
         try:
             root = ET.fromstring(xml_string)
-
-            # Trackers for mapping structural forecast metrics
             forecast_days = []
 
-            # The BOM XML layout separates forecasts by specific area nodes using "aac" identifiers.
-            # AAC="VIC_PT001" represents the main Melbourne / Metropolitan area covering Altona.
-            for area in root.findall(".//area[@aac='VIC_PT001']/forecast-period"):
-                day_index = area.get("index")  # index="0" means Today, "1" means Tomorrow, etc.
-                start_time_utc = area.get("start-time-utc")
+            # Target the explicit location node for Melbourne/Altona metropolitan zones
+            # Maps onto <area description="Melbourne" type="location"> inside IDV10450.xml
+            target_area = None
+            for area in root.findall(".//area"):
+                if area.get("description") == "Melbourne" and area.get("type") == "location":
+                    target_area = area
+                    break
 
-                # Dynamic structures to trap element properties inside each forecast tree node
+            if target_area is None:
+                print("[XML WARN] Could not isolate 'Melbourne' location block in XML payload.")
+                return
+
+            # Extract daily forecast elements from the targeted area branch
+            for period in target_area.findall("forecast-period"):
+                day_index = period.get("index")  # index="0" = Today, "1" = Tomorrow
+                start_time_utc = period.get("start-time-utc")
+
                 min_temp = None
                 max_temp = None
                 summary_text = ""
 
-                # Check structural parameters mapped inside the forecast period leaf node
-                for element in area.findall("element"):
+                # Iterate internal data points
+                for element in period.findall("element"):
                     elem_type = element.get("type")
                     if elem_type == "air_temperature_minimum":
-                        min_temp = float(element.text)
+                        min_temp = float(element.text) if element.text else None
                     elif elem_type == "air_temperature_maximum":
-                        max_temp = float(element.text)
+                        max_temp = float(element.text) if element.text else None
 
-                # Check textual block properties for the day description string
-                text_elem = area.find("text[@type='forecast']")
+                text_elem = period.find("text[@type='forecast']")
                 if text_elem is not None:
                     summary_text = text_elem.text
 
-                # Save the parsed day structure
                 forecast_days.append({
                     "day_index": int(day_index),
                     "utc_timestamp": start_time_utc,
@@ -128,29 +128,23 @@ class BomForecastXmlDaemon:
                 })
 
             if forecast_days:
-                # Structure the compiled multiday matrix dictionary
                 compiled_payload = {
                     "station_region": "Melbourne/Altona Metro Area",
                     "last_updated_tick": time.time(),
                     "forecast_set": forecast_days
                 }
 
-                # Broadcast the JSON structure over your local MQTT broker line
+                # Broadcast the clean array over your local MQ broker
                 json_data = json.dumps(compiled_payload)
                 self.mqtt_client.publish("home/environment/forecast", json_data, retain=True)
-                print(f"[XML SUCCESS] Streamed clean forecast array: {json_data}")
+                print(f"[XML SUCCESS] Extracted and streamed forecast data successfully: {len(forecast_days)} days.")
             else:
-                print("[XML WARN] Could not isolate matching metropolitan forecast nodes in XML payload.")
+                print("[XML WARN] Forecast periods block was empty inside matching location node.")
 
         except Exception as e:
             print(f"[XML TREE EXCEPTION] Failed parsing BOM document fields: {e}")
 
 
 if __name__ == "__main__":
-    # Inline quick buffer patch to handle standard binary writing structures
-    import io
-
-    io_bytes = bytearray
-
     daemon = BomForecastXmlDaemon()
     daemon.start()
