@@ -1,13 +1,14 @@
+import sys
 import json
 import random
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QUrl
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 
 class MqttTelemetryListener(QObject):
     """
-    Pure PyQt6 UI-driven network listener.
-    Uses zero background threads or processes, completely bypassing the OneDrive 0xC0000409 crash.
+    Environment-aware telemetry listener.
+    Runs 100% network-free on Windows to completely bypass 0xC0000409 crashes,
+    while remaining ready to plug into real hardware loops on your Raspberry Pi.
     """
     telemetry_received = pyqtSignal(dict)
 
@@ -15,8 +16,9 @@ class MqttTelemetryListener(QObject):
         super().__init__()
         self.broker = broker
         self.port = port
+        self.is_windows = (sys.platform == "win32")
+        self.client = None
 
-        # Central data dictionary cache
         self.cached_data = {
             "inside_temp": 21.5,
             "outside_temp": 14.2,
@@ -27,57 +29,55 @@ class MqttTelemetryListener(QObject):
             "hvac_in_rest": False
         }
 
-        # Native PyQt network manager
-        self.network_manager = QNetworkAccessManager(self)
-        self.network_manager.finished.connect(self._handle_http_response)
-
     def start(self):
-        """Starts a native UI timer to poll data frameworks safely on the main thread."""
-        print(f"[NETWORK HUB] Initializing pure PyQt6 telemetry tracking for broker at {self.broker}...")
+        if self.is_windows:
+            print("[ENV DETECTED] Windows 11 Node - Using Local UI Simulation Layout.")
+            self.poll_timer = QTimer(self)
+            self.poll_timer.timeout.connect(self._generate_simulated_telemetry)
+            self.poll_timer.start(1000)
+        else:
+            print("[ENV DETECTED] Linux/Raspberry Pi Platform - Connecting to Active MQTT Broker.")
+            self._initialize_linux_mqtt()
 
-        self.poll_timer = QTimer(self)
-        self.poll_timer.timeout.connect(self._request_latest_telemetry)
-        self.poll_timer.start(2000)  # Safe UI tick interval (every 2 seconds)
-
-    def _request_latest_telemetry(self):
-        """
-        Attempts to read states via a safe network request.
-        Falls back to local calculations if the broker HTTP API is not configured.
-        """
-        # If your local home automation setup has an HTTP API endpoint open:
-        url = QUrl(f"http://{self.broker}:8080/api/telemetry")
-        request = QNetworkRequest(url)
-
-        # This execution is completely asynchronous and managed safely by the PyQt6 engine core
-        self.network_manager.get(request)
-
-        # SIMULATION FALLBACK: To ensure your dashboard functions inside PyCharm immediately
-        # even if an HTTP port isn't configured on your broker yet, we inject real-time data adjustments:
+    def _generate_simulated_telemetry(self):
         self.cached_data["inside_temp"] = round(self.cached_data["inside_temp"] + random.uniform(-0.1, 0.1), 1)
         self.cached_data["outside_temp"] = round(self.cached_data["outside_temp"] + random.uniform(-0.1, 0.1), 1)
         self.cached_data["battery_flow"] = random.randint(-2500, 3500)
         self.cached_data["grid_flow"] = random.randint(-1500, 2500)
         self.cached_data["battery_soc"] = max(0, min(100, self.cached_data["battery_soc"] + random.randint(-1, 1)))
-
-        # Stream data right to the UI dials safely
         self.telemetry_received.emit(self.cached_data.copy())
 
-    def _handle_http_response(self, reply):
-        """Processes incoming data packets safely without thread context switches."""
+    def _initialize_linux_mqtt(self):
         try:
-            if reply.error() == reply.NetworkError.NoError:
-                response_bytes = reply.readAll()
-                json_str = str(response_bytes, encoding='utf-8')
-                data = json.loads(json_str)
+            import paho.mqtt.client as mqtt
 
-                # Update cache metrics from real broker HTTP responses
-                self.cached_data.update(data)
-                self.telemetry_received.emit(self.cached_data.copy())
-        except Exception:
-            pass
-        finally:
-            reply.deleteLater()
+            def on_connect(client, userdata, flags, rc, properties=None):
+                client.subscribe("home/environment/#")
+                client.subscribe("home/power/sigen")
+
+            def on_message(client, userdata, msg):
+                try:
+                    data = json.loads(msg.payload.decode('utf-8'))
+                    if msg.topic == "home/environment/inside":
+                        self.cached_data["inside_temp"] = float(data.get("temperature", 0.0))
+                    elif msg.topic == "home/power/sigen":
+                        self.cached_data["battery_soc"] = int(data.get("battery_soc", 0))
+                        self.cached_data["battery_flow"] = int(data.get("battery_flow", 0))
+                        self.cached_data["grid_flow"] = int(data.get("grid_flow", 0))
+                    self.telemetry_received.emit(self.cached_data.copy())
+                except Exception:
+                    pass
+
+            self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+            self.client.on_connect = on_connect
+            self.client.on_message = on_message
+            self.client.connect(self.broker, self.port, keepalive=60)
+            self.client.loop_start()
+        except Exception as e:
+            print(f"[LINUX MQTT ERROR] Failed to bind local broker lines: {e}")
 
     def stop(self):
         if hasattr(self, 'poll_timer'):
             self.poll_timer.stop()
+        if self.client:
+            self.client.loop_stop()
