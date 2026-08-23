@@ -7,7 +7,6 @@ from pathlib import Path
 try:
     import RPi.GPIO as GPIO
     import smbus2
-    # Load official compiled Bosch calibration matrix engine
     import bme280
 
     IS_RASPI = True
@@ -22,6 +21,7 @@ class LivingAreaHardwareController:
     """
     Core automation engine driving Living Area physical hardware.
     Natively calibrates Bosch BME280 metrics and reads VEML6030 modules.
+    Includes persistent self-healing network retry hooks for boot delays.
     """
     RELAY_HEAT = 26
     RELAY_COOL = 20
@@ -78,12 +78,10 @@ class LivingAreaHardwareController:
 
             self.bus = smbus2.SMBus(self.I2C_BUS_ID)
 
-            # Probe and load calibrated factory EEPROM params for Bosch chips
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
                 try:
                     self.bus.read_byte(addr)
                     self.discovered_bme_addr = addr
-                    # Download internal chip compensation matrices natively
                     self.bme_calibration_params = bme280.load_calibration_data(self.bus, addr)
                     print(f"[I2C SUCCESS] Auto-detected and calibrated Bosch BME at: {hex(addr)}")
                     break
@@ -104,6 +102,7 @@ class LivingAreaHardwareController:
             print(f"[HARDWARE CRITICAL] Failed initializing Pi interaction lines: {e}")
 
     def start(self):
+        """Launches the thread listener with an automated, self-healing network retry loop."""
         try:
             import paho.mqtt.client as mqtt
         except ImportError:
@@ -114,11 +113,19 @@ class LivingAreaHardwareController:
         self.mqtt_client.on_connect = lambda c, u, f, rc, p=None: c.subscribe("home/hvac/settings")
         self.mqtt_client.on_message = self._on_settings_message
 
-        try:
-            self.mqtt_client.connect(self.broker_ip, 1883, keepalive=60)
-            self.mqtt_client.loop_start()
-        except Exception as e:
-            print(f"[NETWORK ERROR] Core daemon failed reaching broker: {e}")
+        # FIXED: Self-healing reconnection manager loops continuously if Wi-Fi hasn't bound yet
+        connected = False
+        print(f"[MQTT CONNECTING] Establishing link to network broker at {self.broker_ip}...")
+
+        while not connected:
+            try:
+                self.mqtt_client.connect(self.broker_ip, 1883, keepalive=60)
+                self.mqtt_client.loop_start()
+                print("[MQTT SUCCESS] Successfully established pipeline link with network broker.")
+                connected = True
+            except (OSError, Exception) as e:
+                print(f"[NETWORK DELAY] Broker link unreachable: {e}. Retrying in 5 seconds...")
+                time.sleep(5.0)  # Pause cleanly before attempting the next network handshake
 
         print("[RUNNING] Living Area automation loop active. Sampling sensors every 5 seconds.")
         try:
@@ -150,7 +157,6 @@ class LivingAreaHardwareController:
         temp_c, humidity, lux = 22.0, 50.0, 0.0
 
         try:
-            # FIXED: Execute native double-precision compensation calculations
             if self.discovered_bme_addr and self.bme_calibration_params:
                 bme_data = bme280.sample(self.bus, self.discovered_bme_addr, self.bme_calibration_params)
                 temp_c = round(bme_data.temperature, 1)
