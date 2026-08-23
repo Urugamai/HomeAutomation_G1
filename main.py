@@ -9,23 +9,28 @@ from ui.adaptive_ui import AdaptiveDashboard
 from libraries.mqtt_engine import MqttTelemetryListener
 
 
+# Open main.py and locate the __init__ constructor inside the MainWindow class:
+
 class MainWindow(QMainWindow):
     def __init__(self, broker_ip="localhost"):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
 
-        # Initialize the main Tab layout container
+        # 1. Initialize the central Tab and Dashboard widgets
         self.tabs = QTabWidget()
         self.dashboard = AdaptiveDashboard()
         self.tabs.addTab(self.dashboard, "Status Core")
         self.setCentralWidget(self.tabs)
 
-        # Append a structural native QStatusBar layout element onto the base margin footer
+        # 2. Append the structural status bar elements
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Initializing system connection profile...")
 
-        # Initialize and bind the environment-aware listener engine
+        # 3. FIXED: Force the application frame to draw without window borders in full screen
+        self.showFullScreen()  # <--- REMOVE ANY LATER .show() AND CALL THIS INSIDE THE CONSTRUCTOR
+
+        # 4. Initialize and bind the environment-aware listener engine
         self.mqtt_listener = MqttTelemetryListener(broker=broker_ip)
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
         self.mqtt_listener.start()
