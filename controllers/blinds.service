@@ -1,7 +1,6 @@
 [Unit]
 Description=Raspberry Pi C-Bus Integrated Automatic Shutter Controller Daemon
-After=network.target mosquitto.service
-Requires=mosquitto.service
+After=network.target
 
 [Service]
 Type=simple

@@ -1,7 +1,6 @@
 [Unit]
 Description=Raspberry Pi Home Automation Ecowitt Gateway LAN Sync Daemon
-After=network.target mosquitto.service
-Requires=mosquitto.service
+After=network.target
 
 [Service]
 Type=simple

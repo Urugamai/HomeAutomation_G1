@@ -1,7 +1,6 @@
 [Unit]
 Description=Raspberry Pi Smart Home EV Charger ModbusTCP Controller Daemon
-After=network.target mosquitto.service
-Requires=mosquitto.service
+After=network.target
 
 [Service]
 Type=simple

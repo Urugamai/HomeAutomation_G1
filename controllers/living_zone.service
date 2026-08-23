@@ -1,7 +1,6 @@
 [Unit]
 Description=Raspberry Pi Living Area I2C Sensor & Waveshare HVAC Relay Daemon
-After=network.target mosquitto.service
-Requires=mosquitto.service
+After=network.target
 
 [Service]
 Type=simple

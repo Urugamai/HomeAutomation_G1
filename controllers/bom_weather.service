@@ -1,7 +1,6 @@
 [Unit]
 Description=Raspberry Pi Home Automation Weather Observational Sync Engine
-After=network.target mosquitto.service
-Requires=mosquitto.service
+After=network.target
 
 [Service]
 Type=simple
