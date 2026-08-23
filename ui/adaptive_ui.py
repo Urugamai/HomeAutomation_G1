@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
 
@@ -144,18 +144,41 @@ class AdaptiveDashboard(QWidget):
         self.energy_container = QWidget()
         energy_layout = QHBoxLayout(self.energy_container)
         energy_layout.setContentsMargins(0, 0, 0, 0)
+        energy_layout.setSpacing(10)
 
-        from PyQt6.QtWidgets import QProgressBar as QB
-        self.soc_bar = QB()
+        # Heading Section: Stacked layout to output SOC: text right over its active reading
+        self.soc_header_container = QWidget()
+        soc_header_layout = QVBoxLayout(self.soc_header_container)
+        soc_header_layout.setContentsMargins(0, 0, 0, 0)
+        soc_header_layout.setSpacing(2)
+
+        self.soc_title_lbl = QLabel("SOC:")
+        self.soc_title_lbl.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.soc_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.soc_value_lbl = QLabel("--%")
+        self.soc_value_lbl.setFont(QFont("Monospace", 11, QFont.Weight.Bold))
+        self.soc_value_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.soc_value_lbl.setStyleSheet("color: #007aff;")
+
+        soc_header_layout.addWidget(self.soc_title_lbl)
+        soc_header_layout.addWidget(self.soc_value_lbl)
+
+        # Progress Bar Configuration
+        self.soc_bar = QProgressBar()
         self.soc_bar.setOrientation(Qt.Orientation.Vertical)
         self.soc_bar.setRange(0, 100)
+        self.soc_bar.setTextVisible(False)  # Hide stock percentage overlay text
+
+        # FIXED: Doubled the physical width footprint parameters to make the bar fatter
+        self.soc_bar.setFixedWidth(50)
 
         # Instantiate widgets passing true operational kW peak limits
         self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_max_kw=10.0, is_solar=True)
         self.battery_widget = AdaptiveFlowWidget("Battery Flow", range_max_kw=5.0)
         self.grid_widget = AdaptiveFlowWidget("Grid Flow", range_max_kw=5.0)
 
-        energy_layout.addWidget(QLabel("SOC:"))
+        energy_layout.addWidget(self.soc_header_container)
         energy_layout.addWidget(self.soc_bar)
         energy_layout.addWidget(self.solar_widget)
         energy_layout.addWidget(self.battery_widget)
@@ -212,11 +235,14 @@ class AdaptiveDashboard(QWidget):
 
     def refresh_telemetry_ui(self, data: dict):
         if self.temp_lbl.isVisible():
-            self.temp_lbl.setText(f"Inside: {data['inside_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
+            self.temp_lbl.setText(f"Rumpus Room: {data['rumpus_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
 
         if self.energy_container.isVisible():
             soc_val = data.get("battery_soc", 0.0)
             self.soc_bar.setValue(int(soc_val))
+
+            # FIXED: Dynamically update the new text readout box directly below the heading text line
+            self.soc_value_lbl.setText(f"{soc_val:.1f}%")
 
             solar_kw = float(data.get("solar_power", 0.0))
             battery_kw = float(data.get("battery_flow", 0.0))

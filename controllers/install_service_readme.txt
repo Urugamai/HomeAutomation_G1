@@ -37,3 +37,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable sigen_power.service
 sudo systemctl start sigen_power.service
 
+# ECOWITT WEATHER
+sudo systemctl daemon-reload
+sudo systemctl enable ecowitt_weather.service
+sudo systemctl start ecowitt_weather.service
+

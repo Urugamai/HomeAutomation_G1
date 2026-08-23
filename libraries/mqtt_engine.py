@@ -14,7 +14,7 @@ except ImportError:
 class MqttTelemetryListener(QObject):
     """
     Unified cross-platform telemetry processor.
-    Maps high-resolution floats cleanly onto matching layout data keys.
+    Natively tracks expanding multi-room temperature dictionary streams.
     """
     telemetry_received = pyqtSignal(dict)
 
@@ -25,14 +25,14 @@ class MqttTelemetryListener(QObject):
         self.is_windows = (sys.platform == "win32")
         self.client = None
 
-        # Central tracking telemetry cache matching exactly your UI variables
+        # Core telemetry data cache tree
         self.cached_data = {
-            "inside_temp": 0.0,
+            "rumpus_temp": 0.0,  # FIXED: Split room tracking targets explicitly
             "outside_temp": 0.0,
             "battery_soc": 0.0,
             "battery_flow": 0.0,
             "grid_flow": 0.0,
-            "solar_power": 0.0,  # FIXED: Key named precisely to match daemon payload
+            "solar_power": 0.0,
             "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
             "hvac_in_rest": False,
@@ -68,6 +68,7 @@ class MqttTelemetryListener(QObject):
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         print(f"[MQTT SUCCESS] Connected to {self.broker}. Arming system subscriptions.")
+        # Subscribes to the broad wildcard tree to capture all rooms automatically
         client.subscribe("home/environment/#")
         client.subscribe("home/power/sigen")
 
@@ -76,8 +77,12 @@ class MqttTelemetryListener(QObject):
             topic = msg.topic
             data = json.loads(msg.payload.decode('utf-8'))
 
-            if topic == "home/environment/inside":
-                self.cached_data["inside_temp"] = float(data.get("temperature", 0.0))
+            # FIXED: Handle unique room path message extractions cleanly
+            if topic == "home/environment/rumpus":
+                self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
+            elif topic == "home/environment/inside":
+                # Fallback support for generic heating loop daemons
+                self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
                 self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
                 self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
             elif topic in ["home/environment/outside", "home/environment/ecowitt"]:
@@ -85,7 +90,6 @@ class MqttTelemetryListener(QObject):
             elif topic == "home/environment/forecast":
                 self.cached_data["forecast_set"] = data.get("forecast_set", [])
             elif topic == "home/power/sigen":
-                # FIXED: Extracted matching daemon keys with perfect naming preservation
                 self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
                 self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
                 self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
