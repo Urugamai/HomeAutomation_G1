@@ -1,3 +1,15 @@
+# Configuring environment
+#########################
+# Update the system package repository index lists
+sudo apt update
+
+# Install PyQt6 and the physical system I2C bus tools natively
+sudo apt install -y python3-pyqt6 python3-smbus2 python3-pip
+
+# Install the remaining purely Pythonic driver dependencies from your manifest
+pip3 install paho-mqtt pymodbus aiohttp pycryptodome --break-system-packages
+
+## DAEMONS ##
 # HVAC DAEMON
 # Reload the systemd controller manager configuration files
 sudo systemctl daemon-reload
@@ -46,3 +58,21 @@ sudo systemctl start ecowitt_weather.service
 sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
+
+
+# Start all daemons
+#####################
+# 1. Start the local Living Area I2C sensors and Waveshare HVAC relay driver (Requires sudo for GPIO/I2C)
+sudo python3 controllers/environment_daemon.py > ~/living_zone.log 2>&1 &
+
+# 2. Start the Ecowitt LAN socket listener to pull Rumpus Room and outdoor metrics
+python3 controllers/ecowitt_daemon.py > ~/ecowitt.log 2>&1 &
+
+# 3. Start the SigenStor async inverter web crawler
+python3 controllers/sigen_daemon.py > ~/sigen.log 2>&1 &
+
+# 4. Start the Bureau of Meteorology hourly XML forecast sync downloader
+python3 controllers/bom_daemon.py > ~/bom.log 2>&1 &
+
+# START THE DISPLAY
+python3 main.py

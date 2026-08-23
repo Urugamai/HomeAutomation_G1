@@ -18,6 +18,8 @@ class MqttTelemetryListener(QObject):
     """
     telemetry_received = pyqtSignal(dict)
 
+    # Open libraries/mqtt_engine.py and update your cache setup block to read:
+
     def __init__(self, broker="localhost", port=1883):
         super().__init__()
         self.broker = broker
@@ -25,9 +27,9 @@ class MqttTelemetryListener(QObject):
         self.is_windows = (sys.platform == "win32")
         self.client = None
 
-        # Core telemetry data cache tree
+        # Central tracking telemetry cache matching exactly your UI variables
         self.cached_data = {
-            "rumpus_temp": 0.0,  # FIXED: Split room tracking targets explicitly
+            "living_temp": 0.0,  # FIXED: Corrected default initializer key tracking element
             "outside_temp": 0.0,
             "battery_soc": 0.0,
             "battery_flow": 0.0,
