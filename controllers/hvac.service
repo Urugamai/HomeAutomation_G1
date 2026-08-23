@@ -10,7 +10,7 @@ WorkingDirectory=/home/markw/raspi_home_automation
 ExecStart=/usr/bin/python3 /home/markw/raspi_home_automation/hvac_daemon.py
 Restart=always
 RestartSec=5
-User=pi
+User=markw
 # Redirect stdout/stderr directly into your system logging engine
 StandardOutput=journal
 StandardError=journal

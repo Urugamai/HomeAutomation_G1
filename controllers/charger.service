@@ -9,7 +9,7 @@ WorkingDirectory=/home/markw/HomeAutomation_G1
 ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/controllers/charger_daemon.py
 Restart=always
 RestartSec=10
-User=pi
+User=markw
 StandardOutput=journal
 StandardError=journal
 
