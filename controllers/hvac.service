@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 # Adjust this file path to match exactly where your script is stored on the Pi
 WorkingDirectory=/home/markw/raspi_home_automation
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/markw/raspi_home_automation/hvac_daemon.py
 Restart=always
 RestartSec=5

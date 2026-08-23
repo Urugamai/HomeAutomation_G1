@@ -12,15 +12,30 @@ from libraries.mqtt_engine import MqttTelemetryListener
 # Open main.py and locate the __init__ constructor inside the MainWindow class:
 
 class MainWindow(QMainWindow):
+    # Open main.py and place this stylesheet assignment right inside MainWindow.__init__:
+
     def __init__(self, broker_ip="localhost"):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
 
-        # 1. Initialize the central Tab and Dashboard widgets
         self.tabs = QTabWidget()
+
+        # FIXED: Enforce a thumb-friendly touchscreen tab footprint with a fatter layout style sheet
+        self.tabs.setStyleSheet("""
+                QTabBar::tab {
+                    height: 55px;
+                    min-width: 150px;
+                    font-size: 14pt;
+                    font-weight: bold;
+                    padding: 5px;
+                }
+            """)
+
         self.dashboard = AdaptiveDashboard()
         self.tabs.addTab(self.dashboard, "Status Core")
         self.setCentralWidget(self.tabs)
+
+        # ... Rest of your main.py constructor lines continue exactly as before ...
 
         # 2. Append the structural status bar elements
         self.status_bar = QStatusBar()

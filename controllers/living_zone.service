@@ -5,11 +5,13 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/home/markw/HomeAutomation_G1
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/controllers/environment_daemon.py
 Restart=always
 RestartSec=5
 User=root
-# Running as root is required on the Pi to access hardware GPIO pins and the I2C bus
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
