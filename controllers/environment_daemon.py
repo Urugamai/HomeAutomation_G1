@@ -19,15 +19,12 @@ except ImportError:
 class LivingAreaHardwareController:
     """
     Core automation engine driving Living Area physical hardware.
-    Auto-discovers PiCodev sensors via I2C and commands Waveshare relays
-    while enforcing strict anti-short-cycle protective timing loops.
+    Natively wakes up PiCodev modules and commands Waveshare relays.
     """
-    # Waveshare RPi Relay Board Fixed BCM GPIO Pin Mappings
     RELAY_HEAT = 26
     RELAY_COOL = 20
     RELAY_FAN = 21
 
-    # PiCodev Sensor Fixed I2C Register Hardware Targets
     I2C_BUS_ID = 1
     ADDR_VEML6030 = 0x10
     ADDR_BME_ALT = 0x76
@@ -37,12 +34,10 @@ class LivingAreaHardwareController:
         print("[INIT] Initializing Living Area Master Automation Subsystem...")
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
 
-        # Room Target Thermal Boundaries (Populated dynamically via the MQ bus)
         self.t_min = 20.0
         self.t_max = 24.0
 
-        # Safety State Machine Flags
-        self.current_hvac_state = "OFF"  # OFF, HEATING, COOLING
+        self.current_hvac_state = "OFF"
         self.last_state_change_time = time.time()
         self.is_resting = False
         self.rest_start_time = 0.0
@@ -50,6 +45,7 @@ class LivingAreaHardwareController:
 
         self.bus = None
         self.discovered_bme_addr = None
+        self.veml_is_online = False
 
         self._initialize_hardware()
 
@@ -71,17 +67,17 @@ class LivingAreaHardwareController:
             return
 
         try:
-            # 1. Configure Waveshare Relay Board Outputs using BCM Naming Convention
+            # 1. Configure Waveshare Relay Board Outputs
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
             for pin in [self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN]:
                 GPIO.setup(pin, GPIO.OUT)
-                GPIO.output(pin, GPIO.LOW)  # Open all contacts cleanly at launch
+                GPIO.output(pin, GPIO.LOW)
 
             # 2. Bind PiCodev I2C Expansion Stream
             self.bus = smbus2.SMBus(self.I2C_BUS_ID)
 
-            # Probe BME Addresses to support BME280/BME680 modules automatically
+            # Probe BME Addresses
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
                 try:
                     self.bus.read_byte(addr)
@@ -91,6 +87,19 @@ class LivingAreaHardwareController:
                 except Exception:
                     continue
 
+            # Wake up the VEML6030 Ambient Light Sensor
+            try:
+                self.bus.read_byte(self.ADDR_VEML6030)
+                # Send 16-bit configuration word: Power On (0x0000) to Configuration Register (0x00)
+                # This breaks the chip out of its factory shutdown mode state
+                self.bus.write_word_data(self.ADDR_VEML6030, 0x00, 0x0000)
+                time.sleep(0.01)  # Hold for a fast 10ms settling frame delay
+                self.veml_is_online = True
+                print("[I2C SUCCESS] Auto-detected and initialized VEML6030 Light Sensor at hex address: 0x10")
+            except Exception as e:
+                print(f"[I2C WARN] VEML6030 failed handshake initialization: {e}")
+                self.veml_is_online = False
+
             if not self.discovered_bme_addr:
                 print("[I2C WARN] No BME climate sensor acknowledged the bus handshake probe.")
 
@@ -98,7 +107,6 @@ class LivingAreaHardwareController:
             print(f"[HARDWARE CRITICAL] Failed initializing Pi interaction lines: {e}")
 
     def start(self):
-        """Launches the primary network thread listener and sequences timing loops."""
         try:
             import paho.mqtt.client as mqtt
         except ImportError:
@@ -137,7 +145,7 @@ class LivingAreaHardwareController:
             print(f"[MQTT ERROR] Failed parsing setting adjustment frame: {e}")
 
     def _read_sensors(self) -> tuple[float, float, float]:
-        """Polls physical sensors safely from the expansion interface, falling back to desktop simulation if on PC."""
+        """Polls physical sensors safely from the expansion interface, falling back to simulation if on PC."""
         if not IS_RASPI or not self.bus:
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0
@@ -150,22 +158,23 @@ class LivingAreaHardwareController:
                 raw_byte = self.bus.read_byte_data(self.discovered_bme_addr, 0xFA)
                 temp_c = round(18.0 + (raw_byte % 10), 1)
 
-            # 2. FIXED: Dynamically re-verify light sensor state if it was marked offline
+            # 2. Dynamic recovery loop for the light tracker
             if not self.veml_is_online:
                 try:
                     self.bus.read_byte(self.ADDR_VEML6030)
+                    self.bus.write_word_data(self.ADDR_VEML6030, 0x00, 0x0000)
                     self.veml_is_online = True
-                    print("[HARDWARE RECOVERY] VEML6030 Light Sensor re-appeared on the I2C bus.")
                 except Exception:
                     pass
 
-            # 3. Read data from the VEML6030 Ambient Light Sensor
+            # 3. Extract high-resolution lighting values from register 0x04 cleanly
             if self.veml_is_online:
                 try:
+                    # Read the 16-bit word dataset directly from register 0x04
                     lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
+                    # Convert raw bytes to standard international lux lighting metrics
                     lux = float(lux_raw) * 0.0576
                 except Exception:
-                    # If an individual read fails due to relay noise, flag for re-probing on next tick
                     self.veml_is_online = False
 
         except Exception as e:
@@ -174,10 +183,6 @@ class LivingAreaHardwareController:
         return temp_c, humidity, lux
 
     def _apply_physical_relay_state(self, target_mode: str):
-        """
-        Drives the physical Waveshare RPi Relay Board.
-        Enforces absolute software exclusion: Heat and Cool can NEVER power up together.
-        """
         self.current_hvac_state = target_mode
         self.last_state_change_time = time.time()
 
@@ -185,31 +190,27 @@ class LivingAreaHardwareController:
             print(f"[MOCK RELAY OUT] Switching Board Pins to State: -> {target_mode}")
             return
 
-        # Bit Patterns: Waveshare inputs utilize standard Active-High BCM driver logic
         if target_mode == "HEATING":
-            GPIO.output(self.RELAY_COOL, GPIO.LOW)  # Interlock Safeguard Check
-            time.sleep(0.05)  # Introduce a 50ms arc-suppression deadtime delay
+            GPIO.output(self.RELAY_COOL, GPIO.LOW)
+            time.sleep(0.05)
             GPIO.output(self.RELAY_HEAT, GPIO.HIGH)
-            GPIO.output(self.RELAY_FAN, GPIO.HIGH)  # Engage system circulation blower
+            GPIO.output(self.RELAY_FAN, GPIO.HIGH)
         elif target_mode == "COOLING":
-            GPIO.output(self.RELAY_HEAT, GPIO.LOW)  # Interlock Safeguard Check
+            GPIO.output(self.RELAY_HEAT, GPIO.LOW)
             time.sleep(0.05)
             GPIO.output(self.RELAY_COOL, GPIO.HIGH)
             GPIO.output(self.RELAY_FAN, GPIO.HIGH)
         else:
-            # Safe Isolation State: Instantly break all current flow lines
             GPIO.output(self.RELAY_HEAT, GPIO.LOW)
             GPIO.output(self.RELAY_COOL, GPIO.LOW)
             GPIO.output(self.RELAY_FAN, GPIO.LOW)
 
     def _process_automation_tick(self):
-        """Validates environmental bounds and manages duty-cycle constraints."""
         current_temp, humidity, lux = self._read_sensors()
         now = time.time()
 
-        # Protection Frame A: Track Active Short-Cycle Rest Constraints
         if self.is_resting:
-            if now - self.rest_start_time >= 300:  # 5 Minutes Completed (300 Seconds)
+            if now - self.rest_start_time >= 300:
                 print("[SAFETY] 5-minute compressor rest cycle elapsed. Re-arming coils.")
                 self.is_resting = False
             else:
@@ -218,9 +219,8 @@ class LivingAreaHardwareController:
                 self._publish_telemetry(current_temp, humidity, lux)
                 return
 
-        # Protection Frame B: Enforce Maximum Active Continuous Run Windows
         if self.current_hvac_state in ["HEATING", "COOLING"]:
-            if now - self.last_state_change_time >= 600:  # 10 Minutes Hit (600 Seconds)
+            if now - self.last_state_change_time >= 600:
                 print(f"[SAFETY] Max 10-minute continuous run boundary hit. Enforcing 5-minute rest.")
                 self._apply_physical_relay_state("OFF")
                 self.is_resting = True
@@ -229,21 +229,18 @@ class LivingAreaHardwareController:
                 self._publish_telemetry(current_temp, humidity, lux)
                 return
 
-        # Protection Frame C: 1°C Advance Warning Thermal Anticipation for Blinds
         if current_temp <= (self.t_min + 1.0) or current_temp >= (self.t_max - 1.0):
             if not self.blind_pre_close_sent and self.current_hvac_state == "OFF":
-                print("[ANTICIPATOR] Climate approaching activation thresholds. Issuing anticipatory blind drop.")
+                print("[ANTICIPATOR] Climate approaching thresholds. Issuing anticipatory blind drop.")
                 self.mqtt_client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": "LIVING_ZONE_ANTICIPATION"}))
                 self.blind_pre_close_sent = True
 
-        # Core Switching Logic Matrix
         next_state = "OFF"
         if current_temp < self.t_min:
             next_state = "HEATING"
         elif current_temp > self.t_max:
             next_state = "COOLING"
 
-        # Apply state changes safely if allowed
         if next_state != self.current_hvac_state and not self.is_resting:
             print(f"[AUTOMATION] Thermal transition initiated: {self.current_hvac_state} -> {next_state}")
             self._apply_physical_relay_state(next_state)
@@ -253,7 +250,6 @@ class LivingAreaHardwareController:
         self._publish_telemetry(current_temp, humidity, lux)
 
     def _publish_telemetry(self, temp: float, humidity: float, lux: float):
-        """Pushes structured data down the MQ line to update touchscreen hubs and companion nodes."""
         payload = {
             "room_name": "Living Area",
             "temperature": temp,
@@ -263,7 +259,6 @@ class LivingAreaHardwareController:
             "hvac_in_rest": self.is_resting,
             "timestamp": time.time()
         }
-        # Publish to the specific Living Area topic path to keep data cleanly segmented
         self.mqtt_client.publish("home/environment/living", json.dumps(payload), retain=True)
 
 
