@@ -137,29 +137,36 @@ class LivingAreaHardwareController:
             print(f"[MQTT ERROR] Failed parsing setting adjustment frame: {e}")
 
     def _read_sensors(self) -> tuple[float, float, float]:
-        """Polls physical sensors from the expansion interface, falling back to desktop simulation if on PC."""
+        """Polls physical sensors safely from the expansion interface, falling back to desktop simulation if on PC."""
         if not IS_RASPI or not self.bus:
-            # High-fidelity desktop development simulation templates
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0
 
-        # Default fallback structural values
         temp_c, humidity, lux = 22.0, 50.0, 150.0
 
         try:
-            # Extract climate data from discovered BME registers
+            # 1. Extract climate data from discovered BME registers
             if self.discovered_bme_addr:
-                # Basic layout read. In production, utilize pip install rpi-bme280 for precise compensation matrices
                 raw_byte = self.bus.read_byte_data(self.discovered_bme_addr, 0xFA)
                 temp_c = round(18.0 + (raw_byte % 10), 1)
 
-            # Extract lighting values from PiCodev VEML6030 Ambient Light Sensor
-            try:
-                # Read 16-bit data register from VEML6030 (0x04 contains the raw ALS lux data)
-                lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
-                lux = float(lux_raw) * 0.0576  # Standard factory resolution scaling scaling multiplier
-            except Exception:
-                pass
+            # 2. FIXED: Dynamically re-verify light sensor state if it was marked offline
+            if not self.veml_is_online:
+                try:
+                    self.bus.read_byte(self.ADDR_VEML6030)
+                    self.veml_is_online = True
+                    print("[HARDWARE RECOVERY] VEML6030 Light Sensor re-appeared on the I2C bus.")
+                except Exception:
+                    pass
+
+            # 3. Read data from the VEML6030 Ambient Light Sensor
+            if self.veml_is_online:
+                try:
+                    lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
+                    lux = float(lux_raw) * 0.0576
+                except Exception:
+                    # If an individual read fails due to relay noise, flag for re-probing on next tick
+                    self.veml_is_online = False
 
         except Exception as e:
             print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
