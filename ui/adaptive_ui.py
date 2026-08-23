@@ -21,18 +21,17 @@ class AdaptiveFlowWidget(QWidget):
         layout.addWidget(self.lbl)
 
         self.bar = QProgressBar()
-        # PyQt6 progress bars require integer bounds for mapping metrics internally
         self.bar.setRange(int(range_min), int(range_max))
         self.bar.setValue(0)
         self.bar.setFormat("%v W")
         layout.addWidget(self.bar)
 
     def update_flow_value(self, value: float, override_title=None):
-        # Cast value safely to an integer just for the visual filling progress bar positioning mechanics
-        self.bar.setValue(int(value))
+        # Clip value to bar ranges to prevent overflowing visual boundaries
+        clamped_val = max(self.bar.minimum(), min(self.bar.maximum(), int(value)))
+        self.bar.setValue(clamped_val)
         title = override_title if override_title else self.base_title
 
-        # FIXED: Render values with precise decimal placement formats on the screen labels
         if self.is_solar:
             self.lbl.setText(f"{title}: {value:.1f} W")
         else:
@@ -92,7 +91,6 @@ class AdaptiveDashboard(QWidget):
         self.soc_bar.setOrientation(Qt.Orientation.Vertical)
         self.soc_bar.setRange(0, 100)
 
-        # Pass flags to prioritize specific styling formats
         self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_min=0, range_max=10000, is_solar=True)
         self.battery_widget = AdaptiveFlowWidget("Battery Flow")
         self.grid_widget = AdaptiveFlowWidget("Grid Flow")
@@ -157,20 +155,19 @@ class AdaptiveDashboard(QWidget):
             self.temp_lbl.setText(f"Inside: {data['inside_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
 
         if self.energy_container.isVisible():
-            # Support floating point SOC values cleanly if reported
             soc_val = data.get("battery_soc", 0.0)
             self.soc_bar.setValue(int(soc_val))
 
-            # Extract live high-resolution floats safely
+            # Extract high-resolution metrics
             solar_w = float(data.get("solar_power", 0.0))
             battery_w = float(data.get("battery_flow", 0.0))
             grid_w = float(data.get("grid_flow", 0.0))
             solar_kwh = float(data.get("solar_kwh_today", 0.0))
 
-            # Render text values using fixed floating point constraints
+            # FIXED: Target the unique widget variables explicitly to fix the data stalling issue
             self.solar_widget.update_flow_value(solar_w, override_title=f"Solar ({solar_kwh:.2f} kWh)")
             self.battery_widget.update_flow_value(battery_w)
-            self.grid_widget.update_widget_draw_palette(grid_w)
+            self.grid_widget.update_flow_value(grid_w)
 
         if self.forecast_container.isVisible() and "forecast_set" in data:
             self._update_forecast_labels(data["forecast_set"])
@@ -190,6 +187,3 @@ class AdaptiveDashboard(QWidget):
             tm_min = tomorrow_data.get("expected_min")
             temp_str = f"{tm_max:.1f}°C" if tm_min is None else f"{tm_min:.1f}°C → {tm_max:.1f}°C"
             self.tomorrow_forecast_lbl.setText(f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font><br><i>{tomorrow_data.get('summary', '')}</i>")
-
-
-AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value
