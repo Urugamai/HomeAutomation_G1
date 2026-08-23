@@ -6,20 +6,13 @@ from .hvac_page import HvacConfigurationPage
 
 
 class HighResZeroCenteredBar(QWidget):
-    """
-    A custom graphical meter that dynamically paints vector bars relative to a central zero.
-    - Positive values grow RIGHT (Green)
-    - Negative values grow LEFT (Red)
-    - Features a customizable deadband buffer zone
-    """
+    """A custom graphical meter that dynamically paints vector bars relative to a central zero."""
 
     def __init__(self, range_max_kw=5.0, is_solar=False):
         super().__init__()
         self.range_max = float(range_max_kw)
         self.is_solar = is_solar
         self.current_value = 0.0
-
-        # Enforce an explicit vertical footprint matching touchscreen layout rows
         self.setMinimumHeight(24)
 
     def set_value(self, value: float):
@@ -27,50 +20,42 @@ class HighResZeroCenteredBar(QWidget):
             self.current_value = max(0.0, min(self.range_max, float(value)))
         else:
             self.current_value = max(-self.range_max, min(self.range_max, float(value)))
-        self.update()  # Triggers an immediate native repaint cycle
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 1. Draw Background Track Frame
         w = self.width()
         h = self.height()
         painter.setPen(QPen(QColor(180, 180, 180), 1))
         painter.setBrush(QBrush(QColor(240, 240, 240)))
         painter.drawRoundedRect(0, 0, w, h, 4, 4)
 
-        # 2. Calculate Vector Fill Widths
         center_x = w // 2
 
         if self.is_solar:
-            # Solar only flows positive: Fill from absolute left (0) to right (max)
             fill_width = int((self.current_value / self.range_max) * w)
-            painter.setBrush(QBrush(QColor(40, 167, 69)))  # Solid Green
+            painter.setBrush(QBrush(QColor(40, 167, 69)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRect(0, 0, fill_width, h)
         else:
-            # Bidirectional Flow Logic: Calculate scaling relative to the central origin
             pct = self.current_value / self.range_max
             fill_width = int(abs(pct) * (w / 2))
 
             if abs(self.current_value) < 0.10:
-                # Deadband buffer zone: Keep bar centered and neutral grey
                 painter.setBrush(QBrush(QColor(140, 140, 140)))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRect(center_x - 3, 0, 6, h)
             elif self.current_value > 0:
-                # Positive Power: Grow RIGHT (Green)
                 painter.setBrush(QBrush(QColor(40, 167, 69)))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRect(center_x, 0, fill_width, h)
             else:
-                # Negative Power: Grow LEFT backwards from center (Red)
                 painter.setBrush(QBrush(QColor(220, 53, 69)))
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRect(center_x - fill_width, 0, fill_width, h)
 
-            # 3. Draw a structural center indicator line pin marker
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
             painter.drawLine(center_x, 0, center_x, h)
 
@@ -91,7 +76,6 @@ class AdaptiveFlowWidget(QWidget):
         self.lbl.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         layout.addWidget(self.lbl)
 
-        # Deploy our new custom canvas rendering engine
         self.meter = HighResZeroCenteredBar(range_max_kw=range_max_kw, is_solar=is_solar)
         layout.addWidget(self.meter)
 
@@ -117,7 +101,7 @@ class AdaptiveDashboard(QWidget):
         self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.time_lbl)
 
-        # 2. Real-time Climates
+        # 2. Inside Living Area / Outside Real-time Temperatures
         self.temp_lbl = QLabel("Waiting for live telemetry...")
         self.temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.temp_lbl)
@@ -146,7 +130,6 @@ class AdaptiveDashboard(QWidget):
         energy_layout.setContentsMargins(0, 0, 0, 0)
         energy_layout.setSpacing(10)
 
-        # Heading Section: Stacked layout to output SOC: text right over its active reading
         self.soc_header_container = QWidget()
         soc_header_layout = QVBoxLayout(self.soc_header_container)
         soc_header_layout.setContentsMargins(0, 0, 0, 0)
@@ -164,16 +147,12 @@ class AdaptiveDashboard(QWidget):
         soc_header_layout.addWidget(self.soc_title_lbl)
         soc_header_layout.addWidget(self.soc_value_lbl)
 
-        # Progress Bar Configuration
         self.soc_bar = QProgressBar()
         self.soc_bar.setOrientation(Qt.Orientation.Vertical)
         self.soc_bar.setRange(0, 100)
-        self.soc_bar.setTextVisible(False)  # Hide stock percentage overlay text
-
-        # FIXED: Doubled the physical width footprint parameters to make the bar fatter
+        self.soc_bar.setTextVisible(False)
         self.soc_bar.setFixedWidth(50)
 
-        # Instantiate widgets passing true operational kW peak limits
         self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_max_kw=10.0, is_solar=True)
         self.battery_widget = AdaptiveFlowWidget("Battery Flow", range_max_kw=5.0)
         self.grid_widget = AdaptiveFlowWidget("Grid Flow", range_max_kw=5.0)
@@ -194,7 +173,6 @@ class AdaptiveDashboard(QWidget):
 
     def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
         aspect_ratio = width / height
-
         if aspect_ratio >= 2.5 or height < 250:
             self.current_profile = "BANNER_CLOCK"
             self.temp_lbl.hide()
@@ -208,7 +186,6 @@ class AdaptiveDashboard(QWidget):
             self.temp_lbl.show()
             self.forecast_container.show()
             self.energy_container.hide()
-
             self.time_lbl.setFont(QFont("Monospace", 28, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
@@ -217,7 +194,6 @@ class AdaptiveDashboard(QWidget):
             self.temp_lbl.show()
             self.forecast_container.show()
             self.energy_container.show()
-
             self.time_lbl.setFont(QFont("Monospace", 36, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 13, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
@@ -235,13 +211,12 @@ class AdaptiveDashboard(QWidget):
 
     def refresh_telemetry_ui(self, data: dict):
         if self.temp_lbl.isVisible():
-            self.temp_lbl.setText(f"Rumpus Room: {data['rumpus_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
+            # FIXED: Explicitly annotate the Main Controller location (Living Area) on the screen canvas
+            self.temp_lbl.setText(f"Living Area: {data['living_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
 
         if self.energy_container.isVisible():
             soc_val = data.get("battery_soc", 0.0)
             self.soc_bar.setValue(int(soc_val))
-
-            # FIXED: Dynamically update the new text readout box directly below the heading text line
             self.soc_value_lbl.setText(f"{soc_val:.1f}%")
 
             solar_kw = float(data.get("solar_power", 0.0))
@@ -259,13 +234,11 @@ class AdaptiveDashboard(QWidget):
     def _update_forecast_labels(self, forecast_list):
         today_data = next((x for x in forecast_list if x.get("day_index") == 0), None)
         tomorrow_data = next((x for x in forecast_list if x.get("day_index") == 1), None)
-
         if today_data:
             t_max = today_data.get("expected_max")
             t_min = today_data.get("expected_min")
             temp_str = f"{t_max:.1f}°C" if t_min is None else f"{t_min:.1f}°C → {t_max:.1f}°C"
             self.today_forecast_lbl.setText(f"<b>Today</b><br><font color='#17a2b8'>{temp_str}</font><br><i>{today_data.get('summary', '')}</i>")
-
         if tomorrow_data:
             tm_max = tomorrow_data.get("expected_max")
             tm_min = tomorrow_data.get("expected_min")

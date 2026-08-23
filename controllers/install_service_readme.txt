@@ -42,3 +42,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable ecowitt_weather.service
 sudo systemctl start ecowitt_weather.service
 
+# HVAC as LIVING ZONE
+sudo systemctl daemon-reload
+sudo systemctl enable living_zone.service
+sudo systemctl start living_zone.service
