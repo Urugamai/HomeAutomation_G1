@@ -7,15 +7,11 @@ try:
 
     PAHO_AVAILABLE = True
 except ImportError:
-    print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     PAHO_AVAILABLE = False
 
 
 class MqttTelemetryListener(QObject):
-    """
-    Unified cross-platform telemetry processor.
-    Implements a persistent weather cache to lock in valid multi-day metrics.
-    """
+    """Unified cross-platform telemetry processor capturing lux channels."""
     telemetry_received = pyqtSignal(dict)
 
     def __init__(self, broker="localhost", port=1883):
@@ -25,10 +21,11 @@ class MqttTelemetryListener(QObject):
         self.is_windows = (sys.platform == "win32")
         self.client = None
 
-        # Central tracking telemetry cache matching exactly your UI variables
         self.cached_data = {
             "living_temp": 0.0,
+            "living_lux": 0.0,  # FIXED: Added ambient room tracking cache
             "outside_temp": 0.0,
+            "outside_lux": 0.0,  # FIXED: Added outdoor tracking cache
             "battery_soc": 0.0,
             "battery_flow": 0.0,
             "grid_flow": 0.0,
@@ -36,16 +33,11 @@ class MqttTelemetryListener(QObject):
             "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
             "hvac_in_rest": False,
-            # Initial baseline forecast structure
-            "forecast_set": [
-                {"day_index": 0, "expected_min": None, "expected_max": None, "summary": "Loading..."},
-                {"day_index": 1, "expected_min": None, "expected_max": None, "summary": "Loading..."}
-            ]
+            "forecast_set": []
         }
 
     def start(self):
-        if not PAHO_AVAILABLE:
-            return
+        if not PAHO_AVAILABLE: return
 
         self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
@@ -69,70 +61,44 @@ class MqttTelemetryListener(QObject):
             self.client.loop_misc()
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
-        print(f"[MQTT SUCCESS] Connected to {self.broker}. Arming system subscriptions.")
         client.subscribe("home/environment/#")
         client.subscribe("home/power/sigen")
 
     def _on_message(self, client, userdata, msg):
         try:
             topic = msg.topic
-            payload_str = msg.payload.decode('utf-8').strip()
-
-            try:
-                data = json.loads(payload_str)
-            except json.JSONDecodeError:
-                data = payload_str
+            data = json.loads(msg.payload.decode('utf-8').strip())
 
             if topic == "home/environment/living":
-                if isinstance(data, dict):
-                    self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
-                else:
-                    self.cached_data["living_temp"] = float(data)
-            elif topic == "home/environment/rumpus":
-                if isinstance(data, dict):
-                    self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
-            elif topic in ["home/environment/outside", "home/environment/ecowitt"]:
-                if isinstance(data, dict):
-                    self.cached_data["outside_temp"] = float(data.get("temperature", 0.0))
-                else:
-                    self.cached_data["outside_temp"] = float(data)
-
+                self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
+                self.cached_data["living_lux"] = float(data.get("light_lux", 0.0))
+                self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
+                self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
+            elif topic == "home/environment/ecowitt":
+                self.cached_data["outside_temp"] = float(data.get("temperature", 0.0))
+                self.cached_data["outside_lux"] = float(data.get("light_lux", 0.0))
             elif topic == "home/environment/forecast":
-                if isinstance(data, dict) and "forecast_set" in data:
-                    # FIXED: Merge data intelligently to lock in values if they go missing
+                if "forecast_set" in data:
                     self._update_persistent_forecast_cache(data["forecast_set"])
-
             elif topic == "home/power/sigen":
-                if isinstance(data, dict):
-                    self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
-                    self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
-                    self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
-                    self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
-                    self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
+                self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
+                self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
+                self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
+                self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
+                self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
 
             self.telemetry_received.emit(self.cached_data.copy())
-        except Exception as e:
-            print(f"[PARSE ERROR] Telemetry decoding failure: {e}")
+        except Exception:
+            pass
 
     def _update_persistent_forecast_cache(self, incoming_forecasts):
-        """Processes weather entries line-by-line to prevent null values from wiping out valid records."""
         for incoming_item in incoming_forecasts:
             day_idx = incoming_item.get("day_index")
-
-            # Find the matching entry inside our master memory cache
             for cached_item in self.cached_data["forecast_set"]:
                 if cached_item["day_index"] == day_idx:
-                    # 1. Update text summaries and timestamps unconditionally
-                    if incoming_item.get("summary"):
-                        cached_item["summary"] = incoming_item["summary"]
-                    if incoming_item.get("utc_timestamp"):
-                        cached_item["utc_timestamp"] = incoming_item["utc_timestamp"]
-
-                    # 2. FIXED: Lock in temperature values. Only overwrite if the new data is not None.
-                    if incoming_item.get("expected_min") is not None:
-                        cached_item["expected_min"] = incoming_item["expected_min"]
-                    if incoming_item.get("expected_max") is not None:
-                        cached_item["expected_max"] = incoming_item["expected_max"]
+                    if incoming_item.get("summary"): cached_item["summary"] = incoming_item["summary"]
+                    if incoming_item.get("expected_min") is not None: cached_item["expected_min"] = incoming_item["expected_min"]
+                    if incoming_item.get("expected_max") is not None: cached_item["expected_max"] = incoming_item["expected_max"]
 
     def stop(self):
         if hasattr(self, 'network_timer'):

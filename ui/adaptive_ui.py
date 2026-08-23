@@ -82,7 +82,6 @@ class AdaptiveFlowWidget(QWidget):
     def update_flow_value(self, value: float, override_title=None):
         self.meter.set_value(value)
         title = override_title if override_title else self.base_title
-
         if self.is_solar:
             self.lbl.setText(f"{title}: {value:.1f} kW")
         else:
@@ -101,7 +100,7 @@ class AdaptiveDashboard(QWidget):
         self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.time_lbl)
 
-        # 2. Inside Living Area / Outside Real-time Temperatures
+        # 2. Main Ambient Climates & Light Readouts Panel
         self.temp_lbl = QLabel("Waiting for live telemetry...")
         self.temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.temp_lbl)
@@ -211,7 +210,15 @@ class AdaptiveDashboard(QWidget):
 
     def refresh_telemetry_ui(self, data: dict):
         if self.temp_lbl.isVisible():
-            self.temp_lbl.setText(f"Living Area: {data['living_temp']:.1f}°C  |  Outside: {data['outside_temp']:.1f}°C")
+            # FIXED: Render high-resolution Lux light parameters directly alongside room temperatures
+            l_temp = data.get("living_temp", 0.0)
+            l_lux = data.get("living_lux", 0.0)
+            o_temp = data.get("outside_temp", 0.0)
+            o_lux = data.get("outside_lux", 0.0)
+            self.temp_lbl.setText(
+                f"Living Area: {l_temp:.1f}°C ({int(l_lux)} lx)  |  "
+                f"Outside: {o_temp:.1f}°C ({int(o_lux)} lx)"
+            )
 
         if self.energy_container.isVisible():
             soc_val = data.get("battery_soc", 0.0)
@@ -231,15 +238,12 @@ class AdaptiveDashboard(QWidget):
             self._update_forecast_labels(data["forecast_set"])
 
     def _update_forecast_labels(self, forecast_list):
-        """Helper matrix that safely reformats text blocks, checking for None values."""
         today_data = next((x for x in forecast_list if x.get("day_index") == 0), None)
         tomorrow_data = next((x for x in forecast_list if x.get("day_index") == 1), None)
 
-        # FIXED: Handles formatting safely if Today's or Tomorrow's min/max are None
         if today_data:
             t_max = today_data.get("expected_max")
             t_min = today_data.get("expected_min")
-
             if t_max is None and t_min is None:
                 temp_str = "--°C"
             elif t_min is None:
@@ -248,13 +252,11 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{t_min:.1f}°C"
             else:
                 temp_str = f"{t_min:.1f}°C → {t_max:.1f}°C"
-
             self.today_forecast_lbl.setText(f"<b>Today</b><br><font color='#17a2b8'>{temp_str}</font><br><i>{today_data.get('summary', '')}</i>")
 
         if tomorrow_data:
             tm_max = tomorrow_data.get("expected_max")
             tm_min = tomorrow_data.get("expected_min")
-
             if tm_max is None and tm_min is None:
                 temp_str = "--°C"
             elif tm_min is None:
@@ -263,7 +265,6 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{tm_min:.1f}°C"
             else:
                 temp_str = f"{tm_min:.1f}°C → {tm_max:.1f}°C"
-
             self.tomorrow_forecast_lbl.setText(f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font><br><i>{tomorrow_data.get('summary', '')}</i>")
 
 

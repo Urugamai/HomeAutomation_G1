@@ -4,22 +4,24 @@ import json
 import configparser
 from pathlib import Path
 
-# Safe, operating-system aware imports to prevent crashes on your Windows 11 PC workspace
 try:
     import RPi.GPIO as GPIO
     import smbus2
+    # Load official compiled Bosch calibration matrix engine
+    import bme280
 
     IS_RASPI = True
 except ImportError:
     GPIO = None
     smbus2 = None
+    bme280 = None
     IS_RASPI = False
 
 
 class LivingAreaHardwareController:
     """
     Core automation engine driving Living Area physical hardware.
-    Natively wakes up PiCodev modules and commands Waveshare relays.
+    Natively calibrates Bosch BME280 metrics and reads VEML6030 modules.
     """
     RELAY_HEAT = 26
     RELAY_COOL = 20
@@ -45,6 +47,7 @@ class LivingAreaHardwareController:
 
         self.bus = None
         self.discovered_bme_addr = None
+        self.bme_calibration_params = None
         self.veml_is_online = False
 
         self._initialize_hardware()
@@ -67,41 +70,35 @@ class LivingAreaHardwareController:
             return
 
         try:
-            # 1. Configure Waveshare Relay Board Outputs
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
             for pin in [self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN]:
                 GPIO.setup(pin, GPIO.OUT)
                 GPIO.output(pin, GPIO.LOW)
 
-            # 2. Bind PiCodev I2C Expansion Stream
             self.bus = smbus2.SMBus(self.I2C_BUS_ID)
 
-            # Probe BME Addresses
+            # Probe and load calibrated factory EEPROM params for Bosch chips
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
                 try:
                     self.bus.read_byte(addr)
                     self.discovered_bme_addr = addr
-                    print(f"[I2C SUCCESS] Auto-detected BME Sensor at hex address: {hex(addr)}")
+                    # Download internal chip compensation matrices natively
+                    self.bme_calibration_params = bme280.load_calibration_data(self.bus, addr)
+                    print(f"[I2C SUCCESS] Auto-detected and calibrated Bosch BME at: {hex(addr)}")
                     break
                 except Exception:
                     continue
 
-            # Wake up the VEML6030 Ambient Light Sensor
             try:
                 self.bus.read_byte(self.ADDR_VEML6030)
-                # Send 16-bit configuration word: Power On (0x0000) to Configuration Register (0x00)
-                # This breaks the chip out of its factory shutdown mode state
                 self.bus.write_word_data(self.ADDR_VEML6030, 0x00, 0x0000)
-                time.sleep(0.01)  # Hold for a fast 10ms settling frame delay
+                time.sleep(0.01)
                 self.veml_is_online = True
                 print("[I2C SUCCESS] Auto-detected and initialized VEML6030 Light Sensor at hex address: 0x10")
             except Exception as e:
                 print(f"[I2C WARN] VEML6030 failed handshake initialization: {e}")
                 self.veml_is_online = False
-
-            if not self.discovered_bme_addr:
-                print("[I2C WARN] No BME climate sensor acknowledged the bus handshake probe.")
 
         except Exception as e:
             print(f"[HARDWARE CRITICAL] Failed initializing Pi interaction lines: {e}")
@@ -145,20 +142,20 @@ class LivingAreaHardwareController:
             print(f"[MQTT ERROR] Failed parsing setting adjustment frame: {e}")
 
     def _read_sensors(self) -> tuple[float, float, float]:
-        """Polls physical sensors safely from the expansion interface, falling back to simulation if on PC."""
+        """Polls physical sensors safely using factory calibration polynomials."""
         if not IS_RASPI or not self.bus:
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0
 
-        temp_c, humidity, lux = 22.0, 50.0, 150.0
+        temp_c, humidity, lux = 22.0, 50.0, 0.0
 
         try:
-            # 1. Extract climate data from discovered BME registers
-            if self.discovered_bme_addr:
-                raw_byte = self.bus.read_byte_data(self.discovered_bme_addr, 0xFA)
-                temp_c = round(18.0 + (raw_byte % 10), 1)
+            # FIXED: Execute native double-precision compensation calculations
+            if self.discovered_bme_addr and self.bme_calibration_params:
+                bme_data = bme280.sample(self.bus, self.discovered_bme_addr, self.bme_calibration_params)
+                temp_c = round(bme_data.temperature, 1)
+                humidity = round(bme_data.humidity, 1)
 
-            # 2. Dynamic recovery loop for the light tracker
             if not self.veml_is_online:
                 try:
                     self.bus.read_byte(self.ADDR_VEML6030)
@@ -167,12 +164,9 @@ class LivingAreaHardwareController:
                 except Exception:
                     pass
 
-            # 3. Extract high-resolution lighting values from register 0x04 cleanly
             if self.veml_is_online:
                 try:
-                    # Read the 16-bit word dataset directly from register 0x04
                     lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
-                    # Convert raw bytes to standard international lux lighting metrics
                     lux = float(lux_raw) * 0.0576
                 except Exception:
                     self.veml_is_online = False
