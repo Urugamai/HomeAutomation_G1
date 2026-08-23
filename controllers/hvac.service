@@ -6,8 +6,8 @@ Requires=mosquitto.service
 [Service]
 Type=simple
 # Adjust this file path to match exactly where your script is stored on the Pi
-WorkingDirectory=/home/pi/raspi_home_automation
-ExecStart=/usr/bin/python3 /home/pi/raspi_home_automation/hvac_daemon.py
+WorkingDirectory=/home/markw/raspi_home_automation
+ExecStart=/usr/bin/python3 /home/markw/raspi_home_automation/hvac_daemon.py
 Restart=always
 RestartSec=5
 User=pi
