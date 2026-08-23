@@ -14,7 +14,7 @@ except ImportError:
 class MqttTelemetryListener(QObject):
     """
     Unified cross-platform telemetry processor.
-    Streams directly from live network broker feeds on both Windows 11 and Linux.
+    Maps high-resolution floats cleanly onto matching layout data keys.
     """
     telemetry_received = pyqtSignal(dict)
 
@@ -25,13 +25,15 @@ class MqttTelemetryListener(QObject):
         self.is_windows = (sys.platform == "win32")
         self.client = None
 
-        # Central tracking telemetry cache
+        # Central tracking telemetry cache matching exactly your UI variables
         self.cached_data = {
             "inside_temp": 0.0,
             "outside_temp": 0.0,
-            "battery_soc": 0,
-            "battery_flow": 0,
-            "grid_flow": 0,
+            "battery_soc": 0.0,
+            "battery_flow": 0.0,
+            "grid_flow": 0.0,
+            "solar_power": 0.0,  # FIXED: Key named precisely to match daemon payload
+            "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
             "hvac_in_rest": False,
             "forecast_set": []
@@ -48,13 +50,9 @@ class MqttTelemetryListener(QObject):
 
         try:
             print(f"[MQTT CONNECTING] Establishing link to network broker at {self.broker}:{self.port}...")
-            # 1. Initialize the asynchronous connection parameters
             self.client.connect_async(self.broker, self.port, keepalive=60)
+            self.client.loop_start()
 
-            # 2. ADD THIS CRITICAL LINE TO CLEAR THE HANDSHAKE LOCKOUT:
-            self.client.loop_start()  # <--- ARMS THE PAHO CLIENT CORES FOR RECEPTION
-
-            # 3. Maintain the native GUI servicing timer loop to process incoming packets safely
             self.network_timer = QTimer(self)
             self.network_timer.timeout.connect(self._service_mqtt_io)
             self.network_timer.start(50)
@@ -63,7 +61,6 @@ class MqttTelemetryListener(QObject):
             print(f"[MQTT EXCEPTION] Initialization failed: {e}")
 
     def _service_mqtt_io(self):
-        """Asynchronously triggers socket processing hooks on the main thread."""
         if self.client:
             self.client.loop_read()
             self.client.loop_write()
@@ -71,7 +68,6 @@ class MqttTelemetryListener(QObject):
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         print(f"[MQTT SUCCESS] Connected to {self.broker}. Arming system subscriptions.")
-        # Subscribe to all environment telemetry, weather forecasts, and power feeds
         client.subscribe("home/environment/#")
         client.subscribe("home/power/sigen")
 
@@ -89,11 +85,13 @@ class MqttTelemetryListener(QObject):
             elif topic == "home/environment/forecast":
                 self.cached_data["forecast_set"] = data.get("forecast_set", [])
             elif topic == "home/power/sigen":
-                self.cached_data["battery_soc"] = int(data.get("battery_soc", 0))
-                self.cached_data["battery_flow"] = int(data.get("battery_flow", 0))
-                self.cached_data["grid_flow"] = int(data.get("grid_flow", 0))
+                # FIXED: Extracted matching daemon keys with perfect naming preservation
+                self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
+                self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
+                self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
+                self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
+                self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
 
-            # Broadcast the clean dictionary update straight to layout widgets
             self.telemetry_received.emit(self.cached_data.copy())
         except Exception as e:
             print(f"[PARSE ERROR] Telemetry decoding failure: {e}")

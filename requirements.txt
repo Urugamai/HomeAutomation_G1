@@ -3,3 +3,5 @@ paho-mqtt
 pymodbus
 aiohttp
 pycryptodome
+
+pyqt6-sip

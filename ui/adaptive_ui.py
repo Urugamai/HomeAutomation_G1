@@ -1,50 +1,108 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
-from PyQt6.QtCore import QTimer, QTime, QDate, Qt
-from PyQt6.QtGui import QFont, QColor, QPalette
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
+from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
 
 from .hvac_page import HvacConfigurationPage
 
 
-class AdaptiveFlowWidget(QWidget):
-    """Renders progress flow bar layouts with float precision text metrics."""
+class HighResZeroCenteredBar(QWidget):
+    """
+    A custom graphical meter that dynamically paints vector bars relative to a central zero.
+    - Positive values grow RIGHT (Green)
+    - Negative values grow LEFT (Red)
+    - Features a customizable deadband buffer zone
+    """
 
-    def __init__(self, label_text: str, range_min=-5000, range_max=5000, is_solar=False):
+    def __init__(self, range_max_kw=5.0, is_solar=False):
+        super().__init__()
+        self.range_max = float(range_max_kw)
+        self.is_solar = is_solar
+        self.current_value = 0.0
+
+        # Enforce an explicit vertical footprint matching touchscreen layout rows
+        self.setMinimumHeight(24)
+
+    def set_value(self, value: float):
+        if self.is_solar:
+            self.current_value = max(0.0, min(self.range_max, float(value)))
+        else:
+            self.current_value = max(-self.range_max, min(self.range_max, float(value)))
+        self.update()  # Triggers an immediate native repaint cycle
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 1. Draw Background Track Frame
+        w = self.width()
+        h = self.height()
+        painter.setPen(QPen(QColor(180, 180, 180), 1))
+        painter.setBrush(QBrush(QColor(240, 240, 240)))
+        painter.drawRoundedRect(0, 0, w, h, 4, 4)
+
+        # 2. Calculate Vector Fill Widths
+        center_x = w // 2
+
+        if self.is_solar:
+            # Solar only flows positive: Fill from absolute left (0) to right (max)
+            fill_width = int((self.current_value / self.range_max) * w)
+            painter.setBrush(QBrush(QColor(40, 167, 69)))  # Solid Green
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(0, 0, fill_width, h)
+        else:
+            # Bidirectional Flow Logic: Calculate scaling relative to the central origin
+            pct = self.current_value / self.range_max
+            fill_width = int(abs(pct) * (w / 2))
+
+            if abs(self.current_value) < 0.10:
+                # Deadband buffer zone: Keep bar centered and neutral grey
+                painter.setBrush(QBrush(QColor(140, 140, 140)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(center_x - 3, 0, 6, h)
+            elif self.current_value > 0:
+                # Positive Power: Grow RIGHT (Green)
+                painter.setBrush(QBrush(QColor(40, 167, 69)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(center_x, 0, fill_width, h)
+            else:
+                # Negative Power: Grow LEFT backwards from center (Red)
+                painter.setBrush(QBrush(QColor(220, 53, 69)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(center_x - fill_width, 0, fill_width, h)
+
+            # 3. Draw a structural center indicator line pin marker
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(center_x, 0, center_x, h)
+
+
+class AdaptiveFlowWidget(QWidget):
+    """Wrapper component coupling text status titles to custom vector graphics."""
+
+    def __init__(self, label_text: str, range_max_kw=5.0, is_solar=False):
         super().__init__()
         self.base_title = label_text
         self.is_solar = is_solar
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(4)
 
-        self.lbl = QLabel(f"{self.base_title}: -- W")
+        self.lbl = QLabel(f"{self.base_title}: -- kW")
         self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         layout.addWidget(self.lbl)
 
-        self.bar = QProgressBar()
-        self.bar.setRange(int(range_min), int(range_max))
-        self.bar.setValue(0)
-        self.bar.setFormat("%v W")
-        layout.addWidget(self.bar)
+        # Deploy our new custom canvas rendering engine
+        self.meter = HighResZeroCenteredBar(range_max_kw=range_max_kw, is_solar=is_solar)
+        layout.addWidget(self.meter)
 
     def update_flow_value(self, value: float, override_title=None):
-        # Clip value to bar ranges to prevent overflowing visual boundaries
-        clamped_val = max(self.bar.minimum(), min(self.bar.maximum(), int(value)))
-        self.bar.setValue(clamped_val)
+        self.meter.set_value(value)
         title = override_title if override_title else self.base_title
 
         if self.is_solar:
-            self.lbl.setText(f"{title}: {value:.1f} W")
+            self.lbl.setText(f"{title}: {value:.1f} kW")
         else:
-            self.lbl.setText(f"{title}: {value:.2f} W")
-
-        palette = self.bar.palette()
-        if value < -10.0:  # Exporting / Draining (Red)
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(220, 50, 50))
-        elif value > 10.0:  # Ingestion / Charging (Green)
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(50, 200, 50))
-        else:  # Safe Deadband (Grey)
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(130, 130, 130))
-        self.bar.setPalette(palette)
+            self.lbl.setText(f"{title}: {value:.2f} kW")
 
 
 class AdaptiveDashboard(QWidget):
@@ -59,12 +117,12 @@ class AdaptiveDashboard(QWidget):
         self.time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.time_lbl)
 
-        # 2. Inside / Outside Real-time Temperatures
+        # 2. Real-time Climates
         self.temp_lbl = QLabel("Waiting for live telemetry...")
         self.temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.temp_lbl)
 
-        # 3. Dynamic Multi-Day Weather Forecast Matrix
+        # 3. Weather Forecast Matrix
         self.forecast_container = QWidget()
         self.forecast_layout = QHBoxLayout(self.forecast_container)
         self.forecast_layout.setContentsMargins(0, 4, 0, 4)
@@ -82,18 +140,20 @@ class AdaptiveDashboard(QWidget):
         self.forecast_layout.addWidget(self.tomorrow_forecast_lbl)
         self.main_layout.addWidget(self.forecast_container)
 
-        # 4. Energy Panel
+        # 4. Energy Metrics Grid Panel
         self.energy_container = QWidget()
         energy_layout = QHBoxLayout(self.energy_container)
         energy_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.soc_bar = QProgressBar()
+        from PyQt6.QtWidgets import QProgressBar as QB
+        self.soc_bar = QB()
         self.soc_bar.setOrientation(Qt.Orientation.Vertical)
         self.soc_bar.setRange(0, 100)
 
-        self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_min=0, range_max=10000, is_solar=True)
-        self.battery_widget = AdaptiveFlowWidget("Battery Flow")
-        self.grid_widget = AdaptiveFlowWidget("Grid Flow")
+        # Instantiate widgets passing true operational kW peak limits
+        self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_max_kw=10.0, is_solar=True)
+        self.battery_widget = AdaptiveFlowWidget("Battery Flow", range_max_kw=5.0)
+        self.grid_widget = AdaptiveFlowWidget("Grid Flow", range_max_kw=5.0)
 
         energy_layout.addWidget(QLabel("SOC:"))
         energy_layout.addWidget(self.soc_bar)
@@ -158,16 +218,14 @@ class AdaptiveDashboard(QWidget):
             soc_val = data.get("battery_soc", 0.0)
             self.soc_bar.setValue(int(soc_val))
 
-            # Extract high-resolution metrics
-            solar_w = float(data.get("solar_power", 0.0))
-            battery_w = float(data.get("battery_flow", 0.0))
-            grid_w = float(data.get("grid_flow", 0.0))
+            solar_kw = float(data.get("solar_power", 0.0))
+            battery_kw = float(data.get("battery_flow", 0.0))
+            grid_kw = float(data.get("grid_flow", 0.0))
             solar_kwh = float(data.get("solar_kwh_today", 0.0))
 
-            # FIXED: Target the unique widget variables explicitly to fix the data stalling issue
-            self.solar_widget.update_flow_value(solar_w, override_title=f"Solar ({solar_kwh:.2f} kWh)")
-            self.battery_widget.update_flow_value(battery_w)
-            self.grid_widget.update_flow_value(grid_w)
+            self.solar_widget.update_flow_value(solar_kw, override_title=f"Solar ({solar_kwh:.2f} kWh)")
+            self.battery_widget.update_flow_value(battery_kw)
+            self.grid_widget.update_flow_value(grid_kw)
 
         if self.forecast_container.isVisible() and "forecast_set" in data:
             self._update_forecast_labels(data["forecast_set"])
@@ -187,3 +245,6 @@ class AdaptiveDashboard(QWidget):
             tm_min = tomorrow_data.get("expected_min")
             temp_str = f"{tm_max:.1f}°C" if tm_min is None else f"{tm_min:.1f}°C → {tm_max:.1f}°C"
             self.tomorrow_forecast_lbl.setText(f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font><br><i>{tomorrow_data.get('summary', '')}</i>")
+
+
+AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value
