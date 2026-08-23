@@ -77,30 +77,53 @@ class MqttTelemetryListener(QObject):
     def _on_message(self, client, userdata, msg):
         try:
             topic = msg.topic
-            data = json.loads(msg.payload.decode('utf-8'))
+            payload_str = msg.payload.decode('utf-8').strip()
 
-            # FIXED: Handle unique room path message extractions cleanly
-            if topic == "home/environment/rumpus":
-                self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
-            elif topic == "home/environment/inside":
-                # Fallback support for generic heating loop daemons
-                self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
-                self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
-                self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
+            # 1. Attempt to parse as a structured JSON payload first
+            try:
+                data = json.loads(payload_str)
+            except json.JSONDecodeError:
+                # Fallback: Handle single raw text numbers published directly to a sub-topic
+                data = payload_str
+
+            # 2. Extract and route metrics based on incoming topic destinations
+            if topic == "home/environment/living" or topic == "SigEnergy/Home/living_temp":
+                if isinstance(data, dict):
+                    # Extracted from our structured environment_daemon dictionary
+                    self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
+                else:
+                    # Extracted from a raw fallback string payload
+                    self.cached_data["living_temp"] = float(data)
+
+            elif topic == "home/environment/rumpus":
+                if isinstance(data, dict):
+                    self.cached_data["rumpus_temp"] = float(data.get("temperature", 0.0))
+                else:
+                    self.cached_data["rumpus_temp"] = float(data)
+
             elif topic in ["home/environment/outside", "home/environment/ecowitt"]:
-                self.cached_data["outside_temp"] = float(data.get("temperature", 0.0))
-            elif topic == "home/environment/forecast":
-                self.cached_data["forecast_set"] = data.get("forecast_set", [])
-            elif topic == "home/power/sigen":
-                self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
-                self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
-                self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
-                self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
-                self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
+                if isinstance(data, dict):
+                    self.cached_data["outside_temp"] = float(data.get("temperature", 0.0))
+                else:
+                    self.cached_data["outside_temp"] = float(data)
 
+            elif topic == "home/environment/forecast":
+                if isinstance(data, dict):
+                    self.cached_data["forecast_set"] = data.get("forecast_set", [])
+
+            elif topic == "home/power/sigen":
+                if isinstance(data, dict):
+                    self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
+                    self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
+                    self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
+                    self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
+                    self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
+
+            # Push the updated data dictionary out to your UI screen components
             self.telemetry_received.emit(self.cached_data.copy())
+
         except Exception as e:
-            print(f"[PARSE ERROR] Telemetry decoding failure: {e}")
+            print(f"[PARSE ERROR] Telemetry decoding failure on topic {msg.topic}: {e}")
 
     def stop(self):
         if hasattr(self, 'network_timer'):
