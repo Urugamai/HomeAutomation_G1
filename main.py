@@ -1,6 +1,8 @@
 import sys
 import os
+import time
 import configparser
+import traceback
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QStatusBar
 
@@ -88,10 +90,34 @@ def main():
         except Exception:
             pass
 
-    app = QApplication(sys.argv)
-    window = MainWindow(broker_ip=broker_ip)
-    window.show()
-    sys.exit(app.exec())
+    max_restart_attempts = 10
+    restart_count = 0
+    restart_delay = 5  # seconds
+
+    while restart_count < max_restart_attempts:
+        try:
+            app = QApplication(sys.argv)
+            window = MainWindow(broker_ip=broker_ip)
+            window.show()
+            
+            # If exec() returns normally, exit without restart
+            result = app.exec()
+            sys.exit(result)
+            
+        except Exception as e:
+            restart_count += 1
+            error_msg = f"UI crashed (attempt {restart_count}/{max_restart_attempts}): {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            print(f"[TRACEBACK] {traceback.format_exc()}")
+            
+            if restart_count < max_restart_attempts:
+                print(f"[RESTART] Attempting to restart UI in {restart_delay} seconds...")
+                time.sleep(restart_delay)
+                # Increase delay with each restart to prevent rapid crash loops
+                restart_delay = min(restart_delay * 2, 60)
+            else:
+                print(f"[FATAL] Max restart attempts reached. Exiting.")
+                sys.exit(1)
 
 
 if __name__ == "__main__":
