@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/markw/HomeAutomation_G1
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/markw/HomeAutomation_G1
 ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/controllers/cbus_daemon.py
 Restart=always
 RestartSec=15

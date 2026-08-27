@@ -381,8 +381,7 @@ class CBUSDeviceManager:
             
             # Update device state if message matches a registered device
             for name, device in self.devices.items():
-                if (message["application"] == device.application and 
-                    message["group"] == device.group):
+                if (message["application"] == device.application and message["group"] == device.group):
                     device.current_state = message.get("value", message["command"])
                     device.last_update = time.time()
         
