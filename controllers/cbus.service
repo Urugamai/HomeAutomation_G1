@@ -4,14 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-# Adjust this file path to match exactly where your script is stored on the Pi
-WorkingDirectory=/home/markw/raspi_home_automation
+WorkingDirectory=/home/markw/HomeAutomation_G1
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/markw/raspi_home_automation/cbus_daemon.py
+ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/controllers/cbus_daemon.py
 Restart=always
-RestartSec=5
+RestartSec=15
 User=markw
-# Redirect stdout/stderr directly into your system logging engine
 StandardOutput=journal
 StandardError=journal
 
