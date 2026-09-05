@@ -5,14 +5,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
-# Safe, conditional hardware imports that won't crash Windows
-try:
-    if sys.platform != "win32":
-        import serial
-    else:
-        serial = None
-except ImportError:
-    serial = None
+# Import our new protocol parser engine
+from hardware.cbus_protocol import CBusProtocolEngine
 
 
 @dataclass
@@ -27,362 +21,185 @@ class CBUSDevice:
 
 class CBUSInterface(ABC):
     """Abstract base class for CBUS communication interfaces."""
-    
-    @abstractmethod
-    def connect(self) -> bool:
-        pass
-    
-    @abstractmethod
-    def disconnect(self) -> None:
-        pass
-    
-    @abstractmethod
-    def send_command(self, application: int, group: int, command: str, value: Any) -> bool:
-        pass
-    
-    @abstractmethod
-    def receive_message(self) -> Optional[Dict[str, Any]]:
-        pass
 
+    @abstractmethod
+    def connect(self) -> bool: pass
 
-class SerialCBUSInterface(CBUSInterface):
-    """
-    Serial interface for CBUS communication via CGate or PCI interface.
-    Supports both physical serial connections and USB-to-serial adapters.
-    """
-    
-    def __init__(self, port: str = "/dev/ttyUSB0", baudrate: int = 9600, timeout: float = 1.0):
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.serial_connection = None
-        self.is_windows = (sys.platform == "win32")
-        self.connected = False
-        
-    def connect(self) -> bool:
-        """Establish serial connection to CBUS interface."""
-        if self.is_windows:
-            print("[INFO] Windows detected. Initializing CBUS simulation mode.")
-            self.connected = True
-            return True
-        
-        if not serial:
-            print("[ERROR] pyserial library not available. Install with: pip install pyserial")
-            return False
-        
-        try:
-            self.serial_connection = serial.Serial(
-                port=self.port,
-                baudrate=self.baudrate,
-                timeout=self.timeout,
-                bytesize=serial.EIGHTBITS,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE
-            )
-            self.serial_connection.reset_input_buffer()
-            self.serial_connection.reset_output_buffer()
-            self.connected = True
-            print(f"[INFO] CBUS serial connection established on {self.port}")
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to connect to CBUS interface: {e}")
-            self.connected = False
-            return False
-    
-    def disconnect(self) -> None:
-        """Close serial connection."""
-        if self.serial_connection and self.serial_connection.is_open:
-            self.serial_connection.close()
-            print("[INFO] CBUS serial connection closed")
-        self.connected = False
-    
-    def send_command(self, application: int, group: int, command: str, value: Any) -> bool:
-        """
-        Send a command to a CBUS device.
-        
-        Args:
-            application: CBUS application ID (e.g., 56 for lighting)
-            group: CBUS group address
-            command: Command type (e.g., 'ON', 'OFF', 'LEVEL')
-            value: Command value (e.g., brightness level 0-255)
-        """
-        if not self.connected:
-            return False
-        
-        if self.is_windows:
-            print(f"[SIMULATION] CBUS Command: App={application}, Group={group}, Cmd={command}, Value={value}")
-            return True
-        
-        try:
-            # CBUS SAL (Serial Application Language) packet structure
-            # Format: /<application>/<group>/<command>/<value>!
-            packet = f"/{application}/{group}/{command}/{value}!\r\n"
-            
-            if self.serial_connection and self.serial_connection.is_open:
-                self.serial_connection.write(packet.encode('ascii'))
-                self.serial_connection.flush()
-                return True
-            return False
-        except Exception as e:
-            print(f"[ERROR] Failed to send CBUS command: {e}")
-            return False
-    
-    def receive_message(self) -> Optional[Dict[str, Any]]:
-        """
-        Receive and parse a message from CBUS interface.
-        
-        Returns:
-            Dictionary with parsed message data or None if no message available
-        """
-        if not self.connected:
-            return None
-        
-        if self.is_windows:
-            # Simulate random CBUS messages for testing
-            import random
-            if random.random() < 0.1:  # 10% chance of message
-                return {
-                    "application": random.choice([56, 36, 80]),
-                    "group": random.randint(1, 255),
-                    "command": random.choice(["ON", "OFF", "LEVEL"]),
-                    "value": random.randint(0, 255) if random.random() > 0.5 else None,
-                    "timestamp": time.time()
-                }
-            return None
-        
-        try:
-            if self.serial_connection and self.serial_connection.is_open:
-                if self.serial_connection.in_waiting > 0:
-                    raw_data = self.serial_connection.readline().decode('ascii', errors='ignore').strip()
-                    if raw_data:
-                        return self._parse_cbus_message(raw_data)
-        except Exception as e:
-            print(f"[ERROR] Failed to receive CBUS message: {e}")
-        
-        return None
-    
-    def _parse_cbus_message(self, raw_message: str) -> Optional[Dict[str, Any]]:
-        """Parse raw CBUS SAL message into structured data."""
-        try:
-            # Parse SAL format: /<application>/<group>/<command>/<value>!
-            if raw_message.startswith('/') and raw_message.endswith('!'):
-                parts = raw_message[1:-1].split('/')
-                if len(parts) >= 3:
-                    message = {
-                        "application": int(parts[0]),
-                        "group": int(parts[1]),
-                        "command": parts[2],
-                        "value": int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None,
-                        "timestamp": time.time()
-                    }
-                    return message
-        except Exception as e:
-            print(f"[ERROR] Failed to parse CBUS message: {e}")
-        
-        return None
+    @abstractmethod
+    def disconnect(self) -> None: pass
+
+    @abstractmethod
+    def send_command(self, application: int, group: int, command: str, value: Any) -> bool: pass
+
+    @abstractmethod
+    def receive_message(self) -> Optional[Any]: pass
 
 
 class NetworkCBUSInterface(CBUSInterface):
-    """
-    Network interface for CBUS communication via ser2net TCP bridge.
-    Connects to a ser2net server that exposes CBUS serial port over TCP.
-    """
-    
+    """Network interface for CBUS communication via ser2net TCP bridge."""
+
     def __init__(self, host: str = "192.168.2.2", port: int = 2000, timeout: float = 1.0):
         self.host = host
         self.port = port
         self.timeout = timeout
         self.socket_connection = None
         self.connected = False
-        
+        self.prefix_index = 2
+        self.prefixes = ["\\", "/", "<"]
+
     def connect(self) -> bool:
-        """Establish TCP connection to ser2net server."""
+        """Connects and transmits the required 5500PC Smart Interface Mode handshakes."""
         try:
             self.socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket_connection.settimeout(self.timeout)
             self.socket_connection.connect((self.host, self.port))
             self.connected = True
-            print(f"[INFO] CBUS network connection established to {self.host}:{self.port}")
+            print(f"[INFO] Connected to C-Bus 5500PC Text-Hex Gateway at {self.host}:{self.port}")
+
+            print("[PCI HANDSHAKE] Activating Smart Interface firmware modes...")
+            self.socket_connection.sendall(b"~~~\r\n")
+            time.sleep(0.15)
+            self.socket_connection.sendall(b"A30001\r\n")  # Force Connect Mode ON
+            time.sleep(0.15)
+            self.socket_connection.sendall(b"A30301\r\n")  # Force Monitor Mode ON
+            time.sleep(0.15)
+
+            try:
+                self.socket_connection.setblocking(False)
+                self.socket_connection.recv(2048)
+            except Exception:
+                pass
+            self.socket_connection.setblocking(True)
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to connect to CBUS ser2net server: {e}")
+            print(f"[ERROR] Failed connecting to 5500PC interface: {e}")
             self.connected = False
             return False
-    
+
     def disconnect(self) -> None:
-        """Close TCP connection."""
+        self.connected = False
         if self.socket_connection:
             try:
                 self.socket_connection.close()
-                print("[INFO] CBUS network connection closed")
-            except Exception as e:
-                print(f"[ERROR] Failed to close CBUS network connection: {e}")
-        self.connected = False
-    
+            except Exception:
+                pass
+
     def send_command(self, application: int, group: int, command: str, value: Any) -> bool:
-        """
-        Send a command to a CBUS device via TCP.
-        
-        Args:
-            application: CBUS application ID (e.g., 56 for lighting)
-            group: CBUS group address
-            command: Command type (e.g., 'ON', 'OFF', 'LEVEL')
-            value: Command value (e.g., brightness level 0-255)
-        """
-        if not self.connected or not self.socket_connection:
-            return False
-        
+        if not self.connected or not self.socket_connection: return False
         try:
-            # CBUS SAL (Serial Application Language) packet structure
-            # Format: /<application>/<group>/<command>/<value>!
-            packet = f"/{application}/{group}/{command}/{value}!\r\n"
-            
+            cmd_hex = "01" if command == "OFF" else "79"
+            if command not in ["ON", "OFF"]:
+                cmd_hex = f"{int(value):02X}" if value is not None else "FF"
+
+            base_payload = f"0500{application:02X}00{cmd_hex}{group:02X}"
+            lrc_checksum = CBusProtocolEngine.calculate_lrc(base_payload)
+            packet = f"\\{base_payload}{lrc_checksum}\r\n"
             self.socket_connection.sendall(packet.encode('ascii'))
             return True
         except Exception as e:
-            print(f"[ERROR] Failed to send CBUS command via TCP: {e}")
-            self.connected = False
+            print(f"[ERROR] Failed sending ASCII hex command frame: {e}")
             return False
-    
-    def receive_message(self) -> Optional[Dict[str, Any]]:
-        """
-        Receive and parse a message from CBUS interface via TCP.
-        
-        Returns:
-            Dictionary with parsed message data or None if no message available
-        """
-        if not self.connected or not self.socket_connection:
-            return None
-        
+
+    def send_query(self, application: int, group: int) -> bool:
+        if not self.connected or not self.socket_connection: return False
         try:
-            # Set socket to non-blocking for peek check
+            base_payload = f"0500{application:02X}0001{group:02X}"
+            lrc_checksum = CBusProtocolEngine.calculate_lrc(base_payload)
+            packet = f"\\{base_payload}{lrc_checksum}\r\n"
+            self.socket_connection.sendall(packet.encode('ascii'))
+            return True
+        except Exception: return False
+
+    def send_bulk_sync(self, application: int) -> bool:
+        if not self.connected or not self.socket_connection: return False
+        try:
+            base_payload = f"0500{application:02X}000100"
+            lrc_checksum = CBusProtocolEngine.calculate_lrc(base_payload)
+            packet = f"\\{base_payload}{lrc_checksum}\r\n"
+            print(f"[PCI BULK SYNC SEND] Requesting network snapshot: {repr(packet)}")
+            self.socket_connection.sendall(packet.encode('ascii'))
+            return True
+        except Exception: return False
+
+    def receive_message(self) -> Optional[List[Dict[str, Any]]]:
+        if not self.connected or not self.socket_connection: return None
+        try:
             self.socket_connection.setblocking(False)
             try:
-                data = self.socket_connection.recv(1024)
+                data = self.socket_connection.recv(4096)
                 if data:
-                    raw_message = data.decode('ascii', errors='ignore').strip()
-                    if raw_message:
-                        return self._parse_cbus_message(raw_message)
+                    raw_stream = data.decode('ascii', errors='ignore')
+                    return CBusProtocolEngine.parse_text_stream(raw_stream, self.prefixes)
             except BlockingIOError:
-                # No data available
                 pass
             finally:
-                # Restore blocking mode with timeout
                 self.socket_connection.setblocking(True)
                 self.socket_connection.settimeout(self.timeout)
-        except Exception as e:
-            print(f"[ERROR] Failed to receive CBUS message via TCP: {e}")
+        except Exception:
             self.connected = False
-        
-        return None
-    
-    def _parse_cbus_message(self, raw_message: str) -> Optional[Dict[str, Any]]:
-        """Parse raw CBUS SAL message into structured data."""
-        try:
-            # Parse SAL format: /<application>/<group>/<command>/<value>!
-            if raw_message.startswith('/') and raw_message.endswith('!'):
-                parts = raw_message[1:-1].split('/')
-                if len(parts) >= 3:
-                    message = {
-                        "application": int(parts[0]),
-                        "group": int(parts[1]),
-                        "command": parts[2],
-                        "value": int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None,
-                        "timestamp": time.time()
-                    }
-                    return message
-        except Exception as e:
-            print(f"[ERROR] Failed to parse CBUS message: {e}")
-        
         return None
 
 
 class CBUSDeviceManager:
-    """
-    High-level manager for CBUS device control and monitoring.
-    Implements the DataSourceInterface pattern for consistency with the codebase.
-    """
-    
+    """High-level manager for CBUS device control and monitoring."""
+
     def __init__(self, interface: CBUSInterface):
         self.interface = interface
         self.devices: Dict[str, CBUSDevice] = {}
-        self.is_windows = (sys.platform == "win32")
-        
+        self.is_windows = False
+
     def connect(self) -> bool:
-        """Initialize CBUS interface connection."""
         return self.interface.connect()
-    
+
     def disconnect(self) -> None:
-        """Close CBUS interface connection."""
         self.interface.disconnect()
-    
+
     def register_device(self, name: str, application: int, group: int, device_type: str) -> None:
-        """Register a CBUS device for monitoring and control."""
-        self.devices[name] = CBUSDevice(
-            application=application,
-            group=group,
-            device_type=device_type,
-            last_update=time.time()
-        )
-        print(f"[INFO] Registered CBUS device: {name} (App={application}, Group={group}, Type={device_type})")
-    
+        self.devices[name] = CBUSDevice(application=application, group=group, device_type=device_type, last_update=time.time())
+
     def control_device(self, name: str, command: str, value: Any = None) -> bool:
-        """Send a command to a registered CBUS device."""
-        if name not in self.devices:
-            print(f"[ERROR] Device not registered: {name}")
-            return False
-        
+        if name not in self.devices: return False
         device = self.devices[name]
         success = self.interface.send_command(device.application, device.group, command, value)
-        
         if success:
             device.current_state = value if value is not None else command
             device.last_update = time.time()
-            print(f"[INFO] Device {name} controlled: {command} -> {value}")
-        
         return success
-    
-    def fetch_data(self) -> Dict[str, Any]:
-        """
-        Fetch current state of all registered devices and any incoming messages.
-        Implements DataSourceInterface pattern.
-        """
-        data = {
-            "devices": {},
-            "incoming_messages": [],
-            "timestamp": time.time()
-        }
-        
-        # Update device states
-        for name, device in self.devices.items():
-            data["devices"][name] = {
-                "application": device.application,
-                "group": device.group,
-                "type": device.device_type,
-                "state": device.current_state,
-                "last_update": device.last_update
-            }
-        
-        # Check for incoming messages
-        message = self.interface.receive_message()
-        if message:
-            data["incoming_messages"].append(message)
-        
-        return data
-    
+
+    def query_device_status(self, name: str) -> bool:
+        if name not in self.devices: return False
+        device = self.devices[name]
+        if hasattr(self.interface, 'send_query'):
+            return self.interface.send_query(device.application, device.group)
+        return False
+
     def process_incoming_messages(self) -> List[Dict[str, Any]]:
-        """Process all pending incoming messages from CBUS network."""
         messages = []
         while True:
             message = self.interface.receive_message()
             if not message:
                 break
-            messages.append(message)
-            
-            # Update device state if message matches a registered device
-            for name, device in self.devices.items():
-                if (message["application"] == device.application and message["group"] == device.group):
-                    device.current_state = message.get("value", message["command"])
-                    device.last_update = time.time()
-        
+            if isinstance(message, list):
+                for single_msg in message:
+                    messages.append(single_msg)
+                    self._update_device_state(single_msg)
+            else:
+                messages.append(message)
+                self._update_device_state(message)
         return messages
+
+    def _update_device_state(self, message: Dict[str, Any]) -> None:
+        for name, device in self.devices.items():
+            if (message["application"] == device.application and message["group"] == device.group):
+                if message["command"] == "ON":
+                    device.current_state = 100
+                elif message["command"] == "OFF":
+                    device.current_state = 0
+                else:
+                    device.current_state = message.get("value", message["command"])
+                device.last_update = time.time()
+
+    def request_network_sync(self, application: int) -> bool:
+        if hasattr(self.interface, 'send_bulk_sync'):
+            return self.interface.send_bulk_sync(application)
+        return False

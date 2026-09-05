@@ -20,42 +20,66 @@ class CBusXMLParser:
             tree = ET.parse(self.xml_path)
             root = tree.getroot()
 
-            # Find all Application blocks in the XML template
-            for app_node in root.findall(".//App"):
-                app_address_str = app_node.get("GroupAddress")
-                if not app_address_str:
+            # Target Application nodes safely
+            for app_node in root.findall(".//Application"):
+                app_address_node = app_node.find("Address")
+                if app_address_node is None or not app_address_node.text:
                     continue
 
-                app_id = int(app_address_str)
+                try:
+                    app_id = int(app_address_node.text.strip())
+                except ValueError:
+                    continue
 
-                # Deduce device baseline classification profiles
+                if app_id not in app_mappings:
+                    continue
+
                 default_type = app_mappings.get(app_id, "light")
 
-                # Locate all functional groups mapped under this application
+                # Process Group nodes underneath this Application safely
                 for group_node in app_node.findall(".//Group"):
-                    group_address_str = group_node.get("GroupAddress")
-                    tag_name = group_node.get("TagName")
+                    group_address_node = group_node.find("Address")
+                    group_tag_node = group_node.find("TagName")
 
-                    if group_address_str and tag_name:
-                        group_id = int(group_address_str)
+                    if group_address_node is not None and group_tag_node is not None:
+                        group_address_str = group_address_node.text
+                        tag_name = group_tag_node.text
 
-                        # Format tag names to match standard safe MQTT strings
-                        safe_name = tag_name.lower().strip()
-                        safe_name = safe_name.replace(" ", "_").replace("/", "_")
+                        if group_address_str and tag_name:
+                            if "unused" in tag_name.lower():
+                                continue
 
-                        # Identify dimmers based on your label tags
-                        device_type = "dimmer" if "dimmer" in safe_name else default_type
+                            try:
+                                group_id = int(group_address_str.strip())
+                            except ValueError:
+                                continue
 
-                        devices.append({
-                            "name": safe_name,
-                            "app": app_id,
-                            "group": group_id,
-                            "type": device_type
-                        })
+                            # Sanitize naming structures for MQTT stability
+                            safe_name = tag_name.strip()
+                            safe_name = safe_name.replace(" ", "_").replace("/", "_")
+                            safe_name = safe_name.replace("<", "").replace(">", "")
 
-            print(f"[SUCCESS] Parsed {len(devices)} addresses from Toolkit backup.")
+                            name_lower = safe_name.lower()
+                            device_type = default_type
+
+                            # Explicit classification hooks matching your exact shorthand
+                            if "_b_" in name_lower or "blind" in name_lower:
+                                device_type = "blind"
+                            elif "_s_" in name_lower or "shutter" in name_lower:
+                                device_type = "shutter"
+                            elif "dimmer" in name_lower or "_dim_" in name_lower:
+                                device_type = "dimmer"
+
+                            devices.append({
+                                "name": safe_name,
+                                "app": app_id,
+                                "group": group_id,
+                                "type": device_type
+                            })
+
+            print(f"[SUCCESS] Successfully mapped {len(devices)} real nodes from XML.")
             return devices
 
         except Exception as e:
-            print(f"[XML ERROR] Parsing failed unexpectedly: {e}")
+            print(f"[XML CRITICAL] Ingestion failure: {e}")
             return []
