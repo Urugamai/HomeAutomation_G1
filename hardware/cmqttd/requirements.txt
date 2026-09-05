@@ -1,0 +1,15 @@
+pyserial==3.4
+pyserial_asyncio==0.4
+six
+
+# official protocol documentation downloading
+requests
+
+# required for cbus.toolkit.graph
+pydot
+
+# required for cmqttd
+paho-mqtt==1.5.0
+
+# required for cbz
+lxml

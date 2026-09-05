@@ -1,3 +1,0 @@
-[submodule "hardware/cmqttd"]
-	path = hardware/cmqttd
-	url = https://github.com/micolous/cbus.git
