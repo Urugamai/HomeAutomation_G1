@@ -4,7 +4,8 @@ import time
 import configparser
 import traceback
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QStatusBar
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton)
 
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard
@@ -43,6 +44,11 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Initializing system connection profile...")
+        if sys.platform == "win32":
+            self.exit_button = QPushButton("Exit")
+            self.exit_button.setToolTip("Exit the testing display")
+            self.exit_button.clicked.connect(QApplication.instance().quit)
+            self.status_bar.addPermanentWidget(self.exit_button)
 
         # 3. FIXED: Force the application frame to draw without window borders in full screen
         self.showFullScreen()  # <--- REMOVE ANY LATER .show() AND CALL THIS INSIDE THE CONSTRUCTOR

@@ -55,10 +55,11 @@ def main() -> None:
     if not CMQTTD_ROOT.is_dir():
         raise FileNotFoundError(f"cmqttd submodule not found: {CMQTTD_ROOT}")
 
+    arguments = _load_arguments()
     sys.path.insert(0, str(CMQTTD_ROOT))
     from cbus.daemon.cmqttd import main as cmqttd_main
 
-    sys.argv = [str(CMQTTD_ROOT / "cmqttd")] + _load_arguments() + sys.argv[1:]
+    sys.argv = [str(CMQTTD_ROOT / "cmqttd")] + arguments + sys.argv[1:]
     cmqttd_main()
 
 
