@@ -10,6 +10,12 @@ sudo apt install -y python3-pyqt6 python3-smbus2 python3-pip
 pip3 install paho-mqtt pymodbus aiohttp pycryptodome --break-system-packages
 
 ## DAEMONS ##
+# SOURCE UPDATE
+# Install and enable the boot-time fast-forward-only source update first.
+sudo cp /home/markw/HomeAutomation_G1/controllers/homeautomation-update.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable homeautomation-update.service
+
 # HVAC DAEMON
 # Reload the systemd controller manager configuration files
 sudo systemctl daemon-reload

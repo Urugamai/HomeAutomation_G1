@@ -1,6 +1,7 @@
 [Unit]
 Description=Raspberry Pi C-Bus Integrated Automatic Shutter Controller Daemon
-After=network.target
+After=network.target homeautomation-update.service
+Wants=homeautomation-update.service
 
 [Service]
 Type=simple

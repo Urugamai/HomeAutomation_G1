@@ -1,6 +1,7 @@
 [Unit]
 Description=Raspberry Pi Living Area I2C Sensor & Waveshare HVAC Relay Daemon
-After=network.target
+After=network.target homeautomation-update.service
+Wants=homeautomation-update.service
 
 [Service]
 Type=simple

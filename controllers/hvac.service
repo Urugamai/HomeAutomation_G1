@@ -1,6 +1,7 @@
 [Unit]
 Description=Raspberry Pi Smart Home HVAC Core Engine & Relay Supervisor
-After=network.target
+After=network.target homeautomation-update.service
+Wants=homeautomation-update.service
 
 [Service]
 Type=simple
