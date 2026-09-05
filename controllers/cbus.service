@@ -1,6 +1,7 @@
 [Unit]
-Description=Raspberry Pi Smart Home CBUS Interface & Lighting Control
-After=network.target
+Description=C-Bus MQTT bridge (cmqttd)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

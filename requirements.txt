@@ -3,5 +3,9 @@ paho-mqtt
 pymodbus
 aiohttp
 pycryptodome
+six
+pyserial
+pyserial-asyncio
+lxml
 
 pyqt6-sip
