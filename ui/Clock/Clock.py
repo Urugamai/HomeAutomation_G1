@@ -233,6 +233,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     def _replace_power_widgets(self):
         self.battery_flow_bar = ZeroCenteredPowerBar(parent=self)
         self.grid_flow_bar = ZeroCenteredPowerBar(parent=self)
+        self.progressBar_battery.hide()
+        self.label_value_grid.hide()
         self.horizontalLayout_power.replaceWidget(
             self.progressBar_battery, self.battery_flow_bar
         )
