@@ -20,8 +20,11 @@ except ImportError:
         from sigen_library import Sigen
 
         SIGEN_LIB_AVAILABLE = True
-    except ImportError:
+    except ImportError as error:
         SIGEN_LIB_AVAILABLE = False
+        SIGEN_LIB_IMPORT_ERROR = error
+else:
+    SIGEN_LIB_IMPORT_ERROR = None
 
 try:
     import paho.mqtt.client as mqtt
@@ -51,7 +54,10 @@ class SigenPowerAutomationDaemon:
         self.mqtt_client = None
 
         if not SIGEN_LIB_AVAILABLE:
-            print("[CRITICAL] 'sigen_library' folder could not be mounted by the Python compiler.")
+            print(
+                "[CRITICAL] Sigen library could not be imported: "
+                f"{SIGEN_LIB_IMPORT_ERROR}"
+            )
             sys.exit(1)
 
     def _get_config_str(self, section, key, fallback) -> str:
