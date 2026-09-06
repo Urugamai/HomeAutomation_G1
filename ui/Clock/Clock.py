@@ -125,8 +125,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         target_height = min(height or geometry.height(), geometry.height())
         self.resize(target_width, target_height)
         self.move(0, 0)
-        if target_width == geometry.width() and target_height == geometry.height():
-            self.showFullScreen()
+        self.showFullScreen()
         self._configure_visibility(target_height)
         self._configure_fonts(target_width, target_height)
 
@@ -347,7 +346,7 @@ def main():
         location=args.location,
     )
     window.configure_screen(args.width, args.height)
-    window.show()
+    window.showFullScreen()
     sys.exit(app.exec())
 
 
