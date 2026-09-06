@@ -223,18 +223,19 @@ class CBZ:
 
         if zip_h:
             files = zip_h.namelist()
+            xml_files = [
+                filename for filename in files
+                if filename.lower().endswith('.xml')
+                and not filename.endswith('/')
+            ]
 
-            if len(files) != 1:
+            if len(xml_files) != 1:
                 raise CBZException(
-                    f'Expected 1 file in CBZ archive, got {len(files)}')
+                    'Expected exactly one .xml file in CBZ archive, got '
+                    f'{len(xml_files)}')
 
             # validate the filename.
-            xml_filename = files[0]
-            if not xml_filename.endswith('.xml'):
-                raise CBZException(
-                    'The file in this archive does not have a .xml extension. '
-                    'It is probably not a CBZ.')
-
+            xml_filename = xml_files[0]
             xml_fh = zip_h.open(xml_filename, 'r')
 
         # now open the inner file and objectify.
