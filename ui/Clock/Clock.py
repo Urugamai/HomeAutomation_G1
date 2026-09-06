@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtGui import QColor, QFont, QPainter, QPalette, QPen, QBrush
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 
 # Allow both `python -m ui.Clock.Clock` and the existing `python Clock.py`
@@ -21,6 +21,51 @@ if str(CLOCK_DIR) not in sys.path:
 
 from libraries.mqtt_engine import MqttTelemetryListener
 from clock_display import Ui_MainWindow
+
+
+class ZeroCenteredPowerBar(QWidget):
+    """Horizontal positive/negative power bar matching the main dashboard."""
+
+    def __init__(self, maximum_watts=5000, parent=None):
+        super().__init__(parent)
+        self.maximum_watts = float(maximum_watts)
+        self.value_watts = 0.0
+        self.setMinimumWidth(130)
+        self.setMinimumHeight(28)
+
+    def set_value(self, value_watts):
+        self.value_watts = max(
+            -self.maximum_watts,
+            min(self.maximum_watts, float(value_watts)),
+        )
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        width = self.width()
+        height = self.height()
+        center_x = width // 2
+
+        painter.setPen(QPen(QColor(180, 180, 180), 1))
+        painter.setBrush(QBrush(QColor(240, 240, 240)))
+        painter.drawRoundedRect(0, 0, width, height, 4, 4)
+
+        fill_width = int(
+            abs(self.value_watts) / self.maximum_watts * (width / 2)
+        )
+        if abs(self.value_watts) < 1:
+            painter.setBrush(QBrush(QColor(140, 140, 140)))
+            painter.drawRect(center_x - 2, 0, 4, height)
+        elif self.value_watts > 0:
+            painter.setBrush(QBrush(QColor(40, 167, 69)))
+            painter.drawRect(center_x, 0, fill_width, height)
+        else:
+            painter.setBrush(QBrush(QColor(220, 53, 69)))
+            painter.drawRect(center_x - fill_width, 0, fill_width, height)
+
+        painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(center_x, 0, center_x, height)
 
 
 class ClockWindow(QMainWindow, Ui_MainWindow):
@@ -40,6 +85,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
         self._apply_clock_style()
+        self._replace_power_widgets()
         self.telemetry = {}
         self.screen_saver_enabled = screen_saver
         self.idle_timeout_ms = max(1, int(idle_timeout * 1000))
@@ -89,7 +135,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         power_visible = height >= 380
         for widget in (
             self.label_solar, self.progressBar_solar, self.label_battery,
-            self.progressBar_battery, self.label_grid, self.label_value_grid,
+            self.label_grid,
+            self.battery_flow_bar, self.grid_flow_bar,
         ):
             widget.setVisible(power_visible)
         for widget in (
@@ -160,11 +207,22 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_solar.setText(f"Solar: {solar:.0f}W")
         self.progressBar_solar.setRange(0, 100)
         self.progressBar_solar.setValue(max(0, min(100, math.ceil(solar / 100))))
-        self.label_battery.setText(f"Battery: {battery:.0f}W")
-        self.progressBar_battery.setRange(0, 100)
-        self.progressBar_battery.setValue(soc)
+        self.label_battery.setText(f"Battery: {soc}%")
+        self.battery_flow_bar.set_value(battery)
         self.label_grid.setText("Grid:")
-        self.label_value_grid.setText(f"{grid:.0f}W")
+        self.grid_flow_bar.set_value(grid)
+
+    def _replace_power_widgets(self):
+        self.battery_flow_bar = ZeroCenteredPowerBar(parent=self)
+        self.grid_flow_bar = ZeroCenteredPowerBar(parent=self)
+        self.horizontalLayout_power.replaceWidget(
+            self.progressBar_battery, self.battery_flow_bar
+        )
+        self.horizontalLayout_power.replaceWidget(
+            self.label_value_grid, self.grid_flow_bar
+        )
+        self.progressBar_battery.deleteLater()
+        self.label_value_grid.deleteLater()
 
     def _update_environment(self, data):
         room_temp = data.get("room_temp", data.get("living_temp", 0.0))
