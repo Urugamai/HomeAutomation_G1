@@ -152,17 +152,34 @@ class MqttTelemetryListener(QObject):
     def _update_persistent_forecast_cache(self, incoming_forecasts):
         for incoming_item in incoming_forecasts:
             day_idx = incoming_item.get("day_index")
+            incoming_probability = next(
+                (
+                    incoming_item.get(key)
+                    for key in (
+                        "rain_probability",
+                        "probability_of_precipitation",
+                        "probability_of_rain",
+                        "rain",
+                    )
+                    if incoming_item.get(key) is not None
+                ),
+                None,
+            )
             found = False
             for cached_item in self.cached_data["forecast_set"]:
                 if cached_item["day_index"] == day_idx:
                     if incoming_item.get("summary"): cached_item["summary"] = incoming_item["summary"]
                     if incoming_item.get("expected_min") is not None: cached_item["expected_min"] = incoming_item["expected_min"]
                     if incoming_item.get("expected_max") is not None: cached_item["expected_max"] = incoming_item["expected_max"]
-                    if incoming_item.get("rain_probability") is not None: cached_item["rain_probability"] = incoming_item["rain_probability"]
+                    if incoming_probability is not None:
+                        cached_item["rain_probability"] = incoming_probability
                     found = True
                     break
             if not found:
-                self.cached_data["forecast_set"].append(incoming_item)
+                cached_item = incoming_item.copy()
+                if incoming_probability is not None:
+                    cached_item["rain_probability"] = incoming_probability
+                self.cached_data["forecast_set"].append(cached_item)
 
     def stop(self):
         if self.client:
