@@ -38,6 +38,11 @@ class EcowittLanIngestionDaemon:
         self._last_api_poll = 0.0
 
         self.mqtt_client = None
+        print(
+            f"[CONFIG] Ecowitt API telemetry: "
+            f"{'enabled' if self._api_enabled() else 'disabled'} "
+            f"(interval {self.api_interval:.0f}s)"
+        )
 
     def _get_config_str(self, section, key, fallback) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -91,6 +96,10 @@ class EcowittLanIngestionDaemon:
                     api_payload = self._fetch_api_payload()
                     if api_payload:
                         self._publish_payloads({}, api_payload)
+                        print(
+                            "[ECOWITT API] Published "
+                            f"{len(api_payload) - 1} outdoor measurements."
+                        )
                     self._last_api_poll = time.monotonic()
                 except Exception as e:
                     print(f"[API ERROR] Failed to fetch Ecowitt real-time data: {e}")
@@ -168,26 +177,58 @@ class EcowittLanIngestionDaemon:
 
     @classmethod
     def _normalise_api_payload(cls, payload):
-        def value_in(section_names, value_names):
+        def measurement_in(section_names, value_names):
             section = cls._find_section(payload, section_names)
-            value = cls._find_value(section, value_names)
-            if value is None:
-                value = cls._find_value(payload, value_names)
-            return cls._as_float(value)
+            measurement = cls._find_measurement(section, value_names)
+            if measurement is None:
+                measurement = cls._find_measurement(payload, value_names)
+            if measurement is None:
+                return None, ""
+            return cls._as_float(measurement[0]), measurement[1]
 
-        temperature = value_in(("outdoor", "outdoor_temperature"), ("temperature", "temp", "temp_c"))
-        humidity = value_in(("outdoor",), ("humidity", "humidity_pct"))
-        solar = value_in(("solar_and_uvi", "solar", "light"), ("solar", "solarradiation", "solar_radiation", "light", "lux"))
-        rain_rate = value_in(("rainfall_piezo", "rain", "rainfall"), ("rain_rate", "rainrate", "rain_rate_mm"))
-        rain_daily = value_in(("rainfall_piezo", "rain", "rainfall"), ("daily", "dailyrain", "daily_rain", "daily_mm"))
-        rain_event = value_in(("rainfall_piezo", "rain", "rainfall"), ("event", "eventrain", "event_rain"))
-        rain_week = value_in(("rainfall_piezo", "rain", "rainfall"), ("weekly", "weeklyrain", "weekly_rain"))
-        rain_month = value_in(("rainfall_piezo", "rain", "rainfall"), ("monthly", "monthlyrain", "monthly_rain"))
-        rain_year = value_in(("rainfall_piezo", "rain", "rainfall"), ("yearly", "yearlyrain", "yearly_rain"))
-        rain_total = value_in(("rainfall_piezo", "rain", "rainfall"), ("total", "totalrain", "total_rain"))
-        wind_speed = value_in(("wind",), ("wind_speed", "windspeed", "speed"))
-        wind_gust = value_in(("wind",), ("wind_gust", "windgust", "gust"))
-        wind_direction = value_in(("wind",), ("wind_direction", "winddir", "direction"))
+        temperature, temperature_unit = measurement_in(
+            ("outdoor", "outdoor_temperature"), ("temperature", "temp", "temp_c"))
+        humidity, _ = measurement_in(("outdoor",), ("humidity", "humidity_pct"))
+        solar, _ = measurement_in(
+            ("solar_and_uvi", "solar", "light"),
+            ("solar", "solarradiation", "solar_radiation", "light", "lux"))
+        rain_rate, rain_rate_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("rain_rate", "rainrate", "rain_rate_mm"))
+        rain_daily, rain_daily_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("daily", "dailyrain", "daily_rain", "daily_mm"))
+        rain_event, rain_event_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("event", "eventrain", "event_rain"))
+        rain_week, rain_week_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("weekly", "weeklyrain", "weekly_rain"))
+        rain_month, rain_month_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("monthly", "monthlyrain", "monthly_rain"))
+        rain_year, rain_year_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("yearly", "yearlyrain", "yearly_rain"))
+        rain_total, rain_total_unit = measurement_in(
+            ("rainfall_piezo", "rain", "rainfall"),
+            ("total", "totalrain", "total_rain"))
+        wind_speed, wind_speed_unit = measurement_in(
+            ("wind",), ("wind_speed", "windspeed", "speed"))
+        wind_gust, wind_gust_unit = measurement_in(("wind",), ("wind_gust", "windgust", "gust"))
+        wind_direction, _ = measurement_in(
+            ("wind",), ("wind_direction", "winddir", "direction"))
+
+        temperature = cls._fahrenheit_to_celsius(temperature, temperature_unit)
+        rain_rate = cls._inches_to_mm(rain_rate, rain_rate_unit)
+        rain_daily = cls._inches_to_mm(rain_daily, rain_daily_unit)
+        rain_event = cls._inches_to_mm(rain_event, rain_event_unit)
+        rain_week = cls._inches_to_mm(rain_week, rain_week_unit)
+        rain_month = cls._inches_to_mm(rain_month, rain_month_unit)
+        rain_year = cls._inches_to_mm(rain_year, rain_year_unit)
+        rain_total = cls._inches_to_mm(rain_total, rain_total_unit)
+        wind_speed = cls._mph_to_kmh(wind_speed, wind_speed_unit)
+        wind_gust = cls._mph_to_kmh(wind_gust, wind_gust_unit)
 
         result = {"timestamp": time.time()}
         cls._set_if_number(result, "temperature", temperature)
@@ -229,17 +270,27 @@ class EcowittLanIngestionDaemon:
 
     @staticmethod
     def _find_value(value, names):
+        measurement = EcowittLanIngestionDaemon._find_measurement(value, names)
+        return measurement[0] if measurement else None
+
+    @staticmethod
+    def _find_measurement(value, names):
         if isinstance(value, dict):
             for key, child in value.items():
-                if key.lower() in names and not isinstance(child, (dict, list)):
-                    return child
+                if key.lower() in names:
+                    if isinstance(child, dict):
+                        measured_value = child.get("value", child.get("val"))
+                        if measured_value is not None:
+                            return measured_value, str(child.get("unit", ""))
+                    elif not isinstance(child, list):
+                        return child, ""
             for child in value.values():
-                found = EcowittLanIngestionDaemon._find_value(child, names)
+                found = EcowittLanIngestionDaemon._find_measurement(child, names)
                 if found is not None:
                     return found
         elif isinstance(value, list):
             for child in value:
-                found = EcowittLanIngestionDaemon._find_value(child, names)
+                found = EcowittLanIngestionDaemon._find_measurement(child, names)
                 if found is not None:
                     return found
         return None
@@ -255,6 +306,24 @@ class EcowittLanIngestionDaemon:
     def _set_if_number(target, key, value):
         if value is not None:
             target[key] = value
+
+    @staticmethod
+    def _fahrenheit_to_celsius(value, unit):
+        if value is not None and "f" in unit.lower():
+            return round((value - 32.0) * 5.0 / 9.0, 1)
+        return value
+
+    @staticmethod
+    def _inches_to_mm(value, unit):
+        if value is not None and "in" in unit.lower():
+            return round(value * 25.4, 2)
+        return value
+
+    @staticmethod
+    def _mph_to_kmh(value, unit):
+        if value is not None and "mph" in unit.lower():
+            return round(value * 1.60934, 1)
+        return value
 
     def _generate_simulated_dual_telemetry(self):
         """Generates realistic changing indoor and outdoor trends for local PC testing."""
