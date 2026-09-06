@@ -212,9 +212,9 @@ class AdaptiveDashboard(QWidget):
         if self.temp_lbl.isVisible():
             # FIXED: Render high-resolution Lux light parameters directly alongside room temperatures
             l_temp = data.get("living_temp", 0.0)
-            l_lux = data.get("living_lux", 0.0)
+            l_solar = data.get("living_lux", 0.0)
             o_temp = data.get("outside_temp", 0.0)
-            o_lux = data.get("outside_lux", 0.0)
+            o_solar = data.get("solar_radiation", 0.0)
             o_humidity = data.get("outside_humidity", 0.0)
             wind_speed = data.get("wind_speed", 0.0)
             wind_gust = data.get("wind_gust", 0.0)
@@ -222,8 +222,9 @@ class AdaptiveDashboard(QWidget):
             rain_today = data.get("rain_today", 0.0)
             rain_rate = data.get("rain_rate", 0.0)
             self.temp_lbl.setText(
-                f"Living: {l_temp:.1f}°C ({int(l_lux)} lx)  |  "
-                f"Outside: {o_temp:.1f}°C, {o_humidity:.0f}% RH ({int(o_lux)} lx)<br>"
+                f"Living: {l_temp:.1f}°C ({l_solar:.1f} W/m²)  |  "
+                f"Outside: {o_temp:.1f}°C, {o_humidity:.0f}% RH "
+                f"({o_solar:.1f} W/m²)<br>"
                 f"Wind: {wind_speed:.1f} km/h (gust {wind_gust:.1f}) "
                 f"from {wind_direction:.0f}°  |  "
                 f"Rain: {rain_today:.1f} mm today ({rain_rate:.1f} mm/h)"

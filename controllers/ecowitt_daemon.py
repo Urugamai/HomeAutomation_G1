@@ -36,12 +36,16 @@ class EcowittLanIngestionDaemon:
         self.mac_address = self._get_config_str("ECOWITT", "mac_address", "")
         self.api_interval = 60.0
         self._last_api_poll = 0.0
+        self.lan_poll_enabled = self._get_config_bool(
+            "ECOWITT", "lan_poll", not self._api_enabled()
+        )
 
         self.mqtt_client = None
         print(
             f"[CONFIG] Ecowitt API telemetry: "
             f"{'enabled' if self._api_enabled() else 'disabled'} "
-            f"(interval {self.api_interval:.0f}s)"
+            f"(interval {self.api_interval:.0f}s); "
+            f"LAN polling {'enabled' if self.lan_poll_enabled else 'disabled'}"
         )
 
     def _get_config_str(self, section, key, fallback) -> str:
@@ -55,6 +59,10 @@ class EcowittLanIngestionDaemon:
                 pass
         return fallback
 
+    def _get_config_bool(self, section, key, fallback) -> bool:
+        value = self._get_config_str(section, key, str(fallback))
+        return value.strip().lower() in ("1", "true", "yes", "on")
+
     def init_mqtt(self):
         self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         try:
@@ -66,30 +74,35 @@ class EcowittLanIngestionDaemon:
             sys.exit(1)
 
     def start_polling_loop(self):
-        print(f"[ARMED] Querying Ecowitt station at {self.gateway_ip}:{self.gateway_port} every 10 seconds.")
+        if self.lan_poll_enabled:
+            print(
+                f"[ARMED] Querying Ecowitt station at "
+                f"{self.gateway_ip}:{self.gateway_port} every 10 seconds."
+            )
         lan_command = bytes([0xBB, 0x00, 0x06, 0x03, 0x04, 0x3D])
 
         while True:
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(4.0)
-                sock.connect((self.gateway_ip, self.gateway_port))
+            if self.lan_poll_enabled:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(4.0)
+                    sock.connect((self.gateway_ip, self.gateway_port))
 
-                sock.sendall(lan_command)
-                response_bytes = sock.recv(1024)
-                sock.close()
+                    sock.sendall(lan_command)
+                    response_bytes = sock.recv(1024)
+                    sock.close()
 
-                if response_bytes:
-                    self._parse_and_publish_payload(response_bytes)
-                else:
-                    print("[WARN] Received an empty byte array frame from Ecowitt gateway.")
+                    if response_bytes:
+                        self._parse_and_publish_payload(response_bytes)
+                    else:
+                        print("[WARN] Received an empty byte array frame from Ecowitt gateway.")
 
-            except Exception as e:
-                # Windows Desktop Testing Fallback Simulation Mode
-                if sys.platform == "win32":
-                    self._generate_simulated_dual_telemetry()
-                else:
-                    print(f"[GATEWAY ERROR] Failed to fetch data from hardware link: {e}")
+                except Exception as e:
+                    # Windows Desktop Testing Fallback Simulation Mode
+                    if sys.platform == "win32":
+                        self._generate_simulated_dual_telemetry()
+                    else:
+                        print(f"[GATEWAY ERROR] Failed to fetch data from hardware link: {e}")
 
             if self._api_enabled() and time.monotonic() - self._last_api_poll >= self.api_interval:
                 try:
