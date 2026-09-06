@@ -10,6 +10,8 @@ except ImportError:
     print("[CRITICAL] 'paho-mqtt' library missing. Run 'pip install paho-mqtt'.")
     sys.exit(1)
 
+from libraries.paho_compat import create_client
+
 
 class BlindAutomationDaemon:
     """
@@ -39,7 +41,7 @@ class BlindAutomationDaemon:
         return "localhost"
 
     def start(self):
-        self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.client = create_client()
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
 

@@ -9,6 +9,8 @@ except ImportError:
     print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     sys.exit(1)
 
+from libraries.paho_compat import create_client
+
 
 def generate_mock_telemetry_stream(broker_ip="192.168.2.2"):
     """
@@ -17,7 +19,7 @@ def generate_mock_telemetry_stream(broker_ip="192.168.2.2"):
     """
     print(f"[TEST FEED] Launching network data injector targeting {broker_ip}...")
 
-    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+    client = create_client()
 
     try:
         client.connect(broker_ip, 1883, keepalive=60)

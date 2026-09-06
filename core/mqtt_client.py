@@ -1,4 +1,5 @@
 import paho.mqtt.client as mqtt
+from libraries.paho_compat import create_client
 import json
 import configparser
 from typing import Callable, Any
@@ -8,7 +9,7 @@ class MqttController:
         config = configparser.ConfigParser()
         config.read(config_path)
         
-        self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.client = create_client()
         self.broker = config.get("MQTT", "broker", fallback="localhost")
         self.port = config.getint("MQTT", "port", fallback=1883)
         self.callbacks = {}

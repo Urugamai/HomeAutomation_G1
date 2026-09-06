@@ -12,6 +12,8 @@ except ImportError:
     print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     sys.exit(1)
 
+from libraries.paho_compat import create_client
+
 
 class BomForecastXmlDaemon:
     """
@@ -40,7 +42,7 @@ class BomForecastXmlDaemon:
         return fallback
 
     def start(self):
-        self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client = create_client()
         try:
             print(f"[MQTT] Connecting data pipeline to broker at {self.broker_ip}...")
             self.mqtt_client.connect(self.broker_ip, 1883, keepalive=60)

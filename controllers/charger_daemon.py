@@ -11,6 +11,8 @@ except ImportError:
     print("[CRITICAL] 'paho-mqtt' library missing from active environment.")
     sys.exit(1)
 
+from libraries.paho_compat import create_client
+
 try:
     from pymodbus.client import ModbusTcpClient
 
@@ -52,7 +54,7 @@ class OcularChargerDaemon:
         return fallback
 
     def start(self):
-        self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client = create_client()
         self.mqtt_client.on_connect = self._on_connect
         self.mqtt_client.on_message = self._on_message
 

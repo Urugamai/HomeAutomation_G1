@@ -9,6 +9,8 @@ try:
 except ImportError:
     PAHO_AVAILABLE = False
 
+from libraries.paho_compat import create_client
+
 
 class MqttTelemetryListener(QObject):
     """Unified cross-platform telemetry processor capturing lux channels."""
@@ -55,7 +57,7 @@ class MqttTelemetryListener(QObject):
     def start(self):
         if not PAHO_AVAILABLE: return
 
-        self.client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.client = create_client()
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
 

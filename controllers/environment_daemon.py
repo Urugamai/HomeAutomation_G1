@@ -16,6 +16,8 @@ except ImportError:
     bme280 = None
     IS_RASPI = False
 
+from libraries.paho_compat import create_client
+
 
 class LivingAreaHardwareController:
     """
@@ -109,7 +111,7 @@ class LivingAreaHardwareController:
             print("[CRITICAL] 'paho-mqtt' library missing.")
             return
 
-        self.mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client = create_client()
         self.mqtt_client.on_connect = lambda c, u, f, rc, p=None: c.subscribe("home/hvac/settings")
         self.mqtt_client.on_message = self._on_settings_message
 
