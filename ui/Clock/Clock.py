@@ -84,8 +84,13 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
-        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        window_flags = (
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        if sys.platform.startswith("linux"):
+            window_flags |= Qt.WindowType.X11BypassWindowManagerHint
+        self.setWindowFlags(window_flags)
         self._apply_clock_style()
         self._replace_power_widgets()
         self.telemetry = {}
@@ -127,14 +132,20 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         target_height = min(height or geometry.height(), geometry.height())
         self.resize(target_width, target_height)
         self.move(0, 0)
-        self.showFullScreen()
         self._configure_visibility(target_height)
         self._configure_fonts(target_width, target_height)
+
+    def force_fullscreen(self):
+        screen = self.screen() or QApplication.primaryScreen()
+        self.setWindowState(Qt.WindowState.WindowFullScreen)
+        self.setGeometry(screen.geometry())
+        self.show()
+        self.raise_()
 
     def _configure_visibility(self, height):
         compact = height <= 420
         self.text_clock_message.setVisible(not compact)
-        power_visible = not compact
+        power_visible = height >= 360
         for widget in (
             self.label_solar, self.progressBar_solar, self.label_battery,
             self.label_grid,
@@ -354,7 +365,7 @@ def main():
         location=args.location,
     )
     window.configure_screen(args.width, args.height)
-    window.showFullScreen()
+    window.force_fullscreen()
     sys.exit(app.exec())
 
 
