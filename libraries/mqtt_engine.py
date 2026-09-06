@@ -1,6 +1,6 @@
 import sys
 import json
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal
 
 try:
     import paho.mqtt.client as mqtt
@@ -26,6 +26,18 @@ class MqttTelemetryListener(QObject):
             "living_lux": 0.0,  # FIXED: Added ambient room tracking cache
             "outside_temp": 0.0,
             "outside_lux": 0.0,  # FIXED: Added outdoor tracking cache
+            "outside_humidity": 0.0,
+            "solar_radiation": 0.0,
+            "rain_rate": 0.0,
+            "rain_today": 0.0,
+            "rain_event": 0.0,
+            "rain_week": 0.0,
+            "rain_month": 0.0,
+            "rain_year": 0.0,
+            "rain_total": 0.0,
+            "wind_speed": 0.0,
+            "wind_gust": 0.0,
+            "wind_direction": 0.0,
             "battery_soc": 0.0,
             "battery_flow": 0.0,
             "grid_flow": 0.0,
@@ -47,18 +59,8 @@ class MqttTelemetryListener(QObject):
             print(f"[MQTT CONNECTING] Establishing link to network broker at {self.broker}:{self.port}...")
             self.client.connect_async(self.broker, self.port, keepalive=60)
             self.client.loop_start()
-
-            self.network_timer = QTimer(self)
-            self.network_timer.timeout.connect(self._service_mqtt_io)
-            self.network_timer.start(50)
         except Exception as e:
             print(f"[MQTT EXCEPTION] Initialization failed: {e}")
-
-    def _service_mqtt_io(self):
-        if self.client:
-            self.client.loop_read()
-            self.client.loop_write()
-            self.client.loop_misc()
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         client.subscribe("home/environment/#")
@@ -75,8 +77,34 @@ class MqttTelemetryListener(QObject):
                 self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
                 self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
             elif topic == "home/environment/ecowitt":
-                self.cached_data["outside_temp"] = float(data.get("temperature", 0.0))
-                self.cached_data["outside_lux"] = float(data.get("light_lux", 0.0))
+                self._update_cached_float(
+                    "outside_temp", data, "outside_temp", "outdoor_temperature",
+                    "outdoor_temp", "temperature")
+                self._update_cached_float(
+                    "outside_lux", data, "outside_lux", "outdoor_lux", "light_lux")
+                self._update_cached_float(
+                    "outside_humidity", data, "outside_humidity",
+                    "outdoor_humidity", "humidity")
+                self._update_cached_float(
+                    "solar_radiation", data, "solar_radiation", "solarradiation")
+                self._update_cached_float("rain_rate", data, "rain_rate", "rainrate")
+                self._update_cached_float(
+                    "rain_today", data, "rain_today", "dailyrain", "daily_rain")
+                self._update_cached_float(
+                    "rain_event", data, "rain_event", "eventrain", "event_rain")
+                self._update_cached_float(
+                    "rain_week", data, "rain_week", "weeklyrain", "weekly_rain")
+                self._update_cached_float(
+                    "rain_month", data, "rain_month", "monthlyrain", "monthly_rain")
+                self._update_cached_float(
+                    "rain_year", data, "rain_year", "yearlyrain", "yearly_rain")
+                self._update_cached_float(
+                    "rain_total", data, "rain_total", "totalrain", "total_rain")
+                self._update_cached_float(
+                    "wind_speed", data, "wind_speed", "wind_speed_kmh", "windspeed")
+                self._update_cached_float("wind_gust", data, "wind_gust", "windgust")
+                self._update_cached_float(
+                    "wind_direction", data, "wind_direction", "winddir")
             elif topic == "home/environment/forecast":
                 if "forecast_set" in data:
                     self._update_persistent_forecast_cache(data["forecast_set"])
@@ -88,8 +116,22 @@ class MqttTelemetryListener(QObject):
                 self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
 
             self.telemetry_received.emit(self.cached_data.copy())
-        except Exception:
-            pass
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            print(f"[MQTT DATA ERROR] Failed processing {msg.topic}: {error}")
+
+    @staticmethod
+    def _get_float(data, *keys) -> float:
+        for key in keys:
+            value = data.get(key)
+            if value is not None:
+                return float(value)
+        return 0.0
+
+    def _update_cached_float(self, cache_key, data, *keys):
+        for key in keys:
+            if data.get(key) is not None:
+                self.cached_data[cache_key] = float(data[key])
+                return
 
     def _update_persistent_forecast_cache(self, incoming_forecasts):
         for incoming_item in incoming_forecasts:
@@ -100,14 +142,13 @@ class MqttTelemetryListener(QObject):
                     if incoming_item.get("summary"): cached_item["summary"] = incoming_item["summary"]
                     if incoming_item.get("expected_min") is not None: cached_item["expected_min"] = incoming_item["expected_min"]
                     if incoming_item.get("expected_max") is not None: cached_item["expected_max"] = incoming_item["expected_max"]
+                    if incoming_item.get("rain_probability") is not None: cached_item["rain_probability"] = incoming_item["rain_probability"]
                     found = True
                     break
             if not found:
                 self.cached_data["forecast_set"].append(incoming_item)
 
     def stop(self):
-        if hasattr(self, 'network_timer'):
-            self.network_timer.stop()
         if self.client:
             self.client.disconnect()
             self.client.loop_stop()

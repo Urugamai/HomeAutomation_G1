@@ -215,9 +215,18 @@ class AdaptiveDashboard(QWidget):
             l_lux = data.get("living_lux", 0.0)
             o_temp = data.get("outside_temp", 0.0)
             o_lux = data.get("outside_lux", 0.0)
+            o_humidity = data.get("outside_humidity", 0.0)
+            wind_speed = data.get("wind_speed", 0.0)
+            wind_gust = data.get("wind_gust", 0.0)
+            wind_direction = data.get("wind_direction", 0.0)
+            rain_today = data.get("rain_today", 0.0)
+            rain_rate = data.get("rain_rate", 0.0)
             self.temp_lbl.setText(
-                f"Living Area: {l_temp:.1f}°C ({int(l_lux)} lx)  |  "
-                f"Outside: {o_temp:.1f}°C ({int(o_lux)} lx)"
+                f"Living: {l_temp:.1f}°C ({int(l_lux)} lx)  |  "
+                f"Outside: {o_temp:.1f}°C, {o_humidity:.0f}% RH ({int(o_lux)} lx)<br>"
+                f"Wind: {wind_speed:.1f} km/h (gust {wind_gust:.1f}) "
+                f"from {wind_direction:.0f}°  |  "
+                f"Rain: {rain_today:.1f} mm today ({rain_rate:.1f} mm/h)"
             )
 
         if self.energy_container.isVisible():
@@ -252,7 +261,12 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{t_min:.1f}°C"
             else:
                 temp_str = f"{t_min:.1f}°C → {t_max:.1f}°C"
-            self.today_forecast_lbl.setText(f"<b>Today</b><br><font color='#17a2b8'>{temp_str}</font><br><i>{today_data.get('summary', '')}</i>")
+            rain_str = self._format_rain_probability(today_data)
+            self.today_forecast_lbl.setText(
+                f"<b>Today</b><br><font color='#17a2b8'>{temp_str}</font>"
+                f"<br><font color='#007bff'>{rain_str}</font>"
+                f"<br><i>{today_data.get('summary', '')}</i>"
+            )
 
         if tomorrow_data:
             tm_max = tomorrow_data.get("expected_max")
@@ -265,7 +279,22 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{tm_min:.1f}°C"
             else:
                 temp_str = f"{tm_min:.1f}°C → {tm_max:.1f}°C"
-            self.tomorrow_forecast_lbl.setText(f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font><br><i>{tomorrow_data.get('summary', '')}</i>")
+            rain_str = self._format_rain_probability(tomorrow_data)
+            self.tomorrow_forecast_lbl.setText(
+                f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font>"
+                f"<br><font color='#007bff'>{rain_str}</font>"
+                f"<br><i>{tomorrow_data.get('summary', '')}</i>"
+            )
+
+    @staticmethod
+    def _format_rain_probability(forecast_data):
+        probability = forecast_data.get("rain_probability")
+        if probability is None:
+            return "Rain: --%"
+        try:
+            return f"Rain: {float(probability):.0f}%"
+        except (TypeError, ValueError):
+            return "Rain: --%"
 
 
 AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value

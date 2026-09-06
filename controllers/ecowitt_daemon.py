@@ -2,6 +2,8 @@ import sys
 import socket
 import json
 import time
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from pathlib import Path
 import configparser
 
@@ -26,6 +28,14 @@ class EcowittLanIngestionDaemon:
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
         self.gateway_ip = self._get_config_str("ECOWITT", "gateway_ip", "192.168.2.10")
         self.gateway_port = int(self._get_config_str("ECOWITT", "gateway_port", "45000"))
+        self.api_url = self._get_config_str("ECOWITT", "api_url", "").rstrip("/")
+        if self.api_url == "https://ecowitt.net":
+            self.api_url = "https://api.ecowitt.net"
+        self.application_key = self._get_config_str("ECOWITT", "application_key", "")
+        self.user_key = self._get_config_str("ECOWITT", "user_key", "")
+        self.mac_address = self._get_config_str("ECOWITT", "mac_address", "")
+        self.api_interval = 60.0
+        self._last_api_poll = 0.0
 
         self.mqtt_client = None
 
@@ -76,6 +86,15 @@ class EcowittLanIngestionDaemon:
                 else:
                     print(f"[GATEWAY ERROR] Failed to fetch data from hardware link: {e}")
 
+            if self._api_enabled() and time.monotonic() - self._last_api_poll >= self.api_interval:
+                try:
+                    api_payload = self._fetch_api_payload()
+                    if api_payload:
+                        self._publish_payloads({}, api_payload)
+                    self._last_api_poll = time.monotonic()
+                except Exception as e:
+                    print(f"[API ERROR] Failed to fetch Ecowitt real-time data: {e}")
+
             time.sleep(10.0)
 
     def _parse_and_publish_payload(self, raw_bytes):
@@ -100,8 +119,10 @@ class EcowittLanIngestionDaemon:
 
             outdoor_payload = {
                 "temperature": out_temp_c,
+                "outside_temp": out_temp_c,
                 "humidity": out_humidity,
                 "wind_speed": wind_speed_kmh,
+                "wind_speed_kmh": wind_speed_kmh,
                 "timestamp": time.time()
             }
 
@@ -119,13 +140,139 @@ class EcowittLanIngestionDaemon:
         except Exception as e:
             print(f"[DECODE ERROR] Failed to segment byte map array fields: {e}")
 
+    def _api_enabled(self):
+        return bool(self.api_url and self.application_key and self.user_key and self.mac_address)
+
+    def _fetch_api_payload(self):
+        """Fetch normalized outdoor fields from the Ecowitt cloud API.
+
+        The LAN query format differs between gateway firmware versions and does
+        not reliably include solar/rain fields. The API response has stable
+        logical names, so it is used when the optional MAC address is configured.
+        """
+        query = urlencode({
+            "application_key": self.application_key,
+            "api_key": self.user_key,
+            "mac": self.mac_address,
+            "call_back": "all",
+        })
+        request = Request(
+            f"{self.api_url}/api/v3/device/real_time?{query}",
+            headers={"Accept": "application/json", "User-Agent": "HomeAutomation_G1"},
+        )
+        with urlopen(request, timeout=8) as response:
+            document = json.loads(response.read().decode("utf-8"))
+        if document.get("code") not in (None, 0, "0"):
+            raise RuntimeError(document.get("msg", f"API returned code {document.get('code')}"))
+        return self._normalise_api_payload(document.get("data", document))
+
+    @classmethod
+    def _normalise_api_payload(cls, payload):
+        def value_in(section_names, value_names):
+            section = cls._find_section(payload, section_names)
+            value = cls._find_value(section, value_names)
+            if value is None:
+                value = cls._find_value(payload, value_names)
+            return cls._as_float(value)
+
+        temperature = value_in(("outdoor", "outdoor_temperature"), ("temperature", "temp", "temp_c"))
+        humidity = value_in(("outdoor",), ("humidity", "humidity_pct"))
+        solar = value_in(("solar_and_uvi", "solar", "light"), ("solar", "solarradiation", "solar_radiation", "light", "lux"))
+        rain_rate = value_in(("rainfall_piezo", "rain", "rainfall"), ("rain_rate", "rainrate", "rain_rate_mm"))
+        rain_daily = value_in(("rainfall_piezo", "rain", "rainfall"), ("daily", "dailyrain", "daily_rain", "daily_mm"))
+        rain_event = value_in(("rainfall_piezo", "rain", "rainfall"), ("event", "eventrain", "event_rain"))
+        rain_week = value_in(("rainfall_piezo", "rain", "rainfall"), ("weekly", "weeklyrain", "weekly_rain"))
+        rain_month = value_in(("rainfall_piezo", "rain", "rainfall"), ("monthly", "monthlyrain", "monthly_rain"))
+        rain_year = value_in(("rainfall_piezo", "rain", "rainfall"), ("yearly", "yearlyrain", "yearly_rain"))
+        rain_total = value_in(("rainfall_piezo", "rain", "rainfall"), ("total", "totalrain", "total_rain"))
+        wind_speed = value_in(("wind",), ("wind_speed", "windspeed", "speed"))
+        wind_gust = value_in(("wind",), ("wind_gust", "windgust", "gust"))
+        wind_direction = value_in(("wind",), ("wind_direction", "winddir", "direction"))
+
+        result = {"timestamp": time.time()}
+        cls._set_if_number(result, "temperature", temperature)
+        cls._set_if_number(result, "outside_temp", temperature)
+        cls._set_if_number(result, "humidity", humidity)
+        cls._set_if_number(result, "solar_radiation", solar)
+        # Ecowitt reports solar radiation in W/m². This is an estimated lux
+        # equivalent, retained separately so consumers can choose either unit.
+        if solar is not None:
+            result["outside_lux"] = round(solar * 126.7, 1)
+        cls._set_if_number(result, "rain_rate", rain_rate)
+        cls._set_if_number(result, "rain_today", rain_daily)
+        cls._set_if_number(result, "rain_event", rain_event)
+        cls._set_if_number(result, "rain_week", rain_week)
+        cls._set_if_number(result, "rain_month", rain_month)
+        cls._set_if_number(result, "rain_year", rain_year)
+        cls._set_if_number(result, "rain_total", rain_total)
+        cls._set_if_number(result, "wind_speed", wind_speed)
+        cls._set_if_number(result, "wind_speed_kmh", wind_speed)
+        cls._set_if_number(result, "wind_gust", wind_gust)
+        cls._set_if_number(result, "wind_direction", wind_direction)
+        return result
+
+    @staticmethod
+    def _find_section(value, names):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key.lower() in names:
+                    return child
+                found = EcowittLanIngestionDaemon._find_section(child, names)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = EcowittLanIngestionDaemon._find_section(child, names)
+                if found is not None:
+                    return found
+        return None
+
+    @staticmethod
+    def _find_value(value, names):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key.lower() in names and not isinstance(child, (dict, list)):
+                    return child
+            for child in value.values():
+                found = EcowittLanIngestionDaemon._find_value(child, names)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = EcowittLanIngestionDaemon._find_value(child, names)
+                if found is not None:
+                    return found
+        return None
+
+    @staticmethod
+    def _as_float(value):
+        try:
+            return float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _set_if_number(target, key, value):
+        if value is not None:
+            target[key] = value
+
     def _generate_simulated_dual_telemetry(self):
         """Generates realistic changing indoor and outdoor trends for local PC testing."""
         import random
+        simulated_outdoor_temp = round(14.5 + random.uniform(-0.1, 0.1), 1)
         outdoor_payload = {
-            "temperature": round(14.5 + random.uniform(-0.1, 0.1), 1),
+            "temperature": simulated_outdoor_temp,
+            "outside_temp": simulated_outdoor_temp,
             "humidity": random.randint(62, 70),
+            "outside_lux": round(random.uniform(1500, 25000), 1),
+            "solar_radiation": round(random.uniform(12, 200), 1),
+            "rain_rate": 0.0,
+            "rain_today": round(random.uniform(0, 4), 1),
+            "rain_event": 0.0,
             "wind_speed": round(16.5 + random.uniform(-1.0, 2.0), 1),
+            "wind_speed_kmh": round(16.5 + random.uniform(-1.0, 2.0), 1),
+            "wind_gust": round(random.uniform(20, 35), 1),
+            "wind_direction": random.randint(0, 359),
             "timestamp": time.time()
         }
 
@@ -143,7 +290,8 @@ class EcowittLanIngestionDaemon:
         self.mqtt_client.publish("home/environment/ecowitt", json.dumps(outdoor_dict), retain=True)
 
         # 2. FIXED: Publish to a unique, dedicated room sub-topic path to allow scale expansions
-        self.mqtt_client.publish("home/environment/rumpus", json.dumps(rumpus_dict), retain=True)
+        if rumpus_dict:
+            self.mqtt_client.publish("home/environment/rumpus", json.dumps(rumpus_dict), retain=True)
         print(f"[ECOWITT SYNC] Dispatched outdoor and unique Rumpus Room telemetry parameters.")
 
 

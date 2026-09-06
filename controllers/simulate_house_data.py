@@ -30,18 +30,18 @@ def generate_mock_telemetry_stream(broker_ip="192.168.2.2"):
     weather_scenarios = [
         {
             "desc": "Standard winter morning sequence (Today's min has passed)",
-            "today": {"min": None, "max": 14.0, "summary": "Showers easing around midday. Wind westerly."},
-            "tomorrow": {"min": 8.0, "max": 15.0, "summary": "Mostly sunny. Light morning frost patches."}
+            "today": {"min": None, "max": 14.0, "rain": 70, "summary": "Showers easing around midday. Wind westerly."},
+            "tomorrow": {"min": 8.0, "max": 15.0, "rain": 20, "summary": "Mostly sunny. Light morning frost patches."}
         },
         {
             "desc": "Extreme weather pattern sequence (Checking long text lines)",
-            "today": {"min": 11.0, "max": 23.0, "summary": "Severe thunderstorm warning. Damaging wind gusts developing."},
-            "tomorrow": {"min": 9.0, "max": 14.0, "summary": "Possible hail. Cold front sweeping across coastal strips."}
+            "today": {"min": 11.0, "max": 23.0, "rain": 90, "summary": "Severe thunderstorm warning. Damaging wind gusts developing."},
+            "tomorrow": {"min": 9.0, "max": 14.0, "rain": 65, "summary": "Possible hail. Cold front sweeping across coastal strips."}
         },
         {
             "desc": "Perfect baseline spring sequence",
-            "today": {"min": None, "max": 19.5, "summary": "Clear and sunny day. Calm bay breezes."},
-            "tomorrow": {"min": 10.5, "max": 21.0, "summary": "Beautiful clear skies continuing throughout."}
+            "today": {"min": None, "max": 19.5, "rain": 5, "summary": "Clear and sunny day. Calm bay breezes."},
+            "tomorrow": {"min": 10.5, "max": 21.0, "rain": 10, "summary": "Beautiful clear skies continuing throughout."}
         }
     ]
 
@@ -62,12 +62,14 @@ def generate_mock_telemetry_stream(broker_ip="192.168.2.2"):
                         "day_index": 0,
                         "expected_min": scenario["today"]["min"],
                         "expected_max": scenario["today"]["max"],
+                        "rain_probability": scenario["today"]["rain"],
                         "summary": scenario["today"]["summary"]
                     },
                     {
                         "day_index": 1,
                         "expected_min": scenario["tomorrow"]["min"],
                         "expected_max": scenario["tomorrow"]["max"],
+                        "rain_probability": scenario["tomorrow"]["rain"],
                         "summary": scenario["tomorrow"]["summary"]
                     }
                 ]

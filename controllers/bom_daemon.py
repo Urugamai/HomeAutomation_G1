@@ -105,6 +105,7 @@ class BomForecastXmlDaemon:
 
                 min_temp = None
                 max_temp = None
+                rain_probability = None
                 summary_text = ""
 
                 # Iterate internal data points
@@ -114,6 +115,13 @@ class BomForecastXmlDaemon:
                         min_temp = float(element.text) if element.text else None
                     elif elem_type == "air_temperature_maximum":
                         max_temp = float(element.text) if element.text else None
+                    elif elem_type in (
+                            "probability_of_precipitation",
+                            "probability_of_rain"):
+                        rain_probability = (
+                            float(element.text.strip().rstrip("%"))
+                            if element.text else None
+                        )
 
                 text_elem = period.find("text[@type='forecast']")
                 if text_elem is not None:
@@ -124,6 +132,7 @@ class BomForecastXmlDaemon:
                     "utc_timestamp": start_time_utc,
                     "expected_min": min_temp,
                     "expected_max": max_temp,
+                    "rain_probability": rain_probability,
                     "summary": summary_text
                 })
 

@@ -4,8 +4,9 @@ import time
 import configparser
 import traceback
 from pathlib import Path
+from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton)
+    QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton, QWidget)
 
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard
@@ -15,11 +16,21 @@ from libraries.mqtt_engine import MqttTelemetryListener
 # Open main.py and locate the __init__ constructor inside the MainWindow class:
 
 class MainWindow(QMainWindow):
+    DISPLAY_IDLE_TIMEOUT_MS = 5 * 60 * 1000
+
     # Open main.py and place this stylesheet assignment right inside MainWindow.__init__:
 
     def __init__(self, broker_ip="localhost"):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
+        self._display_is_sleeping = False
+        self._sleep_overlay = QWidget(self)
+        self._sleep_overlay.setStyleSheet("background-color: black;")
+        self._sleep_overlay.hide()
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._sleep_display)
+        QApplication.instance().installEventFilter(self)
 
         self.tabs = QTabWidget()
 
@@ -65,6 +76,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_bar.showMessage("Live Data Mode (Connected to MQ)")
             self.status_bar.setStyleSheet("background-color: #d4edda; color: #155724; font-weight: bold;")
+        self._reset_idle_timer()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -78,7 +90,37 @@ class MainWindow(QMainWindow):
             is_resting = data.get("hvac_in_rest", False)
             self.dashboard.hvac_config_tab.update_status_from_mqtt(current_run_state, is_resting)
 
+    def eventFilter(self, watched, event):
+        input_events = {
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.TouchBegin,
+            QEvent.Type.KeyPress,
+        }
+        if event.type() in input_events:
+            if self._display_is_sleeping:
+                self._wake_display()
+            else:
+                self._reset_idle_timer()
+        return super().eventFilter(watched, event)
+
+    def _reset_idle_timer(self):
+        if not self._display_is_sleeping:
+            self._idle_timer.start(self.DISPLAY_IDLE_TIMEOUT_MS)
+
+    def _sleep_display(self):
+        self._display_is_sleeping = True
+        self._sleep_overlay.setGeometry(self.rect())
+        self._sleep_overlay.raise_()
+        self._sleep_overlay.show()
+
+    def _wake_display(self):
+        self._sleep_overlay.hide()
+        self._display_is_sleeping = False
+        self._reset_idle_timer()
+
     def closeEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        self._idle_timer.stop()
         self.mqtt_listener.stop()
         super().closeEvent(event)
 
