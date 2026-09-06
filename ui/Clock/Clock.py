@@ -225,9 +225,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_solar.setText(f"Solar: {solar:.0f}W")
         self.progressBar_solar.setRange(0, 100)
         self.progressBar_solar.setValue(max(0, min(100, math.ceil(solar / 100))))
-        self.label_battery.setText(f"Battery: {soc}%")
+        self.label_battery.setText(f"Battery: {soc}% {battery / 1000:+.2f} kW")
         self.battery_flow_bar.set_value(battery)
-        self.label_grid.setText("Grid:")
+        self.label_grid.setText(f"Grid: {grid / 1000:+.2f} kW")
         self.grid_flow_bar.set_value(grid)
 
     def _replace_power_widgets(self):
