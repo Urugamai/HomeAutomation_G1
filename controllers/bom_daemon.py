@@ -119,11 +119,19 @@ class BomForecastXmlDaemon:
                             "probability_of_precipitation",
                             "probability_of_rain"):
                         rain_probability = (
-                            float(element.text.strip().rstrip("%"))
+                            self._parse_percentage(element.text)
                             if element.text else None
                         )
 
+                for text_elem in period.findall("text"):
+                    if text_elem.get("type") in (
+                            "probability_of_precipitation",
+                            "probability_of_rain"):
+                        rain_probability = self._parse_percentage(text_elem.text)
+
                 text_elem = period.find("text[@type='forecast']")
+                if text_elem is None:
+                    text_elem = period.find("text[@type='precis']")
                 if text_elem is not None:
                     summary_text = text_elem.text
 
@@ -152,6 +160,13 @@ class BomForecastXmlDaemon:
 
         except Exception as e:
             print(f"[XML TREE EXCEPTION] Failed parsing BOM document fields: {e}")
+
+    @staticmethod
+    def _parse_percentage(value):
+        try:
+            return float(value.strip().rstrip("%")) if value else None
+        except (AttributeError, TypeError, ValueError):
+            return None
 
 
 if __name__ == "__main__":
