@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 
 # Allow both `python -m ui.Clock.Clock` and the existing `python Clock.py`
@@ -39,6 +39,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
+        self._apply_clock_style()
         self.telemetry = {}
         self.screen_saver_enabled = screen_saver
         self.idle_timeout_ms = max(1, int(idle_timeout * 1000))
@@ -85,12 +86,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
 
     def _configure_visibility(self, height):
         self.text_clock_message.setVisible(height >= 420)
-        self.label_solar.setVisible(height >= 360)
-        self.progressBar_solar.setVisible(height >= 360)
-        self.label_battery.setVisible(height >= 360)
-        self.progressBar_battery.setVisible(height >= 360)
-        self.label_grid.setVisible(height >= 360)
-        self.label_value_grid.setVisible(height >= 360)
+        power_visible = height >= 380
+        for widget in (
+            self.label_solar, self.progressBar_solar, self.label_battery,
+            self.progressBar_battery, self.label_grid, self.label_value_grid,
+        ):
+            widget.setVisible(power_visible)
         for widget in (
             self.label_out_temp, self.label_today, self.label_today_min,
             self.label_rain, self.label_today_rain, self.label_next,
@@ -100,13 +101,42 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             widget.setVisible(height >= 300)
 
     def _configure_fonts(self, width, height):
-        clock_size = max(42, min(150, int(height * 0.34), int(width / 10)))
-        self.label_clock_display.setStyleSheet(
-            "background-color: black; color: yellow; border: none;"
+        date_size = max(28, int((height - 20) / 8.0))
+        clock_size = max(
+            42,
+            min(int((height - 20) / 2.0), int((width - 4 * date_size) / 6.3)),
         )
-        font = self.label_clock_display.font()
-        font.setPointSize(clock_size)
-        self.label_clock_display.setFont(font)
+        date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
+        for label in (
+            self.label_day_abbrev, self.label_day, self.label_month_abbrev,
+            self.label_year,
+        ):
+            label.setFont(date_font)
+        self.label_clock_display.setFont(
+            QFont("Courier New", clock_size, QFont.Weight.Bold)
+        )
+
+    def _apply_clock_style(self):
+        self.setStyleSheet("QMainWindow, QWidget { background-color: black; }")
+        yellow = QPalette()
+        yellow.setColor(QPalette.ColorRole.WindowText, QColor(240, 240, 26))
+        yellow.setColor(QPalette.ColorRole.Text, QColor(240, 240, 26))
+        yellow.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0))
+        for label in (
+            self.label_clock_display, self.label_day_abbrev, self.label_day,
+            self.label_month_abbrev, self.label_year, self.text_clock_message,
+        ):
+            label.setPalette(yellow)
+        for label in (
+            self.label_room, self.label_room_temp, self.label_room_humidity,
+            self.label_room_pressure, self.label_out_temp, self.label_today,
+            self.label_today_min, self.label_rain, self.label_today_rain,
+            self.label_next, self.label_next_min, self.label_next_rain,
+            self.label_next_rain_value, self.label_solar, self.label_battery,
+            self.label_grid, self.label_value_grid,
+        ):
+            label.setStyleSheet("background-color: black; color: yellow;")
+            label.setPalette(yellow)
 
     def _update_clock(self):
         now = datetime.datetime.now()
