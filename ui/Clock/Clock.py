@@ -84,6 +84,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self._apply_clock_style()
         self._replace_power_widgets()
         self.telemetry = {}
@@ -130,14 +132,20 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._configure_fonts(target_width, target_height)
 
     def _configure_visibility(self, height):
-        self.text_clock_message.setVisible(height >= 420)
-        power_visible = height >= 380
+        compact = height <= 420
+        self.text_clock_message.setVisible(not compact)
+        power_visible = not compact
         for widget in (
             self.label_solar, self.progressBar_solar, self.label_battery,
             self.label_grid,
             self.battery_flow_bar, self.grid_flow_bar,
         ):
             widget.setVisible(power_visible)
+        for widget in (
+            self.label_room, self.label_room_temp, self.label_room_humidity,
+            self.label_room_pressure, self.label_out_temp,
+        ):
+            widget.setVisible(not compact)
         for widget in (
             self.label_out_temp, self.label_today, self.label_today_min,
             self.label_rain, self.label_today_rain, self.label_next,
@@ -264,10 +272,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         range_label.setText(self._temperature_range(item))
         probability = item.get("rain_probability")
         if probability is None:
-            rain_label.setText("Rain: --%")
+            rain_label.setText("--%")
             return
         probability = max(0, min(100, int(float(probability))))
-        rain_label.setText(f"Rain: {probability}%")
+        rain_label.setText(f"{probability}%")
         rain_label.setStyleSheet(
             f"background-color: rgb({255}, {255 - probability}, {255 - probability});"
         )
