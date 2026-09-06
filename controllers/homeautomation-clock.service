@@ -1,0 +1,22 @@
+[Unit]
+Description=Home Automation MQTT Clock Display
+Wants=network-online.target homeautomation-update.service
+After=network-online.target homeautomation-update.service graphical.target display-manager.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/markw/HomeAutomation_G1
+Environment=PYTHONUNBUFFERED=1
+Environment=QT_AUTO_SCREEN_SCALE_FACTOR=1
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/markw/.Xauthority
+EnvironmentFile=-/etc/default/homeautomation-clock
+ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/ui/Clock/Clock.py $CLOCK_ARGS
+Restart=always
+RestartSec=10
+User=markw
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,18 @@
+
+pymodbus>=3.6.3
+smbus
+DateTime>=5.4
+PyQt6>=6.6.1
+pytz>=2023.3.post1
+pip>=23.3.2
+paho-mqtt~=1.6.1    # version 2 requires changes I have yet to determine
+
+setuptools>=69.0.3
+pandas>=2.2.0
+pvlib>=0.10.3
+cryptography>=42.0.3
+click>=8.1.7
+goodwe>=0.3.1
+random_word>=1.0.11
+inspirational-quotes>=0.0.0
+colour

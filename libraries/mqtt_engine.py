@@ -14,16 +14,20 @@ class MqttTelemetryListener(QObject):
     """Unified cross-platform telemetry processor capturing lux channels."""
     telemetry_received = pyqtSignal(dict)
 
-    def __init__(self, broker="localhost", port=1883):
+    def __init__(self, broker="localhost", port=1883, location="rumpus"):
         super().__init__()
         self.broker = broker
         self.port = port
+        self.location = location.strip("/") if location else None
         self.is_windows = (sys.platform == "win32")
         self.client = None
 
         self.cached_data = {
             "living_temp": 0.0,
             "living_lux": 0.0,  # FIXED: Added ambient room tracking cache
+            "room_temp": 0.0,
+            "room_humidity": 0.0,
+            "room_pressure": 0.0,
             "outside_temp": 0.0,
             "outside_lux": 0.0,  # FIXED: Added outdoor tracking cache
             "outside_humidity": 0.0,
@@ -73,9 +77,19 @@ class MqttTelemetryListener(QObject):
 
             if topic == "home/environment/living":
                 self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
+                self.cached_data["room_temp"] = self.cached_data["living_temp"]
                 self.cached_data["living_lux"] = float(data.get("light_lux", 0.0))
+                self._update_cached_float("room_humidity", data, "humidity")
+                self._update_cached_float("room_pressure", data, "pressure")
                 self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
                 self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
+            elif topic == "home/environment/rumpus" or (
+                self.location
+                and topic == f"home/environment/{self.location}"
+            ):
+                self._update_cached_float("room_temp", data, "temperature")
+                self._update_cached_float("room_humidity", data, "humidity")
+                self._update_cached_float("room_pressure", data, "pressure")
             elif topic == "home/environment/ecowitt":
                 self._update_cached_float(
                     "outside_temp", data, "outside_temp", "outdoor_temperature",
