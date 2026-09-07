@@ -39,11 +39,19 @@ for service in "${services[@]}"; do
 done
 
 echo
+sleep 2
 echo "SERVICE STATUS"
 for service in "${services[@]}"; do
     if sudo systemctl cat "$service" >/dev/null 2>&1; then
         sudo systemctl --no-pager --full --plain status "$service" | \
             sed -n '1,4p'
+    fi
+done
+
+echo "SERVICE LOG"
+for service in "${services[@]}"; do
+    if sudo systemctl cat "$service" >/dev/null 2>&1; then
+        sudo journalctl -u "$service" | tail -n 15
     fi
 done
 

@@ -47,6 +47,13 @@ for service in "${services[@]}"; do
     fi
 done
 
+echo "SERVICE LOG"
+for service in "${services[@]}"; do
+    if sudo systemctl cat "$service" >/dev/null 2>&1; then
+        sudo journalctl -u "$service" | tail -n 15
+    fi
+done
+
 if [[ "$failed" -ne 0 ]]; then
     echo
     echo "One or more services were missing or failed."
