@@ -50,6 +50,7 @@ done
 echo "SERVICE LOG"
 for service in "${services[@]}"; do
     if sudo systemctl cat "$service" >/dev/null 2>&1; then
+        echo
         sudo journalctl -u "$service" | tail -n 15
     fi
 done

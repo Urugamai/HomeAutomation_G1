@@ -24,19 +24,19 @@ from clock_display import Ui_MainWindow
 
 
 class ZeroCenteredPowerBar(QWidget):
-    """Horizontal positive/negative power bar matching the main dashboard."""
+    """Horizontal positive/negative kW bar matching the main dashboard."""
 
-    def __init__(self, maximum_watts=5000, parent=None):
+    def __init__(self, maximum_kw=5.0, parent=None):
         super().__init__(parent)
-        self.maximum_watts = float(maximum_watts)
-        self.value_watts = 0.0
+        self.maximum_kw = float(maximum_kw)
+        self.value_kw = 0.0
         self.setMinimumWidth(130)
         self.setMinimumHeight(28)
 
-    def set_value(self, value_watts):
-        self.value_watts = max(
-            -self.maximum_watts,
-            min(self.maximum_watts, float(value_watts)),
+    def set_value(self, value_kw):
+        self.value_kw = max(
+            -self.maximum_kw,
+            min(self.maximum_kw, float(value_kw)),
         )
         self.update()
 
@@ -52,12 +52,12 @@ class ZeroCenteredPowerBar(QWidget):
         painter.drawRoundedRect(0, 0, width, height, 4, 4)
 
         fill_width = int(
-            abs(self.value_watts) / self.maximum_watts * (width / 2)
+            abs(self.value_kw) / self.maximum_kw * (width / 2)
         )
-        if abs(self.value_watts) < 1:
+        if abs(self.value_kw) < 0.01:
             painter.setBrush(QBrush(QColor(140, 140, 140)))
             painter.drawRect(center_x - 2, 0, 4, height)
-        elif self.value_watts > 0:
+        elif self.value_kw > 0:
             painter.setBrush(QBrush(QColor(40, 167, 69)))
             painter.drawRect(center_x, 0, fill_width, height)
         else:
@@ -222,12 +222,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         soc = max(0, min(100, int(float(data.get("battery_soc", 0.0)))))
         battery = float(data.get("battery_flow", 0.0))
         grid = float(data.get("grid_flow", 0.0))
-        self.label_solar.setText(f"Solar: {solar:.0f}W")
+        self.label_solar.setText(f"Solar: {solar:.1f} kW")
         self.progressBar_solar.setRange(0, 100)
-        self.progressBar_solar.setValue(max(0, min(100, math.ceil(solar / 100))))
-        self.label_battery.setText(f"Battery: {soc}% {battery / 1000:+.2f} kW")
+        self.progressBar_solar.setValue(max(0, min(100, math.ceil(solar / 10 * 100))))
+        self.label_battery.setText(f"Battery: {soc}% {battery:+.2f} kW")
         self.battery_flow_bar.set_value(battery)
-        self.label_grid.setText(f"Grid: {grid / 1000:+.2f} kW")
+        self.label_grid.setText(f"Grid: {grid:+.2f} kW")
         self.grid_flow_bar.set_value(grid)
 
     def _replace_power_widgets(self):
@@ -286,11 +286,15 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         probability = item.get("rain_probability")
         if probability is None:
             rain_label.setText("--%")
+            rain_label.setStyleSheet(
+                "background-color: white; color: black; font-weight: bold;"
+            )
             return
         probability = max(0, min(100, int(float(probability))))
         rain_label.setText(f"{probability}%")
         rain_label.setStyleSheet(
-            f"background-color: rgb({255}, {255 - probability}, {255 - probability});"
+            f"background-color: rgb(255, {255 - probability}, {255 - probability});"
+            " color: black; font-weight: bold;"
         )
 
     def eventFilter(self, watched, event):
