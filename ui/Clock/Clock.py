@@ -154,10 +154,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             widget.setVisible(power_visible)
         for widget in (
-            self.label_room, self.label_room_temp, self.label_room_humidity,
-            self.label_room_pressure, self.label_out_temp,
+            self.label_room_humidity, self.label_room_pressure,
         ):
             widget.setVisible(not compact)
+        self.label_room.setVisible(True)
+        self.label_room_temp.setVisible(True)
+        self.label_out_temp.setVisible(True)
         for widget in (
             self.label_out_temp, self.label_today, self.label_today_min,
             self.label_rain, self.label_today_rain, self.label_next,
