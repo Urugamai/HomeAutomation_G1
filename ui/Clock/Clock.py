@@ -197,7 +197,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
         if height <= 420:
-            compact_font = QFont("Arial", 14)
+            compact_font = QFont(self.label_out_temp.font())
             for label in (
                 self.label_today, self.label_today_min, self.label_rain,
                 self.label_today_rain, self.label_next, self.label_next_min,
