@@ -210,7 +210,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
                 label.setFont(compact_font)
 
     def _apply_clock_style(self):
-        self.setStyleSheet("QMainWindow, QWidget { background-color: black; }")
+        self.setStyleSheet("QMainWindow, QWidget { background-color: white; }")
         yellow = QPalette()
         yellow.setColor(QPalette.ColorRole.WindowText, QColor(240, 240, 26))
         yellow.setColor(QPalette.ColorRole.Text, QColor(240, 240, 26))
@@ -224,8 +224,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             "background-color: black; color: yellow; "
             "border: 3px solid white;"
         )
-        self.label_clock_display.setStyleSheet(clock_border)
         for label in (
+            self.label_clock_display, self.text_clock_message,
             self.label_day_abbrev, self.label_day, self.label_month_abbrev,
             self.label_year,
         ):
@@ -330,8 +330,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             return
         probability = max(0, min(100, int(float(probability))))
         rain_label.setText(f"{probability}%")
+        red = round(255 * probability / 100)
+        green = round(255 * (1 - probability / 100))
         rain_label.setStyleSheet(
-            f"background-color: rgb(255, {255 - probability}, {255 - probability});"
+            f"background-color: rgb({red}, {green}, 0);"
             " color: black; font-weight: bold;"
         )
 
