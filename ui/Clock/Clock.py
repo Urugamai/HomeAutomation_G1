@@ -73,6 +73,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     """Wide-format clock display backed by the shared MQTT telemetry cache."""
 
     IDLE_TIMEOUT_SECONDS = 5 * 60
+    REFERENCE_WIDTH = 1600
+    REFERENCE_HEIGHT = 600
 
     def __init__(
         self,
@@ -83,6 +85,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         location=None,
     ):
         super().__init__()
+        self._layout_ready = False
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
         window_flags = (
@@ -123,6 +126,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
         self._update_clock()
+        self._layout_ready = True
         if self.screen_saver_enabled:
             self._reset_idle_timer()
 
@@ -185,11 +189,23 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_clock_display.setMinimumHeight(0)
 
     def _configure_fonts(self, width, height):
-        date_size = max(24, int((height - 40) / 10.0))
-        clock_size = max(
-            42,
-            min(int((height - 60) / 2.2), int((width - 4 * date_size - 20) / 6.3)),
+        scale = min(
+            width / self.REFERENCE_WIDTH,
+            height / self.REFERENCE_HEIGHT,
         )
+        date_size = max(18, min(60, round(60 * scale)))
+        clock_size = max(
+            32,
+            min(
+                round(150 * scale),
+                int(height * 0.38),
+                int((width - 4 * date_size - 20) / 6.3),
+            ),
+        )
+        info_size = max(10, min(24, round(19 * scale)))
+        power_size = max(10, min(24, round(20 * scale)))
+        message_size = max(10, min(16, round(16 * scale)))
+
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
         for label in (
             self.label_day_abbrev, self.label_day, self.label_month_abbrev,
@@ -199,15 +215,28 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
-        if height <= 420:
-            compact_font = QFont(self.label_out_temp.font())
-            for label in (
-                self.label_today, self.label_today_min, self.label_rain,
-                self.label_today_rain, self.label_next, self.label_next_min,
-                self.label_next_rain, self.label_next_rain_value,
-                self.label_solar, self.label_battery, self.label_grid,
-            ):
-                label.setFont(compact_font)
+        self.text_clock_message.setFont(
+            QFont("Courier New", message_size, QFont.Weight.Bold)
+        )
+        for label in (
+            self.label_room, self.label_room_temp, self.label_room_humidity,
+            self.label_room_pressure, self.label_out_temp, self.label_today,
+            self.label_today_min, self.label_rain, self.label_today_rain,
+            self.label_next, self.label_next_min, self.label_next_rain,
+            self.label_next_rain_value,
+        ):
+            label.setFont(QFont("Arial", info_size, QFont.Weight.Bold))
+        for label in (
+            self.label_solar, self.label_battery, self.label_grid,
+            self.label_value_grid,
+        ):
+            label.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._layout_ready:
+            self._configure_visibility(self.height())
+            self._configure_fonts(self.width(), self.height())
 
     def _apply_clock_style(self):
         self.setStyleSheet("QMainWindow, QWidget { background-color: white; }")
