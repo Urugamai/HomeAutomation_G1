@@ -8,7 +8,6 @@ services=(
     sigen_power.service
     charger.service
     blinds.service
-    hvac.service
     home_controller.service
 #    cbus.service
 )
@@ -16,6 +15,14 @@ services=(
 failed=0
 
 sudo systemctl daemon-reload
+
+if sudo systemctl cat "hvac.service" >/dev/null 2>&1; then
+    echo "DISABLING LEGACY: hvac.service"
+    if ! sudo systemctl disable --now "hvac.service" >/dev/null; then
+        echo "FAILED TO DISABLE LEGACY: hvac.service"
+        failed=1
+    fi
+fi
 
 for service in "${services[@]}"; do
     if ! sudo systemctl cat "$service" >/dev/null 2>&1; then

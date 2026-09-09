@@ -16,19 +16,6 @@ sudo cp /home/markw/HomeAutomation_G1/controllers/homeautomation-update.service 
 sudo systemctl daemon-reload
 sudo systemctl enable homeautomation-update.service
 
-# HVAC DAEMON
-# Reload the systemd controller manager configuration files
-sudo systemctl daemon-reload
-
-# Enable the service file so it launches automatically on boot
-sudo systemctl enable hvac.service
-
-# Start the background daemon immediately without restarting the Pi
-sudo systemctl start hvac.service
-
-# Check the live system logs to verify the engine is monitoring things correctly
-sudo journalctl -u hvac.service -f -n 20
-
 # BOM DAEMON
 sudo systemctl daemon-reload
 sudo systemctl enable bom_weather.service
@@ -64,6 +51,9 @@ sudo systemctl start ecowitt_weather.service
 sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
+
+# Disable the legacy duplicate HVAC expander daemon.
+sudo systemctl disable --now hvac.service
 
 # HOME CONTROLLER DISPLAY
 sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller.service /etc/systemd/system/

@@ -63,7 +63,7 @@ class HvacHardwareDaemon:
             self.bus = None
 
     def _load_broker_config(self) -> str:
-        config_path = Path(__file__).resolve().parent / "config.ini"
+        config_path = Path(__file__).resolve().parent.parent / "config.ini"
         if config_path.exists():
             try:
                 config = configparser.ConfigParser()
