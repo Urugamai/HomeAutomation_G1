@@ -1,4 +1,7 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
+    QTableWidgetItem, QHeaderView,
+)
 from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
 
@@ -86,6 +89,79 @@ class AdaptiveFlowWidget(QWidget):
             self.lbl.setText(f"{title}: {value:.1f} kW")
         else:
             self.lbl.setText(f"{title}: {value:.2f} kW")
+
+
+class EnvironmentSourcesPage(QWidget):
+    """Table of the latest telemetry received from each environment source."""
+
+    COLUMNS = (
+        "Source", "Hostname", "Temperature", "Humidity", "Pressure",
+        "Light", "Wind", "Rain", "Updated",
+    )
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        title = QLabel("Environment Sources")
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.table = QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+
+    @staticmethod
+    def _value(source, *keys, default="--"):
+        for key in keys:
+            value = source.get(key)
+            if value is not None:
+                return value
+        return default
+
+    @classmethod
+    def _number(cls, source, *keys, suffix=""):
+        value = cls._value(source, *keys, default=None)
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.1f}{suffix}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    @classmethod
+    def _source_row(cls, source_key, source):
+        is_ecowitt = source_key == "Ecowitt"
+        light_suffix = " W/m²" if is_ecowitt else " lx"
+        return (
+            "Ecowitt" if is_ecowitt else source_key,
+            source.get("hostname") or source.get("device_name") or "--",
+            cls._number(source, "temperature", "outside_temp", "outdoor_temp", suffix=" °C"),
+            cls._number(source, "humidity", "outside_humidity", suffix=" %"),
+            cls._number(source, "pressure", suffix=" hPa"),
+            cls._number(
+                source,
+                "solar_radiation" if is_ecowitt else "light_lux",
+                "outside_lux",
+                suffix=light_suffix,
+            ),
+            cls._number(source, "wind_speed", "wind_speed_kmh", suffix=" km/h"),
+            cls._number(source, "rain_rate", suffix=" mm/h"),
+            cls._number(source, "timestamp"),
+        )
+
+    def refresh_sources(self, sources):
+        ordered_sources = sorted(
+            sources.items(),
+            key=lambda item: (item[0] != "Ecowitt", item[0].lower()),
+        )
+        self.table.setRowCount(len(ordered_sources))
+        for row, (source_key, source) in enumerate(ordered_sources):
+            for column, value in enumerate(self._source_row(source_key, source)):
+                self.table.setItem(row, column, QTableWidgetItem(str(value)))
 
 
 class AdaptiveDashboard(QWidget):
@@ -178,8 +254,6 @@ class AdaptiveDashboard(QWidget):
             self.forecast_container.hide()
             self.energy_container.hide()
             self.time_lbl.setFont(QFont("Monospace", 22, QFont.Weight.Bold))
-            if parent_tab_widget and parent_tab_widget.count() > 1:
-                parent_tab_widget.removeTab(1)
         elif height < 500:
             self.current_profile = "COMPACT_DESK"
             self.temp_lbl.show()
@@ -198,7 +272,7 @@ class AdaptiveDashboard(QWidget):
             self._mount_hvac_view(parent_tab_widget)
 
     def _mount_hvac_view(self, parent_tab_widget):
-        if parent_tab_widget and parent_tab_widget.count() == 1:
+        if parent_tab_widget and self.hvac_config_tab is None:
             self.hvac_config_tab = HvacConfigurationPage()
             self.hvac_config_tab.update_display_metrics()
             parent_tab_widget.addTab(self.hvac_config_tab, "Climate Settings")

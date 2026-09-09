@@ -52,7 +52,8 @@ class MqttTelemetryListener(QObject):
             "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
             "hvac_in_rest": False,
-            "forecast_set": []
+            "forecast_set": [],
+            "environment_sources": {},
         }
 
     def start(self):
@@ -78,34 +79,39 @@ class MqttTelemetryListener(QObject):
             topic = msg.topic
             data = json.loads(msg.payload.decode('utf-8').strip())
 
-            if topic == "home/environment/living":
+            local_topics = {
+                f"home/environment/living/{self.location}",
+                f"home/environment/{self.location}",
+            } if self.location else set()
+
+            if topic in local_topics or (
+                not self.location and topic == "home/environment/living"
+            ):
+                source_key = (
+                    data.get("hostname")
+                    or data.get("device_name")
+                    or self.location
+                    or "living"
+                )
+                self._record_environment_source(topic, data, source_key)
                 self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
                 self.cached_data["room_temp"] = self.cached_data["living_temp"]
                 self.cached_data["living_lux"] = float(data.get("light_lux", 0.0))
                 self.cached_data["room_source"] = data.get(
-                    "hostname", data.get("device_name", "")
+                    "hostname", data.get("device_name", self.location or "")
                 )
                 self._update_cached_float("room_humidity", data, "humidity")
                 self._update_cached_float("room_pressure", data, "pressure")
                 self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
                 self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
-            elif (
-                topic == "home/environment/rumpus"
-                or (
-                    self.location
-                    and topic in (
-                        f"home/environment/living/{self.location}",
-                        f"home/environment/{self.location}",
-                    )
-                )
-            ):
-                self._update_cached_float("room_temp", data, "temperature")
-                self._update_cached_float("room_humidity", data, "humidity")
-                self._update_cached_float("room_pressure", data, "pressure")
-                self.cached_data["room_source"] = data.get(
-                    "hostname", data.get("device_name", self.cached_data["room_source"])
+            elif (source_key := self._hostname_from_topic(topic)) is not None:
+                self._record_environment_source(
+                    topic,
+                    data,
+                    data.get("hostname", data.get("device_name", source_key)),
                 )
             elif topic == "home/environment/ecowitt":
+                self._record_environment_source(topic, data, "Ecowitt")
                 self._update_cached_float(
                     "outside_temp", data, "outside_temp", "outdoor_temperature",
                     "outdoor_temp", "temperature")
@@ -161,6 +167,28 @@ class MqttTelemetryListener(QObject):
             if data.get(key) is not None:
                 self.cached_data[cache_key] = float(data[key])
                 return
+
+    def _record_environment_source(self, topic, data, source_key):
+        source = dict(data)
+        source["topic"] = topic
+        source["source_key"] = source_key
+        source["hostname"] = (
+            data.get("hostname", data.get("device_name", ""))
+            if source_key == "Ecowitt"
+            else data.get("hostname", data.get("device_name", source_key))
+        )
+        self.cached_data["environment_sources"][source_key] = source
+
+    @staticmethod
+    def _hostname_from_topic(topic):
+        for prefix in ("home/environment/living/", "home/environment/"):
+            if topic.startswith(prefix):
+                suffix = topic[len(prefix):]
+                if suffix and "/" not in suffix and suffix not in {
+                    "ecowitt", "forecast", "living", "rumpus",
+                }:
+                    return suffix
+        return None
 
     def _update_persistent_forecast_cache(self, incoming_forecasts):
         for incoming_item in incoming_forecasts:

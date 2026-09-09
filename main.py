@@ -3,13 +3,14 @@ import os
 import time
 import configparser
 import traceback
+import socket
 from pathlib import Path
 from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton, QWidget)
 
 # Cross-package import targets matching your project layout schema
-from ui.adaptive_ui import AdaptiveDashboard
+from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
 from libraries.mqtt_engine import MqttTelemetryListener
 
 
@@ -47,6 +48,8 @@ class MainWindow(QMainWindow):
 
         self.dashboard = AdaptiveDashboard()
         self.tabs.addTab(self.dashboard, "Status Core")
+        self.environment_page = EnvironmentSourcesPage()
+        self.tabs.addTab(self.environment_page, "Environment")
         self.setCentralWidget(self.tabs)
 
         # ... Rest of your main.py constructor lines continue exactly as before ...
@@ -65,7 +68,10 @@ class MainWindow(QMainWindow):
         self.showFullScreen()  # <--- REMOVE ANY LATER .show() AND CALL THIS INSIDE THE CONSTRUCTOR
 
         # 4. Initialize and bind the environment-aware listener engine
-        self.mqtt_listener = MqttTelemetryListener(broker=broker_ip)
+        self.mqtt_listener = MqttTelemetryListener(
+            broker=broker_ip,
+            location=socket.gethostname(),
+        )
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
         self.mqtt_listener.start()
 
@@ -85,6 +91,7 @@ class MainWindow(QMainWindow):
 
     def _handle_telemetry_routing(self, data: dict):
         self.dashboard.refresh_telemetry_ui(data)
+        self.environment_page.refresh_sources(data.get("environment_sources", {}))
         if self.dashboard.hvac_config_tab:
             current_run_state = data.get("hvac_state", "OFF")
             is_resting = data.get("hvac_in_rest", False)
