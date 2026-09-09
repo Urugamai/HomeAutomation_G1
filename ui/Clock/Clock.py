@@ -132,6 +132,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         target_height = min(height or geometry.height(), geometry.height())
         self.resize(target_width, target_height)
         self.move(0, 0)
+        self._configure_layout()
         self._configure_visibility(target_height)
         self._configure_fonts(target_width, target_height)
 
@@ -165,11 +166,26 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             widget.setVisible(height >= 300)
 
+    def _configure_layout(self):
+        for layout in (
+            self.verticalLayout,
+            self.verticalLayout_main,
+            self.horizontalLayout_clock_date,
+            self.verticalLayout_ClockDisplay,
+            self.verticalLayout_date,
+            self.horizontalLayout_power,
+            self.horizontalLayout_environment_main,
+            self.horizontalLayout_room_stats,
+        ):
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+        self.label_clock_display.setMinimumHeight(0)
+
     def _configure_fonts(self, width, height):
-        date_size = max(28, int((height - 20) / 8.0))
+        date_size = max(24, int((height - 40) / 10.0))
         clock_size = max(
             42,
-            min(int((height - 20) / 2.0), int((width - 4 * date_size) / 6.3)),
+            min(int((height - 60) / 2.2), int((width - 4 * date_size - 20) / 6.3)),
         )
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
         for label in (
@@ -180,6 +196,15 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
+        if height <= 420:
+            compact_font = QFont("Arial", 14)
+            for label in (
+                self.label_today, self.label_today_min, self.label_rain,
+                self.label_today_rain, self.label_next, self.label_next_min,
+                self.label_next_rain, self.label_next_rain_value,
+                self.label_solar, self.label_battery, self.label_grid,
+            ):
+                label.setFont(compact_font)
 
     def _apply_clock_style(self):
         self.setStyleSheet("QMainWindow, QWidget { background-color: black; }")
