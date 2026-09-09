@@ -1,6 +1,7 @@
 import sys
 import time
 import json
+import socket
 import configparser
 from pathlib import Path
 
@@ -41,6 +42,7 @@ class LivingAreaHardwareController:
     def __init__(self):
         print("[INIT] Initializing Living Area Master Automation Subsystem...")
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
+        self.hostname = socket.gethostname()
 
         self.t_min = 20.0
         self.t_max = 24.0
@@ -258,6 +260,8 @@ class LivingAreaHardwareController:
     def _publish_telemetry(self, temp: float, humidity: float, lux: float):
         payload = {
             "room_name": "Living Area",
+            "hostname": self.hostname,
+            "device_name": self.hostname,
             "temperature": temp,
             "humidity": humidity,
             "light_lux": round(lux, 1),
@@ -265,7 +269,17 @@ class LivingAreaHardwareController:
             "hvac_in_rest": self.is_resting,
             "timestamp": time.time()
         }
-        self.mqtt_client.publish("home/environment/living", json.dumps(payload), retain=True)
+        payload_json = json.dumps(payload)
+        self.mqtt_client.publish("home/environment/living", payload_json, retain=True)
+        self.mqtt_client.publish(
+            f"home/environment/living/{self.hostname}",
+            payload_json,
+            retain=True,
+        )
+        print(
+            f"[TELEMETRY] {self.hostname}: "
+            f"{temp:.1f}°C, {humidity:.1f}% RH, {lux:.1f} lx"
+        )
 
 
 if __name__ == "__main__":

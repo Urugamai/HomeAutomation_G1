@@ -3,6 +3,7 @@ import configparser
 import datetime
 import math
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -79,7 +80,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         screen_saver=False,
         idle_timeout=IDLE_TIMEOUT_SECONDS,
         wake_duration=60 * 60,
-        location="rumpus",
+        location=None,
     ):
         super().__init__()
         self.setupUi(self)
@@ -110,10 +111,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._wake_timer.timeout.connect(self._sleep_display)
         QApplication.instance().installEventFilter(self)
 
-        self.location = location
+        self.location = location or socket.gethostname()
         self.mqtt_listener = MqttTelemetryListener(
             broker=broker,
-            location=location,
+            location=self.location,
         )
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry)
         self.mqtt_listener.start()
@@ -393,7 +394,7 @@ def main():
     parser.add_argument("--wake-seconds", type=int, default=60 * 60)
     parser.add_argument(
         "--location",
-        default="rumpus",
+        default=None,
         help="Room telemetry topic suffix, e.g. rumpus or bathroom",
     )
     args = parser.parse_args()
