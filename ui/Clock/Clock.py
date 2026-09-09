@@ -373,7 +373,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         return f"{float(minimum):.1f} → {float(maximum):.1f}°C"
 
     def _set_forecast_row(self, date_label, range_label, rain_label, title, item):
-        date_label.setText(f"{title} ")
+        date_label.setText(f"{title}: ")
         range_label.setText(self._temperature_range(item))
         probability = item.get("rain_probability")
         if probability is None:
