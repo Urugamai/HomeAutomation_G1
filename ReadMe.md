@@ -8,6 +8,10 @@ sudo apt update
 <br>
 sudo apt install -y python3-pyqt6 python3-paho-mqtt
 <br>
+cd /home/markw
+<br>
+git clone https://github.com/Urugamai/HomeAutomation_G1.git
+<br>
 cd /home/markw/HomeAutomation_G1
 <br>
 sudo cp controllers/homeautomation-clock.service /etc/systemd/system/

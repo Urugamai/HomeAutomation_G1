@@ -1,3 +1,5 @@
+import datetime
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView,
@@ -338,7 +340,8 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{t_min:.1f}°C → {t_max:.1f}°C"
             rain_str = self._format_rain_probability(today_data)
             self.today_forecast_lbl.setText(
-                f"<b>Today</b><br><font color='#17a2b8'>{temp_str}</font>"
+                f"<b>{self._forecast_date(today_data)}</b><br>"
+                f"<font color='#17a2b8'>{temp_str}</font>"
                 f"<br><font color='#007bff'>{rain_str}</font>"
                 f"<br><i>{today_data.get('summary', '')}</i>"
             )
@@ -356,10 +359,33 @@ class AdaptiveDashboard(QWidget):
                 temp_str = f"{tm_min:.1f}°C → {tm_max:.1f}°C"
             rain_str = self._format_rain_probability(tomorrow_data)
             self.tomorrow_forecast_lbl.setText(
-                f"<b>Tomorrow</b><br><font color='#007aff'>{temp_str}</font>"
+                f"<b>{self._forecast_date(tomorrow_data)}</b><br>"
+                f"<font color='#007aff'>{temp_str}</font>"
                 f"<br><font color='#007bff'>{rain_str}</font>"
                 f"<br><i>{tomorrow_data.get('summary', '')}</i>"
             )
+
+    @staticmethod
+    def _forecast_date(forecast_data):
+        timestamp = forecast_data.get("utc_timestamp")
+        if timestamp:
+            try:
+                parsed = datetime.datetime.fromisoformat(
+                    str(timestamp).replace("Z", "+00:00")
+                )
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone()
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        try:
+            day_index = int(forecast_data.get("day_index", 0))
+        except (TypeError, ValueError):
+            return "--"
+        return (datetime.datetime.now() + datetime.timedelta(days=day_index)).strftime(
+            "%Y-%m-%d"
+        )
 
     @staticmethod
     def _format_rain_probability(forecast_data):

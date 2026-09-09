@@ -75,6 +75,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     IDLE_TIMEOUT_SECONDS = 5 * 60
     REFERENCE_WIDTH = 1600
     REFERENCE_HEIGHT = 600
+    REFERENCE_CLOCK_SIZE = 190
+    POWER_BAR_HEIGHT = 16
 
     def __init__(
         self,
@@ -187,6 +189,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
         self.label_clock_display.setMinimumHeight(0)
+        self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
 
     def _configure_fonts(self, width, height):
         scale = min(
@@ -197,7 +200,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         clock_size = max(
             32,
             min(
-                round(150 * scale),
+                round(self.REFERENCE_CLOCK_SIZE * scale),
                 int(height * 0.38),
                 int((width - 4 * date_size - 20) / 6.3),
             ),
@@ -327,13 +330,35 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         if today:
             self._set_forecast_row(
                 self.label_today, self.label_today_min, self.label_today_rain,
-                "Today:", today
+                self._forecast_date(today), today
             )
         if tomorrow:
             self._set_forecast_row(
                 self.label_next, self.label_next_min, self.label_next_rain_value,
-                "Next:", tomorrow
+                self._forecast_date(tomorrow), tomorrow
             )
+
+    @staticmethod
+    def _forecast_date(item):
+        timestamp = item.get("utc_timestamp")
+        if timestamp:
+            try:
+                parsed = datetime.datetime.fromisoformat(
+                    str(timestamp).replace("Z", "+00:00")
+                )
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone()
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        try:
+            day_index = int(item.get("day_index", 0))
+        except (TypeError, ValueError):
+            return "--"
+        return (datetime.datetime.now() + datetime.timedelta(days=day_index)).strftime(
+            "%Y-%m-%d"
+        )
 
     @staticmethod
     def _temperature_range(item):
