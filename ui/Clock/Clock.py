@@ -31,7 +31,7 @@ class ZeroCenteredPowerBar(QWidget):
         self.maximum_kw = float(maximum_kw)
         self.value_kw = 0.0
         self.setMinimumWidth(130)
-        self.setMinimumHeight(28)
+        self.setFixedHeight(16)
 
     def set_value(self, value_kw):
         self.value_kw = max(
