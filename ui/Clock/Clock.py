@@ -192,6 +192,16 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_month_abbrev, self.label_year, self.text_clock_message,
         ):
             label.setPalette(yellow)
+        clock_border = (
+            "background-color: black; color: yellow; "
+            "border: 3px solid white;"
+        )
+        self.label_clock_display.setStyleSheet(clock_border)
+        for label in (
+            self.label_day_abbrev, self.label_day, self.label_month_abbrev,
+            self.label_year,
+        ):
+            label.setStyleSheet(clock_border)
         for label in (
             self.label_room, self.label_room_temp, self.label_room_humidity,
             self.label_room_pressure, self.label_out_temp, self.label_today,
