@@ -75,7 +75,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     IDLE_TIMEOUT_SECONDS = 5 * 60
     REFERENCE_WIDTH = 1600
     REFERENCE_HEIGHT = 600
-    REFERENCE_CLOCK_SIZE = 190
+    REFERENCE_CLOCK_SIZE = 230
     POWER_BAR_HEIGHT = 16
 
     def __init__(
@@ -201,7 +201,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             32,
             min(
                 round(self.REFERENCE_CLOCK_SIZE * scale),
-                int(height * 0.38),
+                int(height * 0.45),
                 int((width - 4 * date_size - 20) / 6.3),
             ),
         )
@@ -373,7 +373,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         return f"{float(minimum):.1f} → {float(maximum):.1f}°C"
 
     def _set_forecast_row(self, date_label, range_label, rain_label, title, item):
-        date_label.setText(title)
+        date_label.setText(f"{title} ")
         range_label.setText(self._temperature_range(item))
         probability = item.get("rain_probability")
         if probability is None:
