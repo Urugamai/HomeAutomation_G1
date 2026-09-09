@@ -9,7 +9,7 @@ services=(
     charger.service
     blinds.service
     hvac.service
-    homeautomation-clock.service
+    home_controller.service
 #    cbus.service
 )
 

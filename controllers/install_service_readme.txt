@@ -65,6 +65,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
 
+# HOME CONTROLLER DISPLAY
+sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable home_controller.service
+sudo systemctl start home_controller.service
+
+# Verify the display controller logs
+sudo journalctl -u home_controller.service -f -n 20
+
 
 # Start all daemons
 #####################
@@ -80,5 +89,4 @@ python3 controllers/sigen_daemon.py > ~/sigen.log 2>&1 &
 # 4. Start the Bureau of Meteorology hourly XML forecast sync downloader
 python3 controllers/bom_daemon.py > ~/bom.log 2>&1 &
 
-# START THE DISPLAY
-python3 main.py
+# The display is managed by home_controller.service.
