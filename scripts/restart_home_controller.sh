@@ -9,8 +9,8 @@ services=(
     charger.service
     blinds.service
     hvac.service
+    homeautomation-clock.service
 #    cbus.service
-#    homeautomation-clock.service
 )
 
 failed=0
