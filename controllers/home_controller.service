@@ -8,6 +8,8 @@ Type=simple
 WorkingDirectory=/home/markw/HomeAutomation_G1
 Environment=PYTHONUNBUFFERED=1
 Environment=QT_AUTO_SCREEN_SCALE_FACTOR=1
+Environment=QT_QPA_PLATFORM=xcb
+Environment=GTK_USE_PORTAL=0
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/markw/.Xauthority
 EnvironmentFile=-/etc/default/home_controller

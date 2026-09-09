@@ -2,7 +2,7 @@
 set -u
 
 services=(
-#    living_zone.service
+    living_zone.service
 #    ecowitt_weather.service
 #    bom_weather.service
 #    sigen_power.service
@@ -62,4 +62,4 @@ if [[ "$failed" -ne 0 ]]; then
 fi
 
 echo
-echo "All configured Clock services restarted successfully."
+echo "All configured Clock and environment services restarted successfully."

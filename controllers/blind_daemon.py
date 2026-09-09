@@ -49,11 +49,19 @@ class BlindAutomationDaemon:
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
 
-        try:
-            self.client.connect(self.broker_ip, 1883, keepalive=60)
-            self.client.loop_start()
-        except Exception as e:
-            print(f"[NETWORK ERROR] Blind Daemon broker handshake failed: {e}")
+        connected = False
+        while not connected:
+            try:
+                self.client.connect(self.broker_ip, 1883, keepalive=60)
+                self.client.loop_start()
+                connected = True
+                print(f"[MQTT] Blind Daemon connected to broker ({self.broker_ip}).")
+            except Exception as e:
+                print(
+                    f"[NETWORK DELAY] Blind Daemon broker unavailable: {e}. "
+                    "Retrying in 5 seconds..."
+                )
+                time.sleep(5.0)
 
         print("[RUNNING] Blind monitoring loop armed. Listening for environment changes.")
         try:
