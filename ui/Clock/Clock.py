@@ -238,7 +238,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_next_rain_value, self.label_solar, self.label_battery,
             self.label_grid, self.label_value_grid,
         ):
-            label.setStyleSheet("background-color: black; color: yellow;")
+            label.setStyleSheet("background-color: white; color: black;")
             label.setPalette(yellow)
 
     def _update_clock(self):
