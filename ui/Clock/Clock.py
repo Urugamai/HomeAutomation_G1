@@ -8,8 +8,10 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPalette, QPen, QBrush
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
+from PyQt6.QtGui import (
+    QColor, QFont, QFontMetrics, QPainter, QPalette, QPen, QBrush,
+)
+from PyQt6.QtWidgets import QApplication, QLayout, QMainWindow, QWidget
 
 # Allow both `python -m ui.Clock.Clock` and the existing `python Clock.py`
 # launch style used by Raspberry Pi services.
@@ -32,7 +34,7 @@ class ZeroCenteredPowerBar(QWidget):
         self.maximum_kw = float(maximum_kw)
         self.value_kw = 0.0
         self.setMinimumWidth(130)
-        self.setFixedHeight(16)
+        self.setFixedHeight(24)
 
     def set_value(self, value_kw):
         self.value_kw = max(
@@ -76,7 +78,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     REFERENCE_WIDTH = 1600
     REFERENCE_HEIGHT = 600
     REFERENCE_CLOCK_SIZE = 230
-    POWER_BAR_HEIGHT = 16
+    POWER_BAR_HEIGHT = 24
 
     def __init__(
         self,
@@ -164,6 +166,11 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_room_humidity, self.label_room_pressure,
         ):
             widget.setVisible(not compact)
+        for widget in (
+            self.label_day_abbrev, self.label_day, self.label_month_abbrev,
+            self.label_year,
+        ):
+            widget.setVisible(True)
         self.label_room.setVisible(True)
         self.label_room_temp.setVisible(True)
         self.label_out_temp.setVisible(True)
@@ -189,6 +196,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
         self.label_clock_display.setMinimumHeight(0)
+        self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
 
     def _configure_fonts(self, width, height):
@@ -205,9 +213,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
                 int((width - 4 * date_size - 20) / 6.3),
             ),
         )
-        info_size = max(10, min(24, round(19 * scale)))
-        power_size = max(10, min(24, round(20 * scale)))
+        info_size = max(12, min(24, round(21 * scale)))
+        power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
+        self.progressBar_solar.setMaximumWidth(
+            max(100, min(240, round(width * 0.15)))
+        )
 
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
         for label in (
@@ -215,6 +226,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_year,
         ):
             label.setFont(date_font)
+            label.setMinimumWidth(QFontMetrics(date_font).horizontalAdvance("2026") + 8)
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
