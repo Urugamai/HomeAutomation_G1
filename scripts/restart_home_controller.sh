@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -u
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+
 services=(
     living_zone.service
     ecowitt_weather.service
@@ -13,6 +16,18 @@ services=(
 )
 
 failed=0
+
+source_file="$repo_root/controllers/living_zone.service"
+if [[ ! -f "$source_file" ]]; then
+    echo "MISSING SERVICE FILE: $source_file"
+    failed=1
+else
+    echo "INSTALLING: living_zone.service"
+    if ! sudo install -m 0644 "$source_file" /etc/systemd/system/living_zone.service; then
+        echo "FAILED TO INSTALL: living_zone.service"
+        failed=1
+    fi
+fi
 
 sudo systemctl daemon-reload
 

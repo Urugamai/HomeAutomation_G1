@@ -259,7 +259,7 @@ class LivingAreaHardwareController:
 
     def _publish_telemetry(self, temp: float, humidity: float, lux: float):
         payload = {
-            "room_name": "Living Area",
+            "room_name": self.hostname,
             "hostname": self.hostname,
             "device_name": self.hostname,
             "temperature": temp,

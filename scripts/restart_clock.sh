@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -u
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+
 services=(
     living_zone.service
 #    ecowitt_weather.service
@@ -14,6 +17,20 @@ services=(
 )
 
 failed=0
+
+for service_file in living_zone.service homeautomation-clock.service; do
+    source_file="$repo_root/controllers/$service_file"
+    if [[ ! -f "$source_file" ]]; then
+        echo "MISSING SERVICE FILE: $source_file"
+        failed=1
+        continue
+    fi
+    echo "INSTALLING: $service_file"
+    if ! sudo install -m 0644 "$source_file" "/etc/systemd/system/$service_file"; then
+        echo "FAILED TO INSTALL: $service_file"
+        failed=1
+    fi
+done
 
 sudo systemctl daemon-reload
 

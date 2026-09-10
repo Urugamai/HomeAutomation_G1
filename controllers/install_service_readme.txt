@@ -48,6 +48,8 @@ sudo systemctl enable ecowitt_weather.service
 sudo systemctl start ecowitt_weather.service
 
 # HVAC as LIVING ZONE
+# The restart_clock.sh and restart_home_controller.sh scripts install this
+# unit automatically on new devices before enabling it.
 sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
