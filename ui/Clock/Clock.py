@@ -232,6 +232,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             height / self.REFERENCE_HEIGHT,
         )
         date_size = max(18, min(60, round(60 * scale)))
+        if height <= 420:
+            date_size = max(18, round(date_size * 0.82))
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
         date_width = QFontMetrics(date_font).horizontalAdvance("2026") + 8
         available_clock_width = max(32, width - date_width - 4)
@@ -250,7 +252,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             width / self.REFERENCE_WIDTH,
             max(height, 480) / self.REFERENCE_HEIGHT,
         )
-        info_size = max(8, min(19, round(16 * info_scale)))
+        if height <= 420:
+            info_size = max(8, min(16, round(18 * info_scale)))
+        else:
+            info_size = max(8, min(19, round(16 * info_scale)))
         power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
