@@ -187,21 +187,24 @@ class LivingAreaHardwareController:
         except Exception as e:
             print(f"[MQTT ERROR] Failed parsing setting adjustment frame: {e}")
 
-    def _read_sensors(self) -> tuple[float, float, float]:
+    def _read_sensors(self) -> tuple[float, float, float, float]:
         """Polls physical sensors safely using factory calibration polynomials."""
         if not IS_RASPI or not self.bus:
             import random
-            return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0
+            return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0, 1013.0
 
-        temp_c, humidity, lux = 22.0, 50.0, 0.0
+        temp_c, humidity, lux, pressure = 22.0, 50.0, 0.0, 1013.0
 
         try:
             if self.bme_sensor_type == "BME280_DIRECT":
-                temp_c, humidity = self._read_bme280(addr=self.discovered_bme_addr)
+                temp_c, humidity, pressure = self._read_bme280(
+                    addr=self.discovered_bme_addr
+                )
             elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
                 if self.bme680_sensor.get_sensor_data():
                     temp_c = round(self.bme680_sensor.data.temperature, 1)
                     humidity = round(self.bme680_sensor.data.humidity, 1)
+                    pressure = round(self.bme680_sensor.data.pressure, 1)
 
             if not self.veml_is_online:
                 try:
@@ -221,7 +224,7 @@ class LivingAreaHardwareController:
         except Exception as e:
             print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
 
-        return temp_c, humidity, lux
+        return temp_c, humidity, lux, pressure
 
     @staticmethod
     def _signed(value, bits):
@@ -287,7 +290,29 @@ class LivingAreaHardwareController:
                * (1.0 + calibration["h3"] / 67108864.0 * humidity))
         )
         humidity *= 1.0 - calibration["h1"] * humidity / 524288.0
-        return round(temperature, 1), round(max(0.0, min(100.0, humidity)), 1)
+        pressure_var1 = t_fine / 2.0 - 64000.0
+        pressure_var2 = pressure_var1 * pressure_var1 * calibration["p6"] / 32768.0
+        pressure_var2 += pressure_var1 * calibration["p5"] * 2.0
+        pressure_var2 = pressure_var2 / 4.0 + calibration["p4"] * 65536.0
+        pressure_var1 = (
+            calibration["p3"] * pressure_var1 * pressure_var1 / 524288.0
+            + calibration["p2"] * pressure_var1
+        ) / 524288.0
+        pressure_var1 = (1.0 + pressure_var1 / 32768.0) * calibration["p1"]
+        if pressure_var1 == 0:
+            pressure = 0.0
+        else:
+            pressure = (1048576.0 - adc_p - pressure_var2 / 4096.0)
+            pressure = pressure * 6250.0 / pressure_var1
+            pressure_var1 = calibration["p9"] * pressure * pressure / 2147483648.0
+            pressure_var2 = pressure * calibration["p8"] / 32768.0
+            pressure = pressure + (pressure_var1 + pressure_var2 + calibration["p7"]) / 16.0
+            pressure /= 100.0
+        return (
+            round(temperature, 1),
+            round(max(0.0, min(100.0, humidity)), 1),
+            round(pressure, 1),
+        )
 
     def _apply_physical_relay_state(self, target_mode: str):
         self.current_hvac_state = target_mode
@@ -313,7 +338,7 @@ class LivingAreaHardwareController:
             GPIO.output(self.RELAY_FAN, GPIO.LOW)
 
     def _process_automation_tick(self):
-        current_temp, humidity, lux = self._read_sensors()
+        current_temp, humidity, lux, pressure = self._read_sensors()
         now = time.time()
 
         if self.is_resting:
@@ -323,7 +348,7 @@ class LivingAreaHardwareController:
             else:
                 if self.current_hvac_state != "OFF":
                     self._apply_physical_relay_state("OFF")
-                self._publish_telemetry(current_temp, humidity, lux)
+                self._publish_telemetry(current_temp, humidity, lux, pressure)
                 return
 
         if self.current_hvac_state in ["HEATING", "COOLING"]:
@@ -333,7 +358,7 @@ class LivingAreaHardwareController:
                 self.is_resting = True
                 self.rest_start_time = now
                 self.blind_pre_close_sent = False
-                self._publish_telemetry(current_temp, humidity, lux)
+                self._publish_telemetry(current_temp, humidity, lux, pressure)
                 return
 
         if current_temp <= (self.t_min + 1.0) or current_temp >= (self.t_max - 1.0):
@@ -354,15 +379,18 @@ class LivingAreaHardwareController:
             if next_state == "OFF":
                 self.blind_pre_close_sent = False
 
-        self._publish_telemetry(current_temp, humidity, lux)
+        self._publish_telemetry(current_temp, humidity, lux, pressure)
 
-    def _publish_telemetry(self, temp: float, humidity: float, lux: float):
+    def _publish_telemetry(
+        self, temp: float, humidity: float, lux: float, pressure: float
+    ):
         payload = {
             "room_name": self.hostname,
             "hostname": self.hostname,
             "device_name": self.hostname,
             "temperature": temp,
             "humidity": humidity,
+            "pressure": pressure,
             "light_lux": round(lux, 1),
             "hvac_state": self.current_hvac_state,
             "hvac_in_rest": self.is_resting,
