@@ -26,6 +26,11 @@ try:
 except ImportError:
     bme680 = None
 
+try:
+    from bme280 import bme280 as bme280_legacy
+except (ImportError, AttributeError):
+    bme280_legacy = None
+
 from libraries.paho_compat import create_client
 
 
@@ -102,14 +107,20 @@ class LivingAreaHardwareController:
                             "load_calibration_params",
                             None,
                         ) or getattr(bme280, "load_calibration_data", None)
-                        if calibration_loader is None:
-                            raise RuntimeError(
-                                "installed bme280 package has no calibration loader"
+                        if calibration_loader is not None:
+                            self.bme_calibration_params = calibration_loader(
+                                self.bus, addr
                             )
-                        self.bme_calibration_params = calibration_loader(
-                            self.bus, addr
-                        )
-                        self.bme_sensor_type = "BME280"
+                            self.bme_sensor_type = "BME280"
+                        elif bme280_legacy is not None:
+                            bme280_legacy.bme280_i2c.default_bus = self.bus
+                            bme280_legacy.bme280_i2c.set_default_i2c_address(addr)
+                            bme280_legacy.setup()
+                            self.bme_sensor_type = "BME280_LEGACY"
+                        else:
+                            raise RuntimeError(
+                                "installed bme280 package has no supported API"
+                            )
                     elif chip_id == 0x61:
                         if bme680 is None:
                             raise RuntimeError(
@@ -209,6 +220,10 @@ class LivingAreaHardwareController:
         try:
             if self.bme_sensor_type == "BME280" and self.bme_calibration_params:
                 bme_data = bme280.sample(self.bus, self.discovered_bme_addr, self.bme_calibration_params)
+                temp_c = round(bme_data.temperature, 1)
+                humidity = round(bme_data.humidity, 1)
+            elif self.bme_sensor_type == "BME280_LEGACY":
+                bme_data = bme280_legacy.read_all()
                 temp_c = round(bme_data.temperature, 1)
                 humidity = round(bme_data.humidity, 1)
             elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
