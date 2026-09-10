@@ -54,6 +54,7 @@ class MqttTelemetryListener(QObject):
             "hvac_in_rest": False,
             "forecast_set": [],
             "environment_sources": {},
+            "cbus_devices": {},
         }
 
     def start(self):
@@ -73,11 +74,19 @@ class MqttTelemetryListener(QObject):
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         client.subscribe("home/environment/#")
         client.subscribe("home/power/sigen")
+        client.subscribe("homeassistant/light/+/config")
+        client.subscribe("homeassistant/light/+/state")
 
     def _on_message(self, client, userdata, msg):
         try:
             topic = msg.topic
-            data = json.loads(msg.payload.decode('utf-8').strip())
+            payload = msg.payload.decode("utf-8").strip()
+            data = json.loads(payload) if payload else {}
+
+            if topic.startswith("homeassistant/light/cbus_"):
+                self._process_cbus_message(topic, data)
+                self.telemetry_received.emit(self.cached_data.copy())
+                return
 
             local_topics = {
                 f"home/environment/living/{self.location}",
@@ -153,6 +162,38 @@ class MqttTelemetryListener(QObject):
             self.telemetry_received.emit(self.cached_data.copy())
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             print(f"[MQTT DATA ERROR] Failed processing {msg.topic}: {error}")
+
+    def _process_cbus_message(self, topic, data):
+        parts = topic.split("/")
+        if len(parts) < 4:
+            return
+        address_text = parts[2].removeprefix("cbus_")
+        if not address_text.isdigit():
+            return
+        address = int(address_text)
+        device = self.cached_data["cbus_devices"].setdefault(
+            address,
+            {"address": address, "name": f"C-Bus {address}"},
+        )
+        suffix = parts[3]
+        if suffix == "config" and isinstance(data, dict):
+            device["name"] = data.get("name") or device["name"]
+        elif suffix == "state" and isinstance(data, dict):
+            device["state"] = data.get("state", "OFF")
+            device["brightness"] = data.get("brightness", 0)
+
+    def set_cbus_device(self, address, is_on, brightness=None):
+        if self.client is None:
+            print("[CBUS ERROR] Cannot send command before MQTT connection is ready")
+            return
+        level = int(brightness if brightness is not None else (255 if is_on else 0))
+        payload = {
+            "state": "ON" if is_on and level > 0 else "OFF",
+            "brightness": max(0, min(255, level)),
+            "transition": 0,
+        }
+        topic = f"homeassistant/light/cbus_{int(address)}/set"
+        self.client.publish(topic, json.dumps(payload), qos=1, retain=False)
 
     @staticmethod
     def _get_float(data, *keys) -> float:

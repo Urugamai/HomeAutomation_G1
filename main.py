@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
+from ui.cbus_floor_page import CbusFloorPage
 from libraries.mqtt_engine import MqttTelemetryListener
 
 
@@ -50,6 +51,14 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.dashboard, "Status Core")
         self.environment_page = EnvironmentSourcesPage()
         self.tabs.addTab(self.environment_page, "Environment")
+        self.ground_floor_page = CbusFloorPage(
+            "Ground", self._set_cbus_device
+        )
+        self.tabs.addTab(self.ground_floor_page, "Ground Floor")
+        self.first_floor_page = CbusFloorPage(
+            "First", self._set_cbus_device
+        )
+        self.tabs.addTab(self.first_floor_page, "First Floor")
         self.setCentralWidget(self.tabs)
 
         # ... Rest of your main.py constructor lines continue exactly as before ...
@@ -92,10 +101,16 @@ class MainWindow(QMainWindow):
     def _handle_telemetry_routing(self, data: dict):
         self.dashboard.refresh_telemetry_ui(data)
         self.environment_page.refresh_sources(data.get("environment_sources", {}))
+        cbus_devices = data.get("cbus_devices", {})
+        self.ground_floor_page.refresh_devices(cbus_devices)
+        self.first_floor_page.refresh_devices(cbus_devices)
         if self.dashboard.hvac_config_tab:
             current_run_state = data.get("hvac_state", "OFF")
             is_resting = data.get("hvac_in_rest", False)
             self.dashboard.hvac_config_tab.update_status_from_mqtt(current_run_state, is_resting)
+
+    def _set_cbus_device(self, address, is_on, brightness):
+        self.mqtt_listener.set_cbus_device(address, is_on, brightness)
 
     def eventFilter(self, watched, event):
         input_events = {
