@@ -11,7 +11,9 @@ from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtGui import (
     QColor, QFont, QFontMetrics, QPainter, QPalette, QPen, QBrush,
 )
-from PyQt6.QtWidgets import QApplication, QLayout, QMainWindow, QWidget
+from PyQt6.QtWidgets import (
+    QApplication, QLayout, QMainWindow, QSizePolicy, QWidget,
+)
 
 # Allow both `python -m ui.Clock.Clock` and the existing `python Clock.py`
 # launch style used by Raspberry Pi services.
@@ -90,6 +92,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     ):
         super().__init__()
         self._layout_ready = False
+        self._configuring_screen = False
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
         window_flags = (
@@ -139,11 +142,13 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         geometry = screen.geometry()
         target_width = min(width or geometry.width(), geometry.width())
         target_height = min(height or geometry.height(), geometry.height())
-        self.resize(target_width, target_height)
-        self.move(0, 0)
         self._configure_layout()
         self._configure_visibility(target_height)
         self._configure_fonts(target_width, target_height)
+        self._configuring_screen = True
+        self.resize(target_width, target_height)
+        self._configuring_screen = False
+        self.move(0, 0)
 
     def force_fullscreen(self):
         screen = self.screen() or QApplication.primaryScreen()
@@ -195,6 +200,16 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
+        for label in (
+            self.label_room, self.label_room_temp, self.label_room_humidity,
+            self.label_room_pressure, self.label_out_temp, self.label_today,
+            self.label_today_min, self.label_today_rain, self.label_next,
+            self.label_next_min, self.label_next_rain,
+            self.label_next_rain_value,
+        ):
+            policy = label.sizePolicy()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            label.setSizePolicy(policy)
         self.label_clock_display.setMinimumHeight(0)
         self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
@@ -205,14 +220,20 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             height / self.REFERENCE_HEIGHT,
         )
         date_size = max(18, min(60, round(60 * scale)))
-        clock_size = max(
-            32,
-            min(
-                round(self.REFERENCE_CLOCK_SIZE * scale),
-                int(height * 0.45),
-                int((width - 4 * date_size - 20) / 6.3),
-            ),
+        date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
+        date_width = QFontMetrics(date_font).horizontalAdvance("2026") + 8
+        available_clock_width = max(32, width - date_width - 4)
+        clock_size = min(
+            round(self.REFERENCE_CLOCK_SIZE * scale),
+            int(height * 0.45),
         )
+        while clock_size > 32:
+            self.label_clock_display.setFont(
+                QFont("Courier New", clock_size, QFont.Weight.Bold)
+            )
+            if self.label_clock_display.sizeHint().width() <= available_clock_width:
+                break
+            clock_size -= 1
         info_size = max(12, min(24, round(21 * scale)))
         power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
@@ -220,13 +241,11 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             max(100, min(240, round(width * 0.15)))
         )
 
-        date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
         for label in (
             self.label_day_abbrev, self.label_day, self.label_month_abbrev,
             self.label_year,
         ):
             label.setFont(date_font)
-            date_width = QFontMetrics(date_font).horizontalAdvance("2026") + 8
             label.setFixedWidth(date_width)
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
@@ -250,7 +269,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self._layout_ready:
+        if self._layout_ready and not self._configuring_screen:
             self._configure_visibility(self.height())
             self._configure_fonts(self.width(), self.height())
 
