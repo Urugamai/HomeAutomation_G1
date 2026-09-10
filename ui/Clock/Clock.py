@@ -221,6 +221,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
                     QSizePolicy.Policy.Expanding,
                     QSizePolicy.Policy.Minimum,
                 )
+        self.statusbar.hide()
         self.label_clock_display.setMinimumHeight(0)
         self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
@@ -245,7 +246,11 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             if self.label_clock_display.sizeHint().width() <= available_clock_width:
                 break
             clock_size -= 1
-        info_size = max(8, min(19, round(16 * scale)))
+        info_scale = min(
+            width / self.REFERENCE_WIDTH,
+            max(height, 480) / self.REFERENCE_HEIGHT,
+        )
+        info_size = max(8, min(19, round(16 * info_scale)))
         power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
