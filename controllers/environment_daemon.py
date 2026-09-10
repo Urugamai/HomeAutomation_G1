@@ -12,24 +12,17 @@ if str(REPO_ROOT) not in sys.path:
 try:
     import RPi.GPIO as GPIO
     import smbus2
-    import bme280
 
     IS_RASPI = True
 except ImportError:
     GPIO = None
     smbus2 = None
-    bme280 = None
     IS_RASPI = False
 
 try:
     import bme680
 except ImportError:
     bme680 = None
-
-try:
-    from bme280 import bme280 as bme280_legacy
-except (ImportError, AttributeError):
-    bme280_legacy = None
 
 from libraries.paho_compat import create_client
 
@@ -102,25 +95,10 @@ class LivingAreaHardwareController:
                 try:
                     chip_id = self.bus.read_byte_data(addr, 0xD0)
                     if chip_id == 0x60:
-                        calibration_loader = getattr(
-                            bme280,
-                            "load_calibration_params",
-                            None,
-                        ) or getattr(bme280, "load_calibration_data", None)
-                        if calibration_loader is not None:
-                            self.bme_calibration_params = calibration_loader(
-                                self.bus, addr
-                            )
-                            self.bme_sensor_type = "BME280"
-                        elif bme280_legacy is not None:
-                            bme280_legacy.bme280_i2c.default_bus = self.bus
-                            bme280_legacy.bme280_i2c.set_default_i2c_address(addr)
-                            bme280_legacy.setup()
-                            self.bme_sensor_type = "BME280_LEGACY"
-                        else:
-                            raise RuntimeError(
-                                "installed bme280 package has no supported API"
-                            )
+                        self.bme_calibration_params = (
+                            self._load_bme280_calibration(addr)
+                        )
+                        self.bme_sensor_type = "BME280_DIRECT"
                     elif chip_id == 0x61:
                         if bme680 is None:
                             raise RuntimeError(
@@ -218,14 +196,8 @@ class LivingAreaHardwareController:
         temp_c, humidity, lux = 22.0, 50.0, 0.0
 
         try:
-            if self.bme_sensor_type == "BME280" and self.bme_calibration_params:
-                bme_data = bme280.sample(self.bus, self.discovered_bme_addr, self.bme_calibration_params)
-                temp_c = round(bme_data.temperature, 1)
-                humidity = round(bme_data.humidity, 1)
-            elif self.bme_sensor_type == "BME280_LEGACY":
-                bme_data = bme280_legacy.read_all()
-                temp_c = round(bme_data.temperature, 1)
-                humidity = round(bme_data.humidity, 1)
+            if self.bme_sensor_type == "BME280_DIRECT":
+                temp_c, humidity = self._read_bme280(addr=self.discovered_bme_addr)
             elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
                 if self.bme680_sensor.get_sensor_data():
                     temp_c = round(self.bme680_sensor.data.temperature, 1)
@@ -250,6 +222,72 @@ class LivingAreaHardwareController:
             print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
 
         return temp_c, humidity, lux
+
+    @staticmethod
+    def _signed(value, bits):
+        if value & (1 << (bits - 1)):
+            return value - (1 << bits)
+        return value
+
+    def _load_bme280_calibration(self, addr):
+        read = self.bus.read_i2c_block_data
+        block = read(addr, 0x88, 24)
+        block.append(self.bus.read_byte_data(addr, 0xA1))
+        block.extend(read(addr, 0xE1, 7))
+        return {
+            "t1": block[0] | block[1] << 8,
+            "t2": self._signed(block[2] | block[3] << 8, 16),
+            "t3": self._signed(block[4] | block[5] << 8, 16),
+            "p1": block[6] | block[7] << 8,
+            "p2": self._signed(block[8] | block[9] << 8, 16),
+            "p3": self._signed(block[10] | block[11] << 8, 16),
+            "p4": self._signed(block[12] | block[13] << 8, 16),
+            "p5": self._signed(block[14] | block[15] << 8, 16),
+            "p6": self._signed(block[16] | block[17] << 8, 16),
+            "p7": self._signed(block[18] | block[19] << 8, 16),
+            "p8": self._signed(block[20] | block[21] << 8, 16),
+            "p9": self._signed(block[22] | block[23] << 8, 16),
+            "h1": block[24],
+            "h2": self._signed(block[25] | block[26] << 8, 16),
+            "h3": block[27],
+            "h4": self._signed((block[28] << 4) | (block[29] & 0x0F), 12),
+            "h5": self._signed((block[30] << 4) | (block[29] >> 4), 12),
+            "h6": self._signed(block[31], 8),
+        }
+
+    def _read_bme280(self, addr):
+        calibration = self.bme_calibration_params
+        self.bus.write_byte_data(addr, 0xF2, 0x01)
+        self.bus.write_byte_data(addr, 0xF4, 0x25)
+        time.sleep(0.01)
+        raw = self.bus.read_i2c_block_data(addr, 0xF7, 8)
+        adc_p = (raw[0] << 12) | (raw[1] << 4) | (raw[2] >> 4)
+        adc_t = (raw[3] << 12) | (raw[4] << 4) | (raw[5] >> 4)
+        adc_h = (raw[6] << 8) | raw[7]
+
+        var1 = (
+            (adc_t / 16384.0 - calibration["t1"] / 1024.0)
+            * calibration["t2"]
+        )
+        var2 = (
+            (adc_t / 131072.0 - calibration["t1"] / 8192.0) ** 2
+            * calibration["t3"]
+        )
+        t_fine = var1 + var2
+        temperature = t_fine / 5120.0
+
+        humidity = t_fine - 76800.0
+        humidity = (
+            adc_h
+            - (calibration["h4"] * 64.0
+               + calibration["h5"] / 16384.0 * humidity)
+        ) * (
+            calibration["h2"] / 65536.0
+            * (1.0 + calibration["h6"] / 67108864.0 * humidity
+               * (1.0 + calibration["h3"] / 67108864.0 * humidity))
+        )
+        humidity *= 1.0 - calibration["h1"] * humidity / 524288.0
+        return round(temperature, 1), round(max(0.0, min(100.0, humidity)), 1)
 
     def _apply_physical_relay_state(self, target_mode: str):
         self.current_hvac_state = target_mode
