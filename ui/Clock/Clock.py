@@ -208,8 +208,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_next_rain_value,
         ):
             policy = label.sizePolicy()
-            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
             label.setSizePolicy(policy)
+        for label in (self.label_room_humidity, self.label_room_pressure):
+            label.setMaximumSize(16777215, 16777215)
         self.label_clock_display.setMinimumHeight(0)
         self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
@@ -234,7 +236,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             if self.label_clock_display.sizeHint().width() <= available_clock_width:
                 break
             clock_size -= 1
-        info_size = max(12, min(24, round(21 * scale)))
+        info_size = max(12, min(18, round(15 * scale)))
         power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
