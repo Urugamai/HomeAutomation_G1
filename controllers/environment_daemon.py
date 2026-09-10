@@ -97,8 +97,17 @@ class LivingAreaHardwareController:
                 try:
                     chip_id = self.bus.read_byte_data(addr, 0xD0)
                     if chip_id == 0x60:
-                        self.bme_calibration_params = (
-                            bme280.load_calibration_params(self.bus, addr)
+                        calibration_loader = getattr(
+                            bme280,
+                            "load_calibration_params",
+                            None,
+                        ) or getattr(bme280, "load_calibration_data", None)
+                        if calibration_loader is None:
+                            raise RuntimeError(
+                                "installed bme280 package has no calibration loader"
+                            )
+                        self.bme_calibration_params = calibration_loader(
+                            self.bus, addr
                         )
                         self.bme_sensor_type = "BME280"
                     elif chip_id == 0x61:
