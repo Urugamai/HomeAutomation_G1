@@ -21,6 +21,11 @@ except ImportError:
     bme280 = None
     IS_RASPI = False
 
+try:
+    import bme680
+except ImportError:
+    bme680 = None
+
 from libraries.paho_compat import create_client
 
 
@@ -55,7 +60,9 @@ class LivingAreaHardwareController:
 
         self.bus = None
         self.discovered_bme_addr = None
+        self.bme_sensor_type = None
         self.bme_calibration_params = None
+        self.bme680_sensor = None
         self.veml_is_online = False
 
         self._initialize_hardware()
@@ -88,13 +95,39 @@ class LivingAreaHardwareController:
 
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
                 try:
-                    self.bus.read_byte(addr)
+                    chip_id = self.bus.read_byte_data(addr, 0xD0)
+                    if chip_id == 0x60:
+                        self.bme_calibration_params = (
+                            bme280.load_calibration_params(self.bus, addr)
+                        )
+                        self.bme_sensor_type = "BME280"
+                    elif chip_id == 0x61:
+                        if bme680 is None:
+                            raise RuntimeError(
+                                "bme680 Python package is not installed"
+                            )
+                        self.bme680_sensor = bme680.BME680(addr)
+                        self.bme_sensor_type = "BME680"
+                    else:
+                        raise RuntimeError(
+                            f"unknown Bosch sensor chip ID 0x{chip_id:02x}"
+                        )
                     self.discovered_bme_addr = addr
-                    self.bme_calibration_params = bme280.load_calibration_data(self.bus, addr)
-                    print(f"[I2C SUCCESS] Auto-detected and calibrated Bosch BME at: {hex(addr)}")
+                    print(
+                        f"[I2C SUCCESS] Detected and initialized "
+                        f"{self.bme_sensor_type} at {hex(addr)}"
+                    )
                     break
-                except Exception:
-                    continue
+                except Exception as error:
+                    self.discovered_bme_addr = None
+                    self.bme_sensor_type = None
+                    self.bme_calibration_params = None
+                    self.bme680_sensor = None
+                    print(
+                        f"[I2C WARN] Bosch environmental sensor setup failed at "
+                        f"{hex(addr)}: "
+                        f"{error}"
+                    )
 
             try:
                 self.bus.read_byte(self.ADDR_VEML6030)
@@ -165,10 +198,14 @@ class LivingAreaHardwareController:
         temp_c, humidity, lux = 22.0, 50.0, 0.0
 
         try:
-            if self.discovered_bme_addr and self.bme_calibration_params:
+            if self.bme_sensor_type == "BME280" and self.bme_calibration_params:
                 bme_data = bme280.sample(self.bus, self.discovered_bme_addr, self.bme_calibration_params)
                 temp_c = round(bme_data.temperature, 1)
                 humidity = round(bme_data.humidity, 1)
+            elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
+                if self.bme680_sensor.get_sensor_data():
+                    temp_c = round(self.bme680_sensor.data.temperature, 1)
+                    humidity = round(self.bme680_sensor.data.humidity, 1)
 
             if not self.veml_is_online:
                 try:

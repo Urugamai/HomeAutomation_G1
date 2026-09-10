@@ -7,7 +7,7 @@ sudo apt update
 sudo apt install -y python3-pyqt6 python3-smbus2 python3-pip
 
 # Install the remaining purely Pythonic driver dependencies from your manifest
-pip3 install paho-mqtt pymodbus aiohttp pycryptodome --break-system-packages
+pip3 install paho-mqtt pymodbus aiohttp pycryptodome RPi.BME280 bme680 --break-system-packages
 
 ## DAEMONS ##
 # SOURCE UPDATE
