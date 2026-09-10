@@ -226,7 +226,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_year,
         ):
             label.setFont(date_font)
-            label.setMinimumWidth(QFontMetrics(date_font).horizontalAdvance("2026") + 8)
+            date_width = QFontMetrics(date_font).horizontalAdvance("2026") + 8
+            label.setFixedWidth(date_width)
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
