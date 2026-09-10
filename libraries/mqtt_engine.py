@@ -88,38 +88,7 @@ class MqttTelemetryListener(QObject):
                 self.telemetry_received.emit(self.cached_data.copy())
                 return
 
-            local_topics = {
-                f"home/environment/living/{self.location}",
-                f"home/environment/{self.location}",
-            } if self.location else set()
-
-            if topic in local_topics or (
-                not self.location and topic == "home/environment/living"
-            ):
-                source_key = (
-                    data.get("hostname")
-                    or data.get("device_name")
-                    or self.location
-                    or "living"
-                )
-                self._record_environment_source(topic, data, source_key)
-                self.cached_data["living_temp"] = float(data.get("temperature", 0.0))
-                self.cached_data["room_temp"] = self.cached_data["living_temp"]
-                self.cached_data["living_lux"] = float(data.get("light_lux", 0.0))
-                self.cached_data["room_source"] = data.get(
-                    "hostname", data.get("device_name", self.location or "")
-                )
-                self._update_cached_float("room_humidity", data, "humidity")
-                self._update_cached_float("room_pressure", data, "pressure")
-                self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
-                self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
-            elif (source_key := self._hostname_from_topic(topic)) is not None:
-                self._record_environment_source(
-                    topic,
-                    data,
-                    data.get("hostname", data.get("device_name", source_key)),
-                )
-            elif topic == "home/environment/ecowitt":
+            if topic == "home/environment/ecowitt":
                 self._record_environment_source(topic, data, "Ecowitt")
                 self._update_cached_float(
                     "outside_temp", data, "outside_temp", "outdoor_temperature",
@@ -152,6 +121,16 @@ class MqttTelemetryListener(QObject):
             elif topic == "home/environment/forecast":
                 if "forecast_set" in data:
                     self._update_persistent_forecast_cache(data["forecast_set"])
+            elif topic.startswith("home/environment/"):
+                source_key = (
+                    data.get("hostname")
+                    or data.get("device_name")
+                    or self._hostname_from_topic(topic)
+                    or topic.rsplit("/", 1)[-1]
+                )
+                self._record_environment_source(topic, data, source_key)
+                if self._is_local_environment_source(topic, data):
+                    self._update_local_environment(data)
             elif topic == "home/power/sigen":
                 self.cached_data["battery_soc"] = float(data.get("battery_soc", 0.0))
                 self.cached_data["battery_flow"] = float(data.get("battery_flow", 0.0))
@@ -162,6 +141,36 @@ class MqttTelemetryListener(QObject):
             self.telemetry_received.emit(self.cached_data.copy())
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             print(f"[MQTT DATA ERROR] Failed processing {msg.topic}: {error}")
+
+    def _is_local_environment_source(self, topic, data):
+        if not self.location:
+            return topic == "home/environment/living"
+        location = self.location.casefold()
+        hostname = str(
+            data.get("hostname") or data.get("device_name") or ""
+        ).casefold()
+        topic_location = self._hostname_from_topic(topic)
+        return (
+            hostname == location
+            or topic_location is not None
+            and topic_location.casefold() == location
+        )
+
+    def _update_local_environment(self, data):
+        self._update_cached_float(
+            "living_temp", data, "temperature", "room_temp", "living_temp"
+        )
+        self.cached_data["room_temp"] = self.cached_data["living_temp"]
+        self._update_cached_float(
+            "living_lux", data, "light_lux", "living_lux", "outside_lux"
+        )
+        self.cached_data["room_source"] = data.get(
+            "hostname", data.get("device_name", self.location or "")
+        )
+        self._update_cached_float("room_humidity", data, "humidity")
+        self._update_cached_float("room_pressure", data, "pressure")
+        self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
+        self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
 
     def _process_cbus_message(self, topic, data):
         parts = topic.split("/")
