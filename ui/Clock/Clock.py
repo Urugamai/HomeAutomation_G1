@@ -1,7 +1,6 @@
 import argparse
 import configparser
 import datetime
-import math
 import os
 import socket
 import sys
@@ -82,7 +81,6 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     REFERENCE_CLOCK_SIZE = 230
     REFERENCE_DATE_SIZE = 52
     REFERENCE_INFO_SIZE = 19
-    POWER_BAR_HEIGHT = 24
 
     def __init__(
         self,
@@ -164,9 +162,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.text_clock_message.setVisible(not compact)
         power_visible = height >= 360
         for widget in (
-            self.label_solar, self.progressBar_solar, self.label_battery,
-            self.label_grid,
-            self.battery_flow_bar, self.grid_flow_bar,
+            self.label_solar, self.label_battery, self.label_grid,
         ):
             widget.setVisible(power_visible)
         for widget in (
@@ -219,14 +215,22 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             spacer = item.spacerItem()
             if spacer is not None:
                 spacer.changeSize(
-                    0, 0,
-                    QSizePolicy.Policy.Expanding,
+                    6, 0,
+                    QSizePolicy.Policy.Fixed,
                     QSizePolicy.Policy.Minimum,
                 )
         self.statusbar.hide()
         self.label_clock_display.setMinimumHeight(0)
         self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-        self.progressBar_solar.setFixedHeight(self.POWER_BAR_HEIGHT)
+        self.progressBar_solar.hide()
+        self.battery_flow_bar.hide()
+        self.grid_flow_bar.hide()
+        self.label_clock_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for label in (
+            self.label_day_abbrev, self.label_day, self.label_month_abbrev,
+            self.label_year,
+        ):
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _configure_fonts(self, width, height):
         scale = min(
@@ -239,7 +243,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         if height <= 420:
             date_size = max(18, round(date_size * 0.82))
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
-        date_width = QFontMetrics(date_font).horizontalAdvance("2026") + 8
+        date_font_metrics = QFontMetrics(date_font)
+        date_width = date_font_metrics.horizontalAdvance("2026") + 8
         available_clock_width = max(32, width - date_width - 4)
         clock_size = min(
             round(self.REFERENCE_CLOCK_SIZE * scale),
@@ -272,8 +277,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             label.setFont(date_font)
             label.setFixedWidth(date_width)
+            label.setFixedHeight(date_font_metrics.height() + 2)
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
+        )
+        self.label_clock_display.setFixedHeight(
+            QFontMetrics(self.label_clock_display.font()).height() + 6
         )
         self.text_clock_message.setFont(
             QFont("Courier New", message_size, QFont.Weight.Bold)
@@ -349,13 +358,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         soc = max(0, min(100, int(float(data.get("battery_soc", 0.0)))))
         battery = float(data.get("battery_flow", 0.0))
         grid = float(data.get("grid_flow", 0.0))
-        self.label_solar.setText(f"Solar: {solar:.1f} kW")
-        self.progressBar_solar.setRange(0, 100)
-        self.progressBar_solar.setValue(max(0, min(100, math.ceil(solar / 10 * 100))))
-        self.label_battery.setText(f"Battery: {soc}% {battery:+.2f} kW")
-        self.battery_flow_bar.set_value(battery)
-        self.label_grid.setText(f"Grid: {grid:+.2f} kW")
-        self.grid_flow_bar.set_value(grid)
+        solar_percent = max(0, min(100, solar / 10 * 100))
+        self.label_solar.setText(f"Solar: {solar:.1f}kW {solar_percent:.0f}%")
+        self.label_battery.setText(f"Battery: {soc}% {battery:+.2f}kW")
+        self.label_grid.setText(f"Grid: {grid:+.2f}kW")
 
     def _replace_power_widgets(self):
         self.battery_flow_bar = ZeroCenteredPowerBar(parent=self)
