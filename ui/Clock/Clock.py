@@ -28,14 +28,17 @@ from clock_display import Ui_MainWindow
 
 
 class ZeroCenteredPowerBar(QWidget):
-    """Horizontal positive/negative kW bar matching the main dashboard."""
+    """Power/status bar with optional percentage fill and embedded text."""
 
-    def __init__(self, maximum_kw=5.0, parent=None):
+    def __init__(self, maximum_kw=5.0, percentage_fill=False, parent=None):
         super().__init__(parent)
         self.maximum_kw = float(maximum_kw)
         self.value_kw = 0.0
-        self.setMinimumWidth(130)
-        self.setFixedHeight(24)
+        self.percentage_fill = percentage_fill
+        self.fill_percent = 0.0
+        self.display_text = ""
+        self.setMinimumWidth(220)
+        self.setFixedHeight(34)
 
     def set_value(self, value_kw):
         self.value_kw = max(
@@ -43,6 +46,15 @@ class ZeroCenteredPowerBar(QWidget):
             min(self.maximum_kw, float(value_kw)),
         )
         self.update()
+
+    def set_percentage(self, percentage, display_text):
+        self.fill_percent = max(0.0, min(100.0, float(percentage)))
+        self.display_text = display_text
+        self.update()
+
+    def set_flow(self, value_kw, display_text):
+        self.set_value(value_kw)
+        self.display_text = display_text
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -55,21 +67,33 @@ class ZeroCenteredPowerBar(QWidget):
         painter.setBrush(QBrush(QColor(240, 240, 240)))
         painter.drawRoundedRect(0, 0, width, height, 4, 4)
 
-        fill_width = int(
-            abs(self.value_kw) / self.maximum_kw * (width / 2)
-        )
-        if abs(self.value_kw) < 0.01:
-            painter.setBrush(QBrush(QColor(140, 140, 140)))
-            painter.drawRect(center_x - 2, 0, 4, height)
-        elif self.value_kw > 0:
+        if self.percentage_fill:
+            fill_width = int(self.fill_percent / 100 * width)
             painter.setBrush(QBrush(QColor(40, 167, 69)))
-            painter.drawRect(center_x, 0, fill_width, height)
+            painter.drawRect(0, 0, fill_width, height)
         else:
-            painter.setBrush(QBrush(QColor(220, 53, 69)))
-            painter.drawRect(center_x - fill_width, 0, fill_width, height)
+            fill_width = int(
+                abs(self.value_kw) / self.maximum_kw * (width / 2)
+            )
+            if abs(self.value_kw) < 0.01:
+                painter.setBrush(QBrush(QColor(140, 140, 140)))
+                painter.drawRect(center_x - 2, 0, 4, height)
+            elif self.value_kw > 0:
+                painter.setBrush(QBrush(QColor(40, 167, 69)))
+                painter.drawRect(center_x, 0, fill_width, height)
+            else:
+                painter.setBrush(QBrush(QColor(220, 53, 69)))
+                painter.drawRect(center_x - fill_width, 0, fill_width, height)
 
-        painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
-        painter.drawLine(center_x, 0, center_x, height)
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(center_x, 0, center_x, height)
+
+        painter.setPen(QColor(0, 0, 0))
+        painter.drawText(
+            self.rect(),
+            Qt.AlignmentFlag.AlignCenter,
+            self.display_text,
+        )
 
 
 class ClockWindow(QMainWindow, Ui_MainWindow):
@@ -80,7 +104,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     REFERENCE_HEIGHT = 600
     REFERENCE_CLOCK_SIZE = 230
     REFERENCE_DATE_SIZE = 52
-    REFERENCE_INFO_SIZE = 22
+    REFERENCE_INFO_SIZE = 26
 
     def __init__(
         self,
@@ -162,7 +186,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.text_clock_message.setVisible(not compact)
         power_visible = height >= 360
         for widget in (
-            self.label_solar, self.label_battery, self.label_grid,
+            self.solar_power_bar, self.battery_power_bar, self.grid_power_bar,
         ):
             widget.setVisible(power_visible)
         for widget in (
@@ -222,6 +246,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.statusbar.hide()
         self.label_clock_display.setMinimumHeight(0)
         self.verticalLayout_date.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.label_solar.hide()
+        self.label_battery.hide()
+        self.label_grid.hide()
         self.progressBar_solar.hide()
         self.battery_flow_bar.hide()
         self.grid_flow_bar.hide()
@@ -262,10 +289,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             max(height, 480) / self.REFERENCE_HEIGHT,
         )
         if height <= 420:
-            info_size = max(10, min(20, round(self.REFERENCE_INFO_SIZE * info_scale)))
-        else:
             info_size = max(10, min(24, round(self.REFERENCE_INFO_SIZE * info_scale)))
-        power_size = max(14, min(26, round(24 * info_scale)))
+        else:
+            info_size = max(10, min(28, round(self.REFERENCE_INFO_SIZE * info_scale)))
+        power_size = max(16, min(30, round(28 * info_scale)))
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
             max(100, min(240, round(width * 0.15)))
@@ -300,6 +327,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_value_grid,
         ):
             label.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
+        for bar in (
+            self.solar_power_bar, self.battery_power_bar, self.grid_power_bar,
+        ):
+            bar.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -359,23 +390,35 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         battery = float(data.get("battery_flow", 0.0))
         grid = float(data.get("grid_flow", 0.0))
         solar_percent = max(0, min(100, solar / 10 * 100))
-        self.label_solar.setText(f"Solar: {solar:.1f}kW {solar_percent:.0f}%")
-        self.label_battery.setText(f"Battery: {soc}% {battery:+.2f}kW")
-        self.label_grid.setText(f"Grid: {grid:+.2f}kW")
+        self.solar_power_bar.set_percentage(
+            solar_percent, f"Solar: {solar:.1f}kW {solar_percent:.0f}%"
+        )
+        self.battery_power_bar.set_percentage(
+            soc, f"Battery: {soc}% {battery:+.2f}kW"
+        )
+        self.grid_power_bar.set_flow(grid, f"Grid: {grid:+.2f}kW")
 
     def _replace_power_widgets(self):
+        self.solar_power_bar = ZeroCenteredPowerBar(
+            maximum_kw=10.0, percentage_fill=True, parent=self
+        )
+        self.battery_power_bar = ZeroCenteredPowerBar(
+            percentage_fill=True, parent=self
+        )
+        self.grid_power_bar = ZeroCenteredPowerBar(parent=self)
         self.battery_flow_bar = ZeroCenteredPowerBar(parent=self)
         self.grid_flow_bar = ZeroCenteredPowerBar(parent=self)
+        for widget in (
+            self.label_solar, self.progressBar_solar, self.label_battery,
+            self.progressBar_battery, self.label_grid, self.label_value_grid,
+        ):
+            self.horizontalLayout_power.removeWidget(widget)
+            widget.hide()
+        self.horizontalLayout_power.addWidget(self.solar_power_bar)
+        self.horizontalLayout_power.addWidget(self.battery_power_bar)
+        self.horizontalLayout_power.addWidget(self.grid_power_bar)
         self.progressBar_battery.hide()
         self.label_value_grid.hide()
-        self.horizontalLayout_power.replaceWidget(
-            self.progressBar_battery, self.battery_flow_bar
-        )
-        self.horizontalLayout_power.replaceWidget(
-            self.label_value_grid, self.grid_flow_bar
-        )
-        self.progressBar_battery.deleteLater()
-        self.label_value_grid.deleteLater()
 
     def _update_environment(self, data):
         room_temp = data.get("room_temp", data.get("living_temp", 0.0))
