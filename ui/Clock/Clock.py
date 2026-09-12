@@ -80,6 +80,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
     REFERENCE_WIDTH = 1600
     REFERENCE_HEIGHT = 600
     REFERENCE_CLOCK_SIZE = 230
+    REFERENCE_DATE_SIZE = 52
+    REFERENCE_INFO_SIZE = 19
     POWER_BAR_HEIGHT = 24
 
     def __init__(
@@ -231,7 +233,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             width / self.REFERENCE_WIDTH,
             height / self.REFERENCE_HEIGHT,
         )
-        date_size = max(18, min(60, round(60 * scale)))
+        date_size = max(18, min(self.REFERENCE_DATE_SIZE, round(
+            self.REFERENCE_DATE_SIZE * scale
+        )))
         if height <= 420:
             date_size = max(18, round(date_size * 0.82))
         date_font = QFont("Courier New", date_size, QFont.Weight.Bold)
@@ -253,9 +257,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             max(height, 480) / self.REFERENCE_HEIGHT,
         )
         if height <= 420:
-            info_size = max(8, min(16, round(18 * info_scale)))
+            info_size = max(8, min(18, round(self.REFERENCE_INFO_SIZE * info_scale)))
         else:
-            info_size = max(8, min(19, round(16 * info_scale)))
+            info_size = max(8, min(22, round(self.REFERENCE_INFO_SIZE * info_scale)))
         power_size = max(12, min(24, round(21 * scale)))
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
