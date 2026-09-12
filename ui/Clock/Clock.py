@@ -389,8 +389,12 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         if height <= 420:
             info_size = max(10, min(24, round(self.REFERENCE_INFO_SIZE * info_scale)))
         else:
-            info_size = max(10, min(28, round(self.REFERENCE_INFO_SIZE * info_scale)))
-        power_size = max(16, min(30, round(28 * info_scale)))
+            info_size = max(10, min(20, round(20 * info_scale)))
+        power_size = (
+            max(16, min(30, round(28 * info_scale)))
+            if height <= 420
+            else max(16, min(24, round(22 * info_scale)))
+        )
         message_size = max(10, min(16, round(16 * scale)))
         self.progressBar_solar.setMaximumWidth(
             max(100, min(240, round(width * 0.15)))
@@ -439,8 +443,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             bar.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
             if height <= 420:
+                bar.setMinimumWidth(220)
                 bar.setFixedHeight(52)
             else:
+                bar.setMinimumWidth(180)
                 bar.setFixedHeight(34)
         if height <= 420:
             for label in (
