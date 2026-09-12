@@ -3,14 +3,16 @@ import configparser
 import datetime
 import logging
 import os
+import shutil
 import socket
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
 from PyQt6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPalette, QPen, QBrush,
+    QColor, QCursor, QFont, QFontMetrics, QPainter, QPalette, QPen, QBrush,
 )
 from PyQt6.QtWidgets import (
     QApplication, QLayout, QMainWindow, QSizePolicy, QWidget,
@@ -198,6 +200,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         if sys.platform.startswith("linux"):
             window_flags |= Qt.WindowType.X11BypassWindowManagerHint
         self.setWindowFlags(window_flags)
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.BlankCursor))
+        self._cursor_hidden = True
         self._apply_clock_style()
         self._replace_power_widgets()
         self.telemetry = {}
@@ -638,13 +642,49 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._sleep_overlay.setGeometry(self.rect())
         self._sleep_overlay.raise_()
         self._sleep_overlay.show()
+        self._set_display_power(False)
 
     def _wake_display(self):
+        self._set_display_power(True)
         self._sleep_overlay.hide()
         self.display_is_sleeping = False
         self._idle_timer.stop()
         if not self.host_schedule:
             self._wake_timer.start(self.wake_duration_ms)
+
+    def _set_display_power(self, enabled):
+        if not sys.platform.startswith("linux"):
+            return
+
+        power = "1" if enabled else "0"
+        commands = (
+            ["vcgencmd", "display_power", power],
+            ["xset", "dpms", "force", "on" if enabled else "off"],
+        )
+        for command in commands:
+            executable = shutil.which(command[0])
+            if executable is None:
+                continue
+            try:
+                subprocess.run(
+                    [executable, *command[1:]],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                return
+            except (OSError, subprocess.SubprocessError) as exc:
+                LOGGER.warning(
+                    "Display power command failed (%s): %s",
+                    " ".join(command),
+                    exc,
+                )
+
+        LOGGER.warning(
+            "No working display power command was available; "
+            "using the software sleep overlay only"
+        )
 
     def _update_schedule(self):
         if not self.host_schedule:
@@ -670,6 +710,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._schedule_timer.stop()
         self._clock_timer.stop()
         self.mqtt_listener.stop()
+        if self._cursor_hidden:
+            QApplication.restoreOverrideCursor()
+            self._cursor_hidden = False
         super().closeEvent(event)
 
 
