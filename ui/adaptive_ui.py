@@ -98,10 +98,17 @@ class PowerConsumptionChart(QWidget):
     def __init__(self):
         super().__init__()
         self.samples = []
+        self.latest_power_kw = None
         self.setMinimumHeight(150)
 
     def set_samples(self, samples):
         self.samples = list(samples)
+        if self.samples:
+            self.latest_power_kw = self.samples[-1][1]
+        self.update()
+
+    def set_latest_power(self, power_kw):
+        self.latest_power_kw = float(power_kw)
         self.update()
 
     def paintEvent(self, event):
@@ -117,7 +124,12 @@ class PowerConsumptionChart(QWidget):
                      max(1, self.height() - top - bottom))
 
         painter.setPen(QPen(QColor("#202020"), 1))
-        painter.drawText(8, 16, "House power consumption (kW)")
+        latest_text = (
+            f"Latest: {self.latest_power_kw:.2f} kW"
+            if self.latest_power_kw is not None
+            else "Latest: --"
+        )
+        painter.drawText(8, 16, f"House power consumption (kW)   {latest_text}")
         painter.drawRect(plot)
 
         for hour in (0, 6, 12, 18, 24):
@@ -457,9 +469,10 @@ class AdaptiveDashboard(QWidget):
         try:
             self._latest_power_sample = (
                 float(data.get("solar_power", 0.0))
-                + float(data.get("battery_flow", 0.0))
+                - float(data.get("battery_flow", 0.0))
                 + float(data.get("grid_flow", 0.0))
             )
+            self.power_chart.set_latest_power(self._latest_power_sample)
         except (TypeError, ValueError):
             self._latest_power_sample = None
 
