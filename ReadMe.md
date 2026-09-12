@@ -54,3 +54,7 @@ bathroom-clock:
 The display stays on during the scheduled period. Outside that period it
 sleeps, and a touch or key press wakes it for the configured number of
 minutes.
+
+The Status Core power chart samples house consumption every 15 seconds and
+stores the current day's readings in
+`/mnt/WatsonHome/home_power_history.json` when the NAS mount is available.

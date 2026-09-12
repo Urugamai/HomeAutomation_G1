@@ -1,14 +1,171 @@
 import datetime
+import json
+import logging
+import os
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView,
 )
 from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
-from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
+from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
+from PyQt6.QtCore import QPointF
 
 from .hvac_page import HvacConfigurationPage
 
+LOGGER = logging.getLogger(__name__)
+
+
+class PowerHistoryStore:
+    """Persists the current day's house power samples on the NAS."""
+
+    STORAGE_PATH = Path("/mnt/WatsonHome/home_power_history.json")
+
+    def __init__(self, storage_path=None):
+        self.storage_path = Path(storage_path or self.STORAGE_PATH)
+        self.samples = []
+        self._storage_warning_logged = False
+        self._load_today()
+
+    def _load_today(self):
+        if not self.storage_path.is_file():
+            return
+        try:
+            with self.storage_path.open("r", encoding="utf-8") as history_file:
+                payload = json.load(history_file)
+            if payload.get("date") != self._today():
+                return
+            self.samples = [
+                (
+                    datetime.datetime.fromisoformat(item["timestamp"]),
+                    float(item["power_kw"]),
+                )
+                for item in payload.get("samples", [])
+            ]
+        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            LOGGER.warning("Unable to load power history from %s: %s", self.storage_path, exc)
+            self.samples = []
+
+    @staticmethod
+    def _today():
+        return datetime.date.today().isoformat()
+
+    def add_sample(self, timestamp, power_kw):
+        if timestamp.date().isoformat() != self._today():
+            self.samples = []
+        self.samples.append((timestamp, float(power_kw)))
+        self._write()
+
+    def _write(self):
+        if not self.storage_path.parent.is_dir():
+            if not self._storage_warning_logged:
+                LOGGER.warning(
+                    "Power history storage is unavailable: %s",
+                    self.storage_path.parent,
+                )
+                self._storage_warning_logged = True
+            return
+
+        payload = {
+            "date": self._today(),
+            "samples": [
+                {
+                    "timestamp": timestamp.isoformat(timespec="seconds"),
+                    "power_kw": power_kw,
+                }
+                for timestamp, power_kw in self.samples
+            ],
+        }
+        temporary_path = self.storage_path.with_suffix(".tmp")
+        try:
+            with temporary_path.open("w", encoding="utf-8") as history_file:
+                json.dump(payload, history_file, separators=(",", ":"))
+                history_file.flush()
+                os.fsync(history_file.fileno())
+            os.replace(temporary_path, self.storage_path)
+        except OSError as exc:
+            LOGGER.warning("Unable to save power history to %s: %s", self.storage_path, exc)
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+
+
+class PowerConsumptionChart(QWidget):
+    """Paints a midnight-to-midnight house power chart."""
+
+    def __init__(self):
+        super().__init__()
+        self.samples = []
+        self.setMinimumHeight(150)
+
+    def set_samples(self, samples):
+        self.samples = list(samples)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#ffffff"))
+
+        left = 58
+        right = 12
+        top = 24
+        bottom = 30
+        plot = QRect(left, top, max(1, self.width() - left - right),
+                     max(1, self.height() - top - bottom))
+
+        painter.setPen(QPen(QColor("#202020"), 1))
+        painter.drawText(8, 16, "House power consumption (kW)")
+        painter.drawRect(plot)
+
+        for hour in (0, 6, 12, 18, 24):
+            x = plot.left() + plot.width() * hour / 24
+            painter.setPen(QPen(QColor("#d8d8d8"), 1))
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            painter.setPen(QColor("#404040"))
+            painter.drawText(int(x - 18), self.height() - 8, f"{hour:02d}:00")
+
+        if not self.samples:
+            painter.setPen(QColor("#606060"))
+            painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "Waiting for power samples")
+            return
+
+        values = [value for _, value in self.samples]
+        minimum = min(values)
+        maximum = max(values)
+        if maximum == minimum:
+            padding = max(0.5, abs(maximum) * 0.1)
+        else:
+            padding = (maximum - minimum) * 0.1
+        chart_min = minimum - padding
+        chart_max = maximum + padding
+
+        def point_for(timestamp, value):
+            seconds = (
+                timestamp.hour * 3600
+                + timestamp.minute * 60
+                + timestamp.second
+                + timestamp.microsecond / 1_000_000
+            )
+            x = plot.left() + plot.width() * seconds / (24 * 3600)
+            y = plot.bottom() - (
+                (value - chart_min) / (chart_max - chart_min) * plot.height()
+            )
+            return QPointF(x, y)
+
+        for value, color in ((maximum, QColor("#d62728")), (minimum, QColor("#1f5fbf"))):
+            y = point_for(datetime.datetime.combine(
+                datetime.date.today(), datetime.time.min
+            ), value).y()
+            painter.setPen(QPen(color, 2))
+            painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+            painter.drawText(plot.right() - 82, int(y - 3), f"{value:.2f} kW")
+
+        polyline = QPolygonF([point_for(timestamp, value) for timestamp, value in self.samples])
+        painter.setPen(QPen(QColor("#202020"), 2))
+        painter.drawPolyline(polyline)
 
 class HighResZeroCenteredBar(QWidget):
     """A custom graphical meter that dynamically paints vector bars relative to a central zero."""
@@ -241,6 +398,15 @@ class AdaptiveDashboard(QWidget):
         energy_layout.addWidget(self.grid_widget)
         self.main_layout.addWidget(self.energy_container)
 
+        self.power_history = PowerHistoryStore()
+        self.power_chart = PowerConsumptionChart()
+        self.main_layout.addWidget(self.power_chart, 1)
+        self._latest_power_sample = None
+        self.power_sample_timer = QTimer(self)
+        self.power_sample_timer.timeout.connect(self._record_power_sample)
+        self.power_sample_timer.start(15_000)
+        self.power_chart.set_samples(self.power_history.samples)
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh_time)
         self.timer.start(1000)
@@ -255,12 +421,14 @@ class AdaptiveDashboard(QWidget):
             self.temp_lbl.hide()
             self.forecast_container.hide()
             self.energy_container.hide()
+            self.power_chart.hide()
             self.time_lbl.setFont(QFont("Monospace", 22, QFont.Weight.Bold))
         elif height < 500:
             self.current_profile = "COMPACT_DESK"
             self.temp_lbl.show()
             self.forecast_container.show()
             self.energy_container.hide()
+            self.power_chart.hide()
             self.time_lbl.setFont(QFont("Monospace", 28, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
@@ -269,6 +437,7 @@ class AdaptiveDashboard(QWidget):
             self.temp_lbl.show()
             self.forecast_container.show()
             self.energy_container.show()
+            self.power_chart.show()
             self.time_lbl.setFont(QFont("Monospace", 36, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 13, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
@@ -285,6 +454,15 @@ class AdaptiveDashboard(QWidget):
         self.time_lbl.setText(f"{now}   {date}" if self.current_profile == "BANNER_CLOCK" else f"{now}\n{date}")
 
     def refresh_telemetry_ui(self, data: dict):
+        try:
+            self._latest_power_sample = (
+                float(data.get("solar_power", 0.0))
+                + float(data.get("battery_flow", 0.0))
+                + float(data.get("grid_flow", 0.0))
+            )
+        except (TypeError, ValueError):
+            self._latest_power_sample = None
+
         if self.temp_lbl.isVisible():
             # FIXED: Render high-resolution Lux light parameters directly alongside room temperatures
             l_temp = data.get("living_temp", 0.0)
@@ -322,6 +500,15 @@ class AdaptiveDashboard(QWidget):
 
         if self.forecast_container.isVisible() and "forecast_set" in data:
             self._update_forecast_labels(data["forecast_set"])
+
+    def _record_power_sample(self):
+        if self._latest_power_sample is None:
+            return
+        self.power_history.add_sample(
+            datetime.datetime.now(),
+            self._latest_power_sample,
+        )
+        self.power_chart.set_samples(self.power_history.samples)
 
     def _update_forecast_labels(self, forecast_list):
         today_data = next((x for x in forecast_list if x.get("day_index") == 0), None)
