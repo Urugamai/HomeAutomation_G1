@@ -406,7 +406,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         )
         clock_height = QFontMetrics(self.label_clock_display.font()).height() + 6
         if height <= 420:
-            clock_height = max(clock_height, 230)
+            clock_height = max(clock_height, 245)
         self.label_clock_display.setFixedHeight(clock_height)
         date_height = date_font_metrics.height() + 2
         if height <= 420:
@@ -437,7 +437,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         ):
             bar.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
             if height <= 420:
-                bar.setFixedHeight(48)
+                bar.setFixedHeight(52)
             else:
                 bar.setFixedHeight(34)
         if height <= 420:
@@ -446,7 +446,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
                 self.label_today_rain, self.label_next, self.label_next_min,
                 self.label_next_rain, self.label_next_rain_value,
             ):
-                label.setMinimumHeight(44)
+                label.setMinimumHeight(48)
         else:
             for label in (
                 self.label_out_temp, self.label_today, self.label_today_min,
