@@ -103,11 +103,18 @@ def _load_clock_host_schedule(hostname):
 class ZeroCenteredPowerBar(QWidget):
     """Power/status bar with optional percentage fill and embedded text."""
 
-    def __init__(self, maximum_kw=5.0, percentage_fill=False, parent=None):
+    def __init__(
+        self,
+        maximum_kw=5.0,
+        percentage_fill=False,
+        bordered=False,
+        parent=None,
+    ):
         super().__init__(parent)
         self.maximum_kw = float(maximum_kw)
         self.value_kw = 0.0
         self.percentage_fill = percentage_fill
+        self.bordered = bordered
         self.fill_percent = 0.0
         self.display_text = ""
         self.setMinimumWidth(220)
@@ -160,6 +167,11 @@ class ZeroCenteredPowerBar(QWidget):
 
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
             painter.drawLine(center_x, 0, center_x, height)
+
+        if self.bordered:
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            painter.setPen(QPen(QColor(80, 80, 80), 2))
+            painter.drawRoundedRect(1, 1, width - 2, height - 2, 4, 4)
 
         painter.setPen(QColor(0, 0, 0))
         painter.drawText(
@@ -514,7 +526,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             maximum_kw=10.0, percentage_fill=True, parent=self
         )
         self.battery_power_bar = ZeroCenteredPowerBar(
-            percentage_fill=True, parent=self
+            percentage_fill=True, bordered=True, parent=self
         )
         self.grid_power_bar = ZeroCenteredPowerBar(parent=self)
         self.battery_flow_bar = ZeroCenteredPowerBar(parent=self)
