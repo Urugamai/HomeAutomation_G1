@@ -308,9 +308,18 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.label_clock_display.setFont(
             QFont("Courier New", clock_size, QFont.Weight.Bold)
         )
-        self.label_clock_display.setFixedHeight(
-            QFontMetrics(self.label_clock_display.font()).height() + 6
-        )
+        clock_height = QFontMetrics(self.label_clock_display.font()).height() + 6
+        if height <= 420:
+            clock_height = max(clock_height, 230)
+        self.label_clock_display.setFixedHeight(clock_height)
+        date_height = date_font_metrics.height() + 2
+        if height <= 420:
+            date_height = max(date_height, clock_height // 4)
+        for label in (
+            self.label_day_abbrev, self.label_day, self.label_month_abbrev,
+            self.label_year,
+        ):
+            label.setFixedHeight(date_height)
         self.text_clock_message.setFont(
             QFont("Courier New", message_size, QFont.Weight.Bold)
         )
@@ -331,6 +340,24 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.solar_power_bar, self.battery_power_bar, self.grid_power_bar,
         ):
             bar.setFont(QFont("Arial", power_size, QFont.Weight.Bold))
+            if height <= 420:
+                bar.setFixedHeight(48)
+            else:
+                bar.setFixedHeight(34)
+        if height <= 420:
+            for label in (
+                self.label_out_temp, self.label_today, self.label_today_min,
+                self.label_today_rain, self.label_next, self.label_next_min,
+                self.label_next_rain, self.label_next_rain_value,
+            ):
+                label.setMinimumHeight(44)
+        else:
+            for label in (
+                self.label_out_temp, self.label_today, self.label_today_min,
+                self.label_today_rain, self.label_next, self.label_next_min,
+                self.label_next_rain, self.label_next_rain_value,
+            ):
+                label.setMinimumHeight(0)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
