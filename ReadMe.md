@@ -40,3 +40,17 @@ The service assumes:<br>
 
 Adjust those paths in the service file if the new device uses a different
 username.
+
+Clock host schedules can be configured in
+`config/clock-host-config.yml`. Each top-level key is a device hostname:
+
+```yaml
+bathroom-clock:
+  turn-on: "0400"
+  turn-off: "1000"
+  touch-on-duration: 60
+```
+
+The display stays on during the scheduled period. Outside that period it
+sleeps, and a touch or key press wakes it for the configured number of
+minutes.

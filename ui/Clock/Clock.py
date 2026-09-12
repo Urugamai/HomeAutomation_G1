@@ -1,9 +1,11 @@
 import argparse
 import configparser
 import datetime
+import logging
 import os
 import socket
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QTimer, Qt
@@ -25,6 +27,75 @@ if str(CLOCK_DIR) not in sys.path:
 
 from libraries.mqtt_engine import MqttTelemetryListener
 from clock_display import Ui_MainWindow
+
+LOGGER = logging.getLogger(__name__)
+CLOCK_HOST_CONFIG_PATH = REPO_ROOT / "config" / "clock-host-config.yml"
+
+
+@dataclass(frozen=True)
+class ClockHostSchedule:
+    turn_on: datetime.time
+    turn_off: datetime.time
+    touch_on_duration: datetime.timedelta
+
+    def is_scheduled_on(self, current_time: datetime.time) -> bool:
+        if self.turn_on <= self.turn_off:
+            return self.turn_on <= current_time < self.turn_off
+        return current_time >= self.turn_on or current_time < self.turn_off
+
+
+def _parse_clock_time(value, field_name):
+    text = str(value).strip()
+    if ":" in text:
+        parsed = datetime.datetime.strptime(text, "%H:%M").time()
+    else:
+        if not text.isdigit() or len(text) not in (3, 4):
+            raise ValueError(f"{field_name} must use HHMM or HH:MM format")
+        text = text.zfill(4)
+        parsed = datetime.datetime.strptime(text, "%H%M").time()
+    return parsed
+
+
+def _load_clock_host_schedule(hostname):
+    if not CLOCK_HOST_CONFIG_PATH.exists():
+        return None
+
+    try:
+        import yaml
+    except ImportError as exc:
+        LOGGER.error(
+            "Cannot load %s because PyYAML is not installed",
+            CLOCK_HOST_CONFIG_PATH,
+        )
+        raise RuntimeError("PyYAML is required for clock-host-config.yml") from exc
+
+    try:
+        with CLOCK_HOST_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+            config = yaml.load(config_file, Loader=yaml.BaseLoader) or {}
+        settings = config.get(hostname)
+        if settings is None:
+            return None
+        if not isinstance(settings, dict):
+            raise ValueError(f"{hostname} must contain a mapping of settings")
+
+        turn_on = _parse_clock_time(settings["turn-on"], "turn-on")
+        turn_off = _parse_clock_time(settings["turn-off"], "turn-off")
+        touch_minutes = int(settings["touch-on-duration"])
+        if touch_minutes < 0:
+            raise ValueError("touch-on-duration must not be negative")
+        return ClockHostSchedule(
+            turn_on=turn_on,
+            turn_off=turn_off,
+            touch_on_duration=datetime.timedelta(minutes=touch_minutes),
+        )
+    except (KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
+        LOGGER.error(
+            "Invalid clock host configuration for %s in %s: %s",
+            hostname,
+            CLOCK_HOST_CONFIG_PATH,
+            exc,
+        )
+        raise
 
 
 class ZeroCenteredPowerBar(QWidget):
@@ -113,6 +184,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         idle_timeout=IDLE_TIMEOUT_SECONDS,
         wake_duration=60 * 60,
         location=None,
+        host_schedule=None,
     ):
         super().__init__()
         self._layout_ready = False
@@ -130,6 +202,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._replace_power_widgets()
         self.telemetry = {}
         self.screen_saver_enabled = screen_saver
+        self.host_schedule = host_schedule
+        self._touch_wake_until = None
         self.idle_timeout_ms = max(1, int(idle_timeout * 1000))
         self.wake_duration_ms = max(1, int(wake_duration * 1000))
         self.display_is_sleeping = False
@@ -143,6 +217,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._wake_timer = QTimer(self)
         self._wake_timer.setSingleShot(True)
         self._wake_timer.timeout.connect(self._sleep_display)
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.timeout.connect(self._update_schedule)
+        if self.host_schedule:
+            self._schedule_timer.start(1000)
         QApplication.instance().installEventFilter(self)
 
         self.location = location or socket.gethostname()
@@ -158,8 +236,10 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._clock_timer.start(1000)
         self._update_clock()
         self._layout_ready = True
-        if self.screen_saver_enabled:
+        if self.screen_saver_enabled and not self.host_schedule:
             self._reset_idle_timer()
+        if self.host_schedule:
+            self._update_schedule()
 
     def configure_screen(self, width=None, height=None):
         screen = self.screen() or QApplication.primaryScreen()
@@ -530,7 +610,14 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             QEvent.Type.TouchBegin,
             QEvent.Type.KeyPress,
         ):
-            if self.screen_saver_enabled:
+            if self.host_schedule:
+                now = datetime.datetime.now()
+                if not self.host_schedule.is_scheduled_on(now.time()):
+                    self._touch_wake_until = (
+                        now + self.host_schedule.touch_on_duration
+                    )
+                self._wake_display()
+            elif self.screen_saver_enabled:
                 if self.display_is_sleeping:
                     self._wake_display()
                 else:
@@ -543,7 +630,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self._idle_timer.start(self.idle_timeout_ms)
 
     def _sleep_display(self):
-        if not self.screen_saver_enabled:
+        if not (self.screen_saver_enabled or self.host_schedule):
             return
         self.display_is_sleeping = True
         self._idle_timer.stop()
@@ -556,12 +643,31 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self._sleep_overlay.hide()
         self.display_is_sleeping = False
         self._idle_timer.stop()
-        self._wake_timer.start(self.wake_duration_ms)
+        if not self.host_schedule:
+            self._wake_timer.start(self.wake_duration_ms)
+
+    def _update_schedule(self):
+        if not self.host_schedule:
+            return
+        now = datetime.datetime.now()
+        scheduled_on = self.host_schedule.is_scheduled_on(now.time())
+        touch_on = (
+            self._touch_wake_until is not None
+            and now < self._touch_wake_until
+        )
+        if scheduled_on or touch_on:
+            if self.display_is_sleeping:
+                self._wake_display()
+        else:
+            self._touch_wake_until = None
+            if not self.display_is_sleeping:
+                self._sleep_display()
 
     def closeEvent(self, event):
         QApplication.instance().removeEventFilter(self)
         self._idle_timer.stop()
         self._wake_timer.stop()
+        self._schedule_timer.stop()
         self._clock_timer.stop()
         self.mqtt_listener.stop()
         super().closeEvent(event)
@@ -590,12 +696,15 @@ def main():
 
     os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
     app = QApplication(sys.argv)
+    hostname = socket.gethostname()
+    host_schedule = _load_clock_host_schedule(hostname)
     window = ClockWindow(
         broker=args.broker or _load_broker(),
         screen_saver=args.screen_saver,
         idle_timeout=args.idle_seconds,
         wake_duration=args.wake_seconds,
         location=args.location,
+        host_schedule=host_schedule,
     )
     window.configure_screen(args.width, args.height)
     window.force_fullscreen()

@@ -1,5 +1,6 @@
 PyQt6
 paho-mqtt
+PyYAML
 pymodbus
 aiohttp
 pycryptodome

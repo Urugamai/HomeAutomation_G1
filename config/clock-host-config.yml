@@ -1,0 +1,6 @@
+# Clock display schedules keyed by the device hostname.
+# Quote HHMM values so YAML preserves leading zeroes.
+bathroom-clock:
+  turn-on: "0400"
+  turn-off: "1000"
+  touch-on-duration: 60
