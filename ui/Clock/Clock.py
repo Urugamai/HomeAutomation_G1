@@ -354,6 +354,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             self.label_year,
         ):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for label in (self.label_today_rain, self.label_next_rain_value):
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _configure_fonts(self, width, height):
         scale = min(
