@@ -117,7 +117,7 @@ class PowerConsumptionChart(QWidget):
         painter.fillRect(self.rect(), QColor("#ffffff"))
 
         left = 58
-        right = 12
+        right = 36
         top = 24
         bottom = 30
         plot = QRect(left, top, max(1, self.width() - left - right),
