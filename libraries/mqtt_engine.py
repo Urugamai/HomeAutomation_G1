@@ -1,5 +1,6 @@
-import sys
+import datetime
 import json
+import sys
 from PyQt6.QtCore import QObject, pyqtSignal
 
 try:
@@ -56,6 +57,7 @@ class MqttTelemetryListener(QObject):
             "environment_sources": {},
             "cbus_devices": {},
         }
+        self._forecast_by_date = {}
 
     def start(self):
         if not PAHO_AVAILABLE: return
@@ -240,9 +242,26 @@ class MqttTelemetryListener(QObject):
                     return suffix
         return None
 
+    def _extract_forecast_date_key(self, item):
+        timestamp = item.get("utc_timestamp")
+        if timestamp:
+            try:
+                parsed = datetime.datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone()
+                return parsed.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+        day_index = item.get("day_index")
+        if day_index is not None:
+            try:
+                return (datetime.date.today() + datetime.timedelta(days=int(day_index))).strftime("%Y-%m-%d")
+            except (TypeError, ValueError):
+                pass
+        return None
+
     def _update_persistent_forecast_cache(self, incoming_forecasts):
         for incoming_item in incoming_forecasts:
-            day_idx = incoming_item.get("day_index")
             incoming_probability = next(
                 (
                     incoming_item.get(key)
@@ -256,21 +275,45 @@ class MqttTelemetryListener(QObject):
                 ),
                 None,
             )
-            found = False
-            for cached_item in self.cached_data["forecast_set"]:
-                if cached_item["day_index"] == day_idx:
-                    if incoming_item.get("summary"): cached_item["summary"] = incoming_item["summary"]
-                    if incoming_item.get("expected_min") is not None: cached_item["expected_min"] = incoming_item["expected_min"]
-                    if incoming_item.get("expected_max") is not None: cached_item["expected_max"] = incoming_item["expected_max"]
-                    if incoming_probability is not None:
-                        cached_item["rain_probability"] = incoming_probability
-                    found = True
-                    break
-            if not found:
-                cached_item = incoming_item.copy()
+
+            date_key = self._extract_forecast_date_key(incoming_item)
+            if not date_key:
+                continue
+
+            if date_key in self._forecast_by_date:
+                cached = self._forecast_by_date[date_key]
+                if "day_index" in incoming_item and incoming_item.get("day_index") is not None:
+                    cached["day_index"] = incoming_item["day_index"]
+                if incoming_item.get("utc_timestamp"):
+                    cached["utc_timestamp"] = incoming_item["utc_timestamp"]
+                if incoming_item.get("summary"):
+                    cached["summary"] = incoming_item["summary"]
+                if incoming_item.get("expected_min") is not None:
+                    cached["expected_min"] = incoming_item["expected_min"]
+                if incoming_item.get("expected_max") is not None:
+                    cached["expected_max"] = incoming_item["expected_max"]
                 if incoming_probability is not None:
-                    cached_item["rain_probability"] = incoming_probability
-                self.cached_data["forecast_set"].append(cached_item)
+                    cached["rain_probability"] = incoming_probability
+            else:
+                cached = incoming_item.copy()
+                if incoming_probability is not None:
+                    cached["rain_probability"] = incoming_probability
+                self._forecast_by_date[date_key] = cached
+
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        self._forecast_by_date = {
+            k: v for k, v in self._forecast_by_date.items() if k >= today_str
+        }
+
+        sorted_forecasts = [
+            self._forecast_by_date[k]
+            for k in sorted(self._forecast_by_date.keys())
+        ]
+        for idx, item in enumerate(sorted_forecasts):
+            if "day_index" not in item or item.get("day_index") is None:
+                item["day_index"] = idx
+
+        self.cached_data["forecast_set"] = sorted_forecasts
 
     def stop(self):
         if self.client:
