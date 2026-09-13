@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView, QSizePolicy,
 )
-from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
+from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect, QRectF
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
 from PyQt6.QtCore import QPointF
 
@@ -132,27 +133,78 @@ class PowerConsumptionChart(QWidget):
         painter.drawText(8, 16, f"House power consumption (kW)   {latest_text}")
         painter.drawRect(plot)
 
+        # X-axis time grid lines and labels
         for hour in (0, 6, 12, 18, 24):
             x = plot.left() + plot.width() * hour / 24
             painter.setPen(QPen(QColor("#d8d8d8"), 1))
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
             painter.setPen(QColor("#404040"))
+            painter.setFont(QFont("Arial", 8))
             painter.drawText(int(x - 18), self.height() - 8, f"{hour:02d}:00")
+
+        if self.samples:
+            values = [value for _, value in self.samples]
+            minimum = min(values)
+            maximum = max(values)
+            raw_min = min(0.0, minimum)
+            raw_max = max(0.0, maximum)
+            if raw_max == raw_min:
+                padding = 1.0
+            else:
+                padding = max(0.5, (raw_max - raw_min) * 0.1)
+            chart_min = raw_min - padding
+            chart_max = raw_max + padding
+        else:
+            chart_min = 0.0
+            chart_max = 5.0
+
+        # Calculate Y-axis tick intervals
+        range_val = chart_max - chart_min
+        if range_val <= 0:
+            range_val = 1.0
+        raw_step = range_val / 5.0
+        magnitude = 10 ** math.floor(math.log10(raw_step)) if raw_step > 0 else 1.0
+        norm_step = raw_step / magnitude
+        if norm_step < 1.5:
+            step = 1.0 * magnitude
+        elif norm_step < 3.5:
+            step = 2.0 * magnitude
+        elif norm_step < 7.5:
+            step = 5.0 * magnitude
+        else:
+            step = 10.0 * magnitude
+
+        # Draw Y-axis scale, horizontal grid, and zero line
+        first_tick = math.ceil(chart_min / step) * step
+        current_tick = first_tick
+        while current_tick <= chart_max + 1e-6:
+            y = plot.bottom() - ((current_tick - chart_min) / (chart_max - chart_min) * plot.height())
+            if plot.top() <= y <= plot.bottom():
+                if abs(current_tick) < 1e-6:
+                    # Prominent zero line
+                    painter.setPen(QPen(QColor("#606060"), 1.5, Qt.PenStyle.DashLine))
+                    painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+                else:
+                    # Minor horizontal grid line
+                    painter.setPen(QPen(QColor("#eaeaea"), 1, Qt.PenStyle.SolidLine))
+                    painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+
+                # Y-axis tick label
+                painter.setPen(QColor("#505050"))
+                painter.setFont(QFont("Arial", 8))
+                label_text = f"{current_tick:.1f}" if step < 1.0 or abs(current_tick - round(current_tick)) > 0.01 else f"{int(round(current_tick))}"
+                painter.drawText(
+                    QRectF(0, y - 8, left - 6, 16),
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                    label_text,
+                )
+            current_tick += step
 
         if not self.samples:
             painter.setPen(QColor("#606060"))
+            painter.setFont(QFont("Arial", 10))
             painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "Waiting for power samples")
             return
-
-        values = [value for _, value in self.samples]
-        minimum = min(values)
-        maximum = max(values)
-        if maximum == minimum:
-            padding = max(0.5, abs(maximum) * 0.1)
-        else:
-            padding = (maximum - minimum) * 0.1
-        chart_min = minimum - padding
-        chart_max = maximum + padding
 
         def point_for(timestamp, value):
             seconds = (
@@ -171,9 +223,11 @@ class PowerConsumptionChart(QWidget):
             y = point_for(datetime.datetime.combine(
                 datetime.date.today(), datetime.time.min
             ), value).y()
-            painter.setPen(QPen(color, 2))
+            painter.setPen(QPen(color, 1.5, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
-            painter.drawText(plot.right() - 82, int(y - 3), f"{value:.2f} kW")
+            painter.setPen(color)
+            painter.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+            painter.drawText(plot.right() - 72, int(y - 3), f"{value:.2f} kW")
 
         polyline = QPolygonF([point_for(timestamp, value) for timestamp, value in self.samples])
         painter.setPen(QPen(QColor("#202020"), 2))
