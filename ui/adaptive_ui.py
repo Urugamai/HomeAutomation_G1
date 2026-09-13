@@ -229,9 +229,35 @@ class PowerConsumptionChart(QWidget):
             painter.setFont(QFont("Arial", 8, QFont.Weight.Bold))
             painter.drawText(plot.right() - 72, int(y - 3), f"{value:.2f} kW")
 
-        polyline = QPolygonF([point_for(timestamp, value) for timestamp, value in self.samples])
-        painter.setPen(QPen(QColor("#202020"), 2))
-        painter.drawPolyline(polyline)
+        green_pen = QPen(QColor("#2ca02c"), 2)
+        red_pen = QPen(QColor("#d62728"), 2)
+
+        for i in range(len(self.samples) - 1):
+            t1, v1 = self.samples[i]
+            t2, v2 = self.samples[i + 1]
+            p1 = point_for(t1, v1)
+            p2 = point_for(t2, v2)
+
+            if v1 >= 0 and v2 >= 0:
+                painter.setPen(green_pen)
+                painter.drawLine(p1, p2)
+            elif v1 <= 0 and v2 <= 0:
+                painter.setPen(red_pen)
+                painter.drawLine(p1, p2)
+            else:
+                # Segment crosses zero: split at zero-crossing point
+                ratio = (0.0 - v1) / (v2 - v1)
+                pz = QPointF(p1.x() + ratio * (p2.x() - p1.x()), p1.y() + ratio * (p2.y() - p1.y()))
+                if v1 >= 0:
+                    painter.setPen(green_pen)
+                    painter.drawLine(p1, pz)
+                    painter.setPen(red_pen)
+                    painter.drawLine(pz, p2)
+                else:
+                    painter.setPen(red_pen)
+                    painter.drawLine(p1, pz)
+                    painter.setPen(green_pen)
+                    painter.drawLine(pz, p2)
 
 class HighResZeroCenteredBar(QWidget):
     """A custom graphical meter that dynamically paints vector bars relative to a central zero."""
