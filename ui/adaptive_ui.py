@@ -234,6 +234,48 @@ class HighResZeroCenteredBar(QWidget):
             painter.drawLine(center_x, 0, center_x, h)
 
 
+class AdaptiveSocBar(QWidget):
+    """Vertical battery state of charge bar with embedded label and percentage."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.soc_val = None
+        self.setFixedWidth(64)
+        self.setMinimumHeight(48)
+
+    def set_value(self, value: float):
+        self.soc_val = max(0.0, min(100.0, float(value)))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+
+        painter.setPen(QPen(QColor(180, 180, 180), 1))
+        painter.setBrush(QBrush(QColor(240, 240, 240)))
+        painter.drawRoundedRect(0, 0, w, h, 4, 4)
+
+        if self.soc_val is not None:
+            fill_height = int((self.soc_val / 100.0) * h)
+            if fill_height > 0:
+                painter.setPen(Qt.PenStyle.NoPen)
+                fill_color = QColor(40, 167, 69) if self.soc_val > 20 else QColor(220, 53, 69)
+                painter.setBrush(QBrush(fill_color))
+                painter.drawRoundedRect(0, h - fill_height, w, fill_height, 4, 4)
+
+        painter.setPen(QPen(QColor(120, 120, 120), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(0, 0, w, h, 4, 4)
+
+        painter.setPen(QColor(0, 0, 0))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        val_str = f"{self.soc_val:.1f}%" if self.soc_val is not None else "--%"
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, f"SOC\n{val_str}")
+
+
 class AdaptiveFlowWidget(QWidget):
     """Wrapper component coupling text status titles to custom vector graphics."""
 
@@ -376,34 +418,12 @@ class AdaptiveDashboard(QWidget):
         energy_layout.setContentsMargins(0, 0, 0, 0)
         energy_layout.setSpacing(10)
 
-        self.soc_header_container = QWidget()
-        soc_header_layout = QVBoxLayout(self.soc_header_container)
-        soc_header_layout.setContentsMargins(0, 0, 0, 0)
-        soc_header_layout.setSpacing(2)
-
-        self.soc_title_lbl = QLabel("SOC:")
-        self.soc_title_lbl.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.soc_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.soc_value_lbl = QLabel("--%")
-        self.soc_value_lbl.setFont(QFont("Monospace", 11, QFont.Weight.Bold))
-        self.soc_value_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.soc_value_lbl.setStyleSheet("color: #007aff;")
-
-        soc_header_layout.addWidget(self.soc_title_lbl)
-        soc_header_layout.addWidget(self.soc_value_lbl)
-
-        self.soc_bar = QProgressBar()
-        self.soc_bar.setOrientation(Qt.Orientation.Vertical)
-        self.soc_bar.setRange(0, 100)
-        self.soc_bar.setTextVisible(False)
-        self.soc_bar.setFixedWidth(50)
+        self.soc_bar = AdaptiveSocBar()
 
         self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_max_kw=10.0, is_solar=True)
         self.battery_widget = AdaptiveFlowWidget("Battery Flow", range_max_kw=5.0)
         self.grid_widget = AdaptiveFlowWidget("Grid Flow", range_max_kw=5.0)
 
-        energy_layout.addWidget(self.soc_header_container)
         energy_layout.addWidget(self.soc_bar)
         energy_layout.addWidget(self.solar_widget)
         energy_layout.addWidget(self.battery_widget)
@@ -499,8 +519,7 @@ class AdaptiveDashboard(QWidget):
 
         if self.energy_container.isVisible():
             soc_val = data.get("battery_soc", 0.0)
-            self.soc_bar.setValue(int(soc_val))
-            self.soc_value_lbl.setText(f"{soc_val:.1f}%")
+            self.soc_bar.set_value(soc_val)
 
             solar_kw = float(data.get("solar_power", 0.0))
             battery_kw = float(data.get("battery_flow", 0.0))
