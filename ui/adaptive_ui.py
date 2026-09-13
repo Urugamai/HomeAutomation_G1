@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
-    QTableWidgetItem, QHeaderView,
+    QTableWidgetItem, QHeaderView, QSizePolicy,
 )
 from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
@@ -240,8 +240,9 @@ class AdaptiveSocBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.soc_val = None
-        self.setFixedWidth(64)
-        self.setMinimumHeight(48)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.setFixedWidth(56)
+        self.setMinimumHeight(100)
 
     def set_value(self, value: float):
         self.soc_val = max(0.0, min(100.0, float(value)))
@@ -380,9 +381,20 @@ class EnvironmentSourcesPage(QWidget):
 class AdaptiveDashboard(QWidget):
     def __init__(self):
         super().__init__()
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.root_layout = QHBoxLayout(self)
+        self.root_layout.setContentsMargins(10, 10, 10, 10)
+        self.root_layout.setSpacing(10)
+
+        # Full-height vertical Battery SOC bar on the left
+        self.soc_bar = AdaptiveSocBar()
+        self.root_layout.addWidget(self.soc_bar)
+
+        # Right-side vertical stack for clock, weather, energy, chart
+        self.content_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.content_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(8)
+        self.root_layout.addWidget(self.content_widget, 1)
 
         # 1. Digital Clock Panel
         self.time_lbl = QLabel("Initializing Clock...")
@@ -418,13 +430,10 @@ class AdaptiveDashboard(QWidget):
         energy_layout.setContentsMargins(0, 0, 0, 0)
         energy_layout.setSpacing(10)
 
-        self.soc_bar = AdaptiveSocBar()
-
         self.solar_widget = AdaptiveFlowWidget("Solar Gen", range_max_kw=10.0, is_solar=True)
         self.battery_widget = AdaptiveFlowWidget("Battery Flow", range_max_kw=5.0)
         self.grid_widget = AdaptiveFlowWidget("Grid Flow", range_max_kw=5.0)
 
-        energy_layout.addWidget(self.soc_bar)
         energy_layout.addWidget(self.solar_widget)
         energy_layout.addWidget(self.battery_widget)
         energy_layout.addWidget(self.grid_widget)
@@ -454,6 +463,7 @@ class AdaptiveDashboard(QWidget):
             self.forecast_container.hide()
             self.energy_container.hide()
             self.power_chart.hide()
+            self.soc_bar.hide()
             self.time_lbl.setFont(QFont("Monospace", 22, QFont.Weight.Bold))
         elif height < 500:
             self.current_profile = "COMPACT_DESK"
@@ -461,6 +471,7 @@ class AdaptiveDashboard(QWidget):
             self.forecast_container.show()
             self.energy_container.hide()
             self.power_chart.hide()
+            self.soc_bar.hide()
             self.time_lbl.setFont(QFont("Monospace", 28, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
@@ -470,6 +481,7 @@ class AdaptiveDashboard(QWidget):
             self.forecast_container.show()
             self.energy_container.show()
             self.power_chart.show()
+            self.soc_bar.show()
             self.time_lbl.setFont(QFont("Monospace", 36, QFont.Weight.Bold))
             self.temp_lbl.setFont(QFont("Arial", 13, QFont.Weight.Medium))
             self._mount_hvac_view(parent_tab_widget)
