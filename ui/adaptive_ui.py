@@ -53,7 +53,9 @@ class PowerHistoryStore:
         return datetime.date.today().isoformat()
 
     def add_sample(self, timestamp, power_kw):
-        if timestamp.date().isoformat() != self._today():
+        if self.samples and self.samples[-1][0].date() != timestamp.date():
+            # Day has rolled over since the last recorded sample; start fresh
+            # so yesterday's readings don't linger and overlap today's chart.
             self.samples = []
         self.samples.append((timestamp, float(power_kw)))
         self._write()
