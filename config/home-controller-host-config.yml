@@ -1,0 +1,4 @@
+# Home controller settings keyed by device hostname.
+# Values must be whole-hour divisors of 24: 1, 2, 3, 4, 6, 8, 12, or 24.
+home-controller:
+  power-chart-grid-interval-hours: 1

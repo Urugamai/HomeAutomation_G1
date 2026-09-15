@@ -14,6 +14,42 @@ from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
 from libraries.mqtt_engine import MqttTelemetryListener
 
+HOME_CONTROLLER_CONFIG_PATH = (
+    Path(__file__).resolve().parent / "config" / "home-controller-host-config.yml"
+)
+
+
+def _load_power_chart_grid_interval(hostname):
+    if not HOME_CONTROLLER_CONFIG_PATH.exists():
+        return 1
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError(
+            "PyYAML is required for home-controller-host-config.yml"
+        ) from exc
+
+    try:
+        with HOME_CONTROLLER_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+            config = yaml.safe_load(config_file) or {}
+        settings = config.get(hostname)
+        if settings is None:
+            return 1
+        if not isinstance(settings, dict):
+            raise ValueError(f"{hostname} must contain a mapping of settings")
+        interval = int(settings.get("power-chart-grid-interval-hours", 1))
+        if interval < 1 or interval > 24 or 24 % interval:
+            raise ValueError(
+                "power-chart-grid-interval-hours must be a divisor of 24"
+            )
+        return interval
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        raise RuntimeError(
+            f"Invalid home controller configuration in "
+            f"{HOME_CONTROLLER_CONFIG_PATH}: {exc}"
+        ) from exc
+
 
 # Open main.py and locate the __init__ constructor inside the MainWindow class:
 
@@ -22,7 +58,7 @@ class MainWindow(QMainWindow):
 
     # Open main.py and place this stylesheet assignment right inside MainWindow.__init__:
 
-    def __init__(self, broker_ip="localhost"):
+    def __init__(self, broker_ip="localhost", power_chart_grid_interval_hours=1):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
         self._display_is_sleeping = False
@@ -47,7 +83,7 @@ class MainWindow(QMainWindow):
                 }
             """)
 
-        self.dashboard = AdaptiveDashboard()
+        self.dashboard = AdaptiveDashboard(power_chart_grid_interval_hours)
         self.tabs.addTab(self.dashboard, "Status Core")
         self.environment_page = EnvironmentSourcesPage()
         self.tabs.addTab(self.environment_page, "Environment")
@@ -159,6 +195,9 @@ def main():
             broker_ip = config.get("MQTT", "broker", fallback="localhost")
         except Exception:
             pass
+    power_chart_grid_interval_hours = _load_power_chart_grid_interval(
+        socket.gethostname()
+    )
 
     max_restart_attempts = 10
     restart_count = 0
@@ -167,7 +206,10 @@ def main():
     while restart_count < max_restart_attempts:
         try:
             app = QApplication(sys.argv)
-            window = MainWindow(broker_ip=broker_ip)
+            window = MainWindow(
+                broker_ip=broker_ip,
+                power_chart_grid_interval_hours=power_chart_grid_interval_hours,
+            )
             window.show()
             
             # If exec() returns normally, exit without restart

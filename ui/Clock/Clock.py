@@ -28,6 +28,7 @@ if str(CLOCK_DIR) not in sys.path:
     sys.path.insert(0, str(CLOCK_DIR))
 
 from libraries.mqtt_engine import MqttTelemetryListener
+from ui.battery_indicator import CHARGING_COLOR, battery_soc_fill_color
 from clock_display import Ui_MainWindow
 
 LOGGER = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ class ZeroCenteredPowerBar(QWidget):
         self.percentage_fill = percentage_fill
         self.bordered = bordered
         self.fill_percent = 0.0
+        self.fill_color = CHARGING_COLOR
         self.display_text = ""
         self.setMinimumWidth(220)
         self.setFixedHeight(34)
@@ -131,6 +133,14 @@ class ZeroCenteredPowerBar(QWidget):
         self.fill_percent = max(0.0, min(100.0, float(percentage)))
         self.display_text = display_text
         self.update()
+
+    def set_battery_soc(self, percentage, battery_flow, display_text):
+        self.fill_color = battery_soc_fill_color(
+            percentage,
+            battery_flow,
+            self.fill_color,
+        )
+        self.set_percentage(percentage, display_text)
 
     def set_flow(self, value_kw, display_text):
         self.set_value(value_kw)
@@ -149,7 +159,7 @@ class ZeroCenteredPowerBar(QWidget):
 
         if self.percentage_fill:
             fill_width = int(self.fill_percent / 100 * width)
-            painter.setBrush(QBrush(QColor(40, 167, 69)))
+            painter.setBrush(QBrush(QColor(self.fill_color)))
             painter.drawRect(0, 0, fill_width, height)
         else:
             fill_width = int(
@@ -524,8 +534,8 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         self.solar_power_bar.set_percentage(
             solar_percent, f"Solar: {solar:.1f}kW {solar_percent:.0f}%"
         )
-        self.battery_power_bar.set_percentage(
-            soc, f"Battery: {soc}% {battery:+.2f}kW"
+        self.battery_power_bar.set_battery_soc(
+            soc, battery, f"Battery: {soc}% {battery:+.2f}kW"
         )
         self.grid_power_bar.set_flow(grid, f"Grid: {grid:+.2f}kW")
 

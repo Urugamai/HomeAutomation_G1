@@ -14,6 +14,7 @@ from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
 from PyQt6.QtCore import QPointF
 
 from .hvac_page import HvacConfigurationPage
+from .battery_indicator import CHARGING_COLOR, battery_soc_fill_color
 
 LOGGER = logging.getLogger(__name__)
 
@@ -98,8 +99,9 @@ class PowerHistoryStore:
 class PowerConsumptionChart(QWidget):
     """Paints a rolling 24-hour house power chart."""
 
-    def __init__(self):
+    def __init__(self, grid_interval_hours=1):
         super().__init__()
+        self.grid_interval_hours = int(grid_interval_hours)
         self.samples = []
         self.latest_power_kw = None
         self.setMinimumHeight(150)
@@ -138,7 +140,7 @@ class PowerConsumptionChart(QWidget):
         # X-axis time grid lines and labels
         window_end = datetime.datetime.now()
         window_start = window_end - PowerHistoryStore.RETENTION_PERIOD
-        for hour in (0, 6, 12, 18, 24):
+        for hour in range(0, 25, self.grid_interval_hours):
             x = plot.left() + plot.width() * hour / 24
             painter.setPen(QPen(QColor("#d8d8d8"), 1))
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
@@ -322,12 +324,18 @@ class AdaptiveSocBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.soc_val = None
+        self.fill_color = CHARGING_COLOR
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self.setFixedWidth(56)
         self.setMinimumHeight(100)
 
-    def set_value(self, value: float):
+    def set_value(self, value: float, battery_flow: float):
         self.soc_val = max(0.0, min(100.0, float(value)))
+        self.fill_color = battery_soc_fill_color(
+            self.soc_val,
+            battery_flow,
+            self.fill_color,
+        )
         self.update()
 
     def paintEvent(self, event):
@@ -345,8 +353,7 @@ class AdaptiveSocBar(QWidget):
             fill_height = int((self.soc_val / 100.0) * h)
             if fill_height > 0:
                 painter.setPen(Qt.PenStyle.NoPen)
-                fill_color = QColor(40, 167, 69) if self.soc_val > 20 else QColor(220, 53, 69)
-                painter.setBrush(QBrush(fill_color))
+                painter.setBrush(QBrush(QColor(self.fill_color)))
                 painter.drawRoundedRect(0, h - fill_height, w, fill_height, 4, 4)
 
         painter.setPen(QPen(QColor(120, 120, 120), 1))
@@ -461,7 +468,7 @@ class EnvironmentSourcesPage(QWidget):
 
 
 class AdaptiveDashboard(QWidget):
-    def __init__(self):
+    def __init__(self, power_chart_grid_interval_hours=1):
         super().__init__()
         self.root_layout = QHBoxLayout(self)
         self.root_layout.setContentsMargins(10, 10, 10, 10)
@@ -522,7 +529,7 @@ class AdaptiveDashboard(QWidget):
         self.main_layout.addWidget(self.energy_container)
 
         self.power_history = PowerHistoryStore()
-        self.power_chart = PowerConsumptionChart()
+        self.power_chart = PowerConsumptionChart(power_chart_grid_interval_hours)
         self.main_layout.addWidget(self.power_chart, 1)
         self._latest_power_sample = None
         self.power_sample_timer = QTimer(self)
@@ -613,7 +620,7 @@ class AdaptiveDashboard(QWidget):
 
         if self.energy_container.isVisible():
             soc_val = data.get("battery_soc", 0.0)
-            self.soc_bar.set_value(soc_val)
+            self.soc_bar.set_value(soc_val, data.get("battery_flow", 0.0))
 
             solar_kw = float(data.get("solar_power", 0.0))
             battery_kw = float(data.get("battery_flow", 0.0))
