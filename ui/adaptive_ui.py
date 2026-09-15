@@ -19,24 +19,23 @@ LOGGER = logging.getLogger(__name__)
 
 
 class PowerHistoryStore:
-    """Persists the current day's house power samples on the NAS."""
+    """Persists the most recent 24 hours of house power samples on the NAS."""
 
     STORAGE_PATH = Path("/mnt/WatsonHome/home_power_history.json")
+    RETENTION_PERIOD = datetime.timedelta(hours=24)
 
     def __init__(self, storage_path=None):
         self.storage_path = Path(storage_path or self.STORAGE_PATH)
         self.samples = []
         self._storage_warning_logged = False
-        self._load_today()
+        self._load_recent()
 
-    def _load_today(self):
+    def _load_recent(self):
         if not self.storage_path.is_file():
             return
         try:
             with self.storage_path.open("r", encoding="utf-8") as history_file:
                 payload = json.load(history_file)
-            if payload.get("date") != self._today():
-                return
             self.samples = [
                 (
                     datetime.datetime.fromisoformat(item["timestamp"]),
@@ -44,19 +43,21 @@ class PowerHistoryStore:
                 )
                 for item in payload.get("samples", [])
             ]
+            self._prune(datetime.datetime.now())
         except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
             LOGGER.warning("Unable to load power history from %s: %s", self.storage_path, exc)
             self.samples = []
 
-    @staticmethod
-    def _today():
-        return datetime.date.today().isoformat()
+    def _prune(self, reference_time):
+        cutoff = reference_time - self.RETENTION_PERIOD
+        self.samples = [
+            (timestamp, power_kw)
+            for timestamp, power_kw in self.samples
+            if cutoff <= timestamp <= reference_time
+        ]
 
     def add_sample(self, timestamp, power_kw):
-        if self.samples and self.samples[-1][0].date() != timestamp.date():
-            # Day has rolled over since the last recorded sample; start fresh
-            # so yesterday's readings don't linger and overlap today's chart.
-            self.samples = []
+        self._prune(timestamp)
         self.samples.append((timestamp, float(power_kw)))
         self._write()
 
@@ -71,7 +72,6 @@ class PowerHistoryStore:
             return
 
         payload = {
-            "date": self._today(),
             "samples": [
                 {
                     "timestamp": timestamp.isoformat(timespec="seconds"),
@@ -96,7 +96,7 @@ class PowerHistoryStore:
 
 
 class PowerConsumptionChart(QWidget):
-    """Paints a midnight-to-midnight house power chart."""
+    """Paints a rolling 24-hour house power chart."""
 
     def __init__(self):
         super().__init__()
@@ -132,17 +132,24 @@ class PowerConsumptionChart(QWidget):
             if self.latest_power_kw is not None
             else "Latest: --"
         )
-        painter.drawText(8, 16, f"House power consumption (kW)   {latest_text}")
+        painter.drawText(8, 16, f"House power consumption (last 24 hours)   {latest_text}")
         painter.drawRect(plot)
 
         # X-axis time grid lines and labels
+        window_end = datetime.datetime.now()
+        window_start = window_end - PowerHistoryStore.RETENTION_PERIOD
         for hour in (0, 6, 12, 18, 24):
             x = plot.left() + plot.width() * hour / 24
             painter.setPen(QPen(QColor("#d8d8d8"), 1))
             painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
             painter.setPen(QColor("#404040"))
             painter.setFont(QFont("Arial", 8))
-            painter.drawText(int(x - 18), self.height() - 8, f"{hour:02d}:00")
+            label_time = window_start + datetime.timedelta(hours=hour)
+            painter.drawText(
+                int(x - 18),
+                self.height() - 8,
+                label_time.strftime("%H:%M"),
+            )
 
         if self.samples:
             values = [value for _, value in self.samples]
@@ -209,22 +216,15 @@ class PowerConsumptionChart(QWidget):
             return
 
         def point_for(timestamp, value):
-            seconds = (
-                timestamp.hour * 3600
-                + timestamp.minute * 60
-                + timestamp.second
-                + timestamp.microsecond / 1_000_000
-            )
-            x = plot.left() + plot.width() * seconds / (24 * 3600)
+            seconds = (timestamp - window_start).total_seconds()
+            x = plot.left() + plot.width() * seconds / PowerHistoryStore.RETENTION_PERIOD.total_seconds()
             y = plot.bottom() - (
                 (value - chart_min) / (chart_max - chart_min) * plot.height()
             )
             return QPointF(x, y)
 
         for value, color in ((maximum, QColor("#d62728")), (minimum, QColor("#1f5fbf"))):
-            y = point_for(datetime.datetime.combine(
-                datetime.date.today(), datetime.time.min
-            ), value).y()
+            y = point_for(window_start, value).y()
             painter.setPen(QPen(color, 1.5, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
             painter.setPen(color)
