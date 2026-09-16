@@ -1,7 +1,7 @@
 """Shared battery state display rules."""
 
 CHARGING_COLOR = "#28a745"
-DRAINING_COLOR = "#8b4513"
+DRAINING_COLOR = "#ff8c00"
 LOW_SOC_COLOR = "#dc3545"
 FLOW_DEADBAND = 100.0
 LOW_SOC_THRESHOLD = 10.0
