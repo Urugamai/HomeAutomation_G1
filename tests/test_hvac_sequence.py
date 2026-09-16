@@ -1,7 +1,7 @@
 import pytest
 
-import controllers.environment_daemon as environment_daemon
 import controllers.hvac_daemon as hvac_daemon
+from libraries.hvac_settings import HvacSettingsStore
 
 
 class _MqttClient:
@@ -9,110 +9,74 @@ class _MqttClient:
         pass
 
 
-@pytest.mark.parametrize(
-    ("module", "controller_class", "tick_method", "state_attr", "sequence_attr"),
-    [
-        (
-            hvac_daemon,
-            hvac_daemon.HvacHardwareDaemon,
-            "_process_control_tick",
-            "current_state",
-            "sequence_state",
-        ),
-        (
-            environment_daemon,
-            environment_daemon.LivingAreaHardwareController,
-            "_process_automation_tick",
-            "current_hvac_state",
-            "hvac_sequence_state",
-        ),
-    ],
-)
-def test_hvac_fan_lead_minimum_run_and_postrun(
-    monkeypatch, module, controller_class, tick_method, state_attr, sequence_attr
-):
-    controller = controller_class()
+def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):
+    storage_path = tmp_path / "hvac_settings.json"
+    saved = HvacSettingsStore(storage_path).save(
+        {
+            "target_min": 19.5,
+            "target_max": 24.5,
+            "fan_preheat_seconds": 60,
+            "fan_postrun_seconds": 120,
+            "min_run_seconds": 300,
+            "max_run_seconds": 600,
+            "rest_seconds": 300,
+        }
+    )
+
+    assert HvacSettingsStore(storage_path).load() == saved
+
+
+def test_hvac_fan_lead_minimum_run_and_postrun(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
     commands = []
     temperatures = [19.0]
     clock = [0.0]
-    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
+    controller.client = _MqttClient()
+    controller.latest_inside_temperature = temperatures[0]
+    controller._write_relays = commands.append
 
-    if controller_class is hvac_daemon.HvacHardwareDaemon:
-        controller.client = _MqttClient()
-        controller._read_inside_temperature = lambda: temperatures[0]
-        controller._write_relays = commands.append
-    else:
-        controller.mqtt_client = _MqttClient()
-        controller._read_sensors = lambda: (temperatures[0], 50.0, 0.0, 1013.0)
-        controller._apply_physical_relay_state = commands.append
-
-    getattr(controller, tick_method)()
-    assert getattr(controller, sequence_attr) == "PREHEAT"
+    controller._process_control_tick()
+    assert controller.sequence_state == "PREHEAT"
     assert commands[-1] == "FAN"
 
     clock[0] = 60.0
-    getattr(controller, tick_method)()
-    assert getattr(controller, state_attr) == "HEATING"
+    controller._process_control_tick()
+    assert controller.current_state == "HEATING"
     assert commands[-1] == "HEATING"
 
     temperatures[0] = 22.0
+    controller.latest_inside_temperature = temperatures[0]
     clock[0] = 359.0
-    getattr(controller, tick_method)()
-    assert getattr(controller, state_attr) == "HEATING"
+    controller._process_control_tick()
+    assert controller.current_state == "HEATING"
 
     clock[0] = 360.0
-    getattr(controller, tick_method)()
-    assert getattr(controller, sequence_attr) == "POSTRUN"
+    controller._process_control_tick()
+    assert controller.sequence_state == "POSTRUN"
     assert commands[-1] == "FAN"
 
     clock[0] = 480.0
-    getattr(controller, tick_method)()
-    assert getattr(controller, sequence_attr) == "OFF"
+    controller._process_control_tick()
+    assert controller.sequence_state == "OFF"
     assert commands[-1] == "OFF"
 
 
-@pytest.mark.parametrize(
-    ("module", "controller_class", "tick_method", "sequence_attr"),
-    [
-        (
-            hvac_daemon,
-            hvac_daemon.HvacHardwareDaemon,
-            "_process_control_tick",
-            "sequence_state",
-        ),
-        (
-            environment_daemon,
-            environment_daemon.LivingAreaHardwareController,
-            "_process_automation_tick",
-            "hvac_sequence_state",
-        ),
-    ],
-)
-def test_hvac_maximum_run_starts_rest_period(
-    monkeypatch, module, controller_class, tick_method, sequence_attr
-):
-    controller = controller_class()
+def test_hvac_maximum_run_starts_rest_period(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
     commands = []
     clock = [0.0]
-    monkeypatch.setattr(module.time, "time", lambda: clock[0])
-
-    if controller_class is hvac_daemon.HvacHardwareDaemon:
-        controller.client = _MqttClient()
-        controller._read_inside_temperature = lambda: 19.0
-        controller._write_relays = commands.append
-    else:
-        controller.mqtt_client = _MqttClient()
-        controller._read_sensors = lambda: (19.0, 50.0, 0.0, 1013.0)
-        controller._apply_physical_relay_state = commands.append
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
+    controller.client = _MqttClient()
+    controller.latest_inside_temperature = 19.0
+    controller._write_relays = commands.append
 
     controller.fan_preheat_seconds = 0
     controller.fan_postrun_seconds = 0
-    getattr(controller, tick_method)()
-    assert getattr(controller, sequence_attr) == "HEATING"
+    controller._process_control_tick()
+    assert controller.sequence_state == "HEATING"
 
     clock[0] = 600.0
-    getattr(controller, tick_method)()
-    assert getattr(controller, "is_resting", False) or getattr(
-        controller, "in_rest_period", False
-    )
+    controller._process_control_tick()
+    assert controller.in_rest_period
     assert commands[-1] == "OFF"

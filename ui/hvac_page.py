@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont
 
+from libraries.hvac_settings import HvacSettingsStore
+
 
 class HvacConfigurationPage(QWidget):
     """
@@ -25,6 +27,10 @@ class HvacConfigurationPage(QWidget):
         self.min_run_seconds = 300
         self.max_run_seconds = 600
         self.rest_seconds = 300
+        self.settings_store = HvacSettingsStore()
+        saved_settings = self.settings_store.load()
+        if saved_settings:
+            self._set_settings_values(saved_settings)
         self.system_mode = "OFF"
         self.is_resting = False
 
@@ -171,15 +177,9 @@ class HvacConfigurationPage(QWidget):
         if not settings:
             return
         try:
-            t_min = float(settings.get("target_min", self.t_min))
-            t_max = float(settings.get("target_max", self.t_max))
-            min_run = int(settings.get("min_run_seconds", self.min_run_seconds))
-            max_run = int(settings.get("max_run_seconds", self.max_run_seconds))
-            if t_min >= t_max or min_run > max_run:
-                print("[HVAC SETTINGS ERROR] Ignoring invalid retained settings")
-                return
-            self.t_min = t_min
-            self.t_max = t_max
+            normalized = self.settings_store.normalize(settings)
+            changed = normalized != self._settings_payload()
+            self._set_settings_values(normalized)
             for target_var in (
                 "fan_preheat_seconds",
                 "fan_postrun_seconds",
@@ -188,16 +188,39 @@ class HvacConfigurationPage(QWidget):
                 "rest_seconds",
             ):
                 picker = getattr(self, f"{target_var}_picker")
-                value = int(settings.get(target_var, getattr(self, target_var)))
-                if picker.minimum() <= value <= picker.maximum():
-                    setattr(self, target_var, value)
-                    picker.blockSignals(True)
-                    picker.setValue(value)
-                    picker.blockSignals(False)
+                picker.blockSignals(True)
+                picker.setValue(int(getattr(self, target_var)))
+                picker.blockSignals(False)
             self.update_display_metrics()
+            if changed:
+                self.settings_store.save(normalized)
         except (TypeError, ValueError) as error:
             print(f"[HVAC SETTINGS ERROR] Ignoring invalid retained settings: {error}")
             return
+        except OSError as error:
+            print(
+                f"[HVAC SETTINGS ERROR] Settings applied but could not be saved: {error}"
+            )
+
+    def _set_settings_values(self, settings):
+        self.t_min = float(settings["target_min"])
+        self.t_max = float(settings["target_max"])
+        self.fan_preheat_seconds = int(settings["fan_preheat_seconds"])
+        self.fan_postrun_seconds = int(settings["fan_postrun_seconds"])
+        self.min_run_seconds = int(settings["min_run_seconds"])
+        self.max_run_seconds = int(settings["max_run_seconds"])
+        self.rest_seconds = int(settings["rest_seconds"])
+
+    def _settings_payload(self):
+        return {
+            "target_min": self.t_min,
+            "target_max": self.t_max,
+            "fan_preheat_seconds": self.fan_preheat_seconds,
+            "fan_postrun_seconds": self.fan_postrun_seconds,
+            "min_run_seconds": self.min_run_seconds,
+            "max_run_seconds": self.max_run_seconds,
+            "rest_seconds": self.rest_seconds,
+        }
 
     def update_display_metrics(self):
         """Syncs local tracking properties straight to UI text widgets."""
@@ -234,13 +257,9 @@ class HvacConfigurationPage(QWidget):
 
     def _emit_current_configuration(self):
         """Constructs the canonical JSON packet definition required by your background daemon."""
-        payload = {
-            "target_min": self.t_min,
-            "target_max": self.t_max,
-            "fan_preheat_seconds": self.fan_preheat_seconds,
-            "fan_postrun_seconds": self.fan_postrun_seconds,
-            "min_run_seconds": self.min_run_seconds,
-            "max_run_seconds": self.max_run_seconds,
-            "rest_seconds": self.rest_seconds,
-        }
+        payload = self._settings_payload()
+        try:
+            self.settings_store.save(payload)
+        except (OSError, TypeError, ValueError) as error:
+            print(f"[HVAC SETTINGS ERROR] Unable to save settings: {error}")
         self.settings_changed.emit(payload)

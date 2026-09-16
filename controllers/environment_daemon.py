@@ -3,8 +3,6 @@ import time
 import json
 import socket
 import configparser
-import math
-import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -12,12 +10,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 try:
-    import RPi.GPIO as GPIO
     import smbus2
 
     IS_RASPI = True
 except ImportError:
-    GPIO = None
     smbus2 = None
     IS_RASPI = False
 
@@ -31,14 +27,10 @@ from libraries.paho_compat import create_client
 
 class LivingAreaHardwareController:
     """
-    Core automation engine driving Living Area physical hardware.
+    Living-area environment publisher for the physical sensor hardware.
     Natively calibrates Bosch BME280 metrics and reads VEML6030 modules.
     Includes persistent self-healing network retry hooks for boot delays.
     """
-    RELAY_HEAT = 26
-    RELAY_COOL = 20
-    RELAY_FAN = 21
-
     I2C_BUS_ID = 1
     ADDR_VEML6030 = 0x10
     ADDR_BME_ALT = 0x76
@@ -48,24 +40,6 @@ class LivingAreaHardwareController:
         print("[INIT] Initializing Living Area Master Automation Subsystem...")
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
         self.hostname = socket.gethostname()
-
-        self._settings_lock = threading.RLock()
-        self.t_min = 20.0
-        self.t_max = 24.0
-        self.fan_preheat_seconds = 60.0
-        self.fan_postrun_seconds = 120.0
-        self.min_run_seconds = 300.0
-        self.max_run_seconds = 600.0
-        self.rest_seconds = 300.0
-
-        self.current_hvac_state = "OFF"
-        self.hvac_sequence_state = "OFF"
-        self.pending_hvac_state = None
-        self.sequence_started_at = time.time()
-        self.active_run_started_at = None
-        self.is_resting = False
-        self.rest_start_time = 0.0
-        self.blind_pre_close_sent = False
 
         self.bus = None
         self.discovered_bme_addr = None
@@ -96,10 +70,6 @@ class LivingAreaHardwareController:
         try:
             GPIO.setmode(GPIO.BCM)
             GPIO.setwarnings(False)
-            for pin in [self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN]:
-                GPIO.setup(pin, GPIO.OUT)
-                GPIO.output(pin, GPIO.LOW)
-
             self.bus = smbus2.SMBus(self.I2C_BUS_ID)
 
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
@@ -160,8 +130,7 @@ class LivingAreaHardwareController:
             return
 
         self.mqtt_client = create_client()
-        self.mqtt_client.on_connect = lambda c, u, f, rc, p=None: c.subscribe("home/hvac/settings")
-        self.mqtt_client.on_message = self._on_settings_message
+        self.mqtt_client.on_connect = lambda c, u, f, rc, p=None: None
 
         # FIXED: Self-healing reconnection manager loops continuously if Wi-Fi hasn't bound yet
         connected = False
@@ -177,16 +146,13 @@ class LivingAreaHardwareController:
                 print(f"[NETWORK DELAY] Broker link unreachable: {e}. Retrying in 5 seconds...")
                 time.sleep(5.0)  # Pause cleanly before attempting the next network handshake
 
-        print("[RUNNING] Living Area automation loop active. Sampling sensors every 5 seconds.")
+        print("[RUNNING] Living Area environment loop active. Sampling sensors every 5 seconds.")
         try:
             while True:
-                self._process_automation_tick()
+                self._process_environment_tick()
                 time.sleep(5.0)
         except KeyboardInterrupt:
-            print("[SHUTDOWN] Demobilizing automation relays. Isolating contactors.")
-            self._apply_physical_relay_state("OFF")
-            if IS_RASPI:
-                GPIO.cleanup()
+            print("[SHUTDOWN] Stopping living-area environment telemetry.")
             self.mqtt_client.loop_stop()
 
     def _on_settings_message(self, client, userdata, msg):
@@ -215,6 +181,10 @@ class LivingAreaHardwareController:
                     return
                 for name, value in settings.items():
                     setattr(self, name, value)
+                try:
+                    self.settings_store.save(self._settings_payload())
+                except OSError as error:
+                    print(f"[SETTINGS ERROR] Unable to persist HVAC settings: {error}")
             print(
                 f"[SETTINGS] Min: {self.t_min}°C | Max: {self.t_max}°C | "
                 f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
@@ -234,6 +204,29 @@ class LivingAreaHardwareController:
             and settings["fan_postrun_seconds"] >= 0
             and settings["rest_seconds"] >= 0
         )
+
+    def _load_persisted_settings(self):
+        settings = self.settings_store.load()
+        if not settings:
+            return
+        self.t_min = settings["target_min"]
+        self.t_max = settings["target_max"]
+        self.fan_preheat_seconds = settings["fan_preheat_seconds"]
+        self.fan_postrun_seconds = settings["fan_postrun_seconds"]
+        self.min_run_seconds = settings["min_run_seconds"]
+        self.max_run_seconds = settings["max_run_seconds"]
+        self.rest_seconds = settings["rest_seconds"]
+
+    def _settings_payload(self):
+        return {
+            "target_min": self.t_min,
+            "target_max": self.t_max,
+            "fan_preheat_seconds": self.fan_preheat_seconds,
+            "fan_postrun_seconds": self.fan_postrun_seconds,
+            "min_run_seconds": self.min_run_seconds,
+            "max_run_seconds": self.max_run_seconds,
+            "rest_seconds": self.rest_seconds,
+        }
 
     def _read_sensors(self) -> tuple[float, float, float, float]:
         """Polls physical sensors safely using factory calibration polynomials."""
@@ -273,6 +266,10 @@ class LivingAreaHardwareController:
             print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
 
         return temp_c, humidity, lux, pressure
+
+    def _process_environment_tick(self):
+        temp, humidity, lux, pressure = self._read_sensors()
+        self._publish_telemetry(temp, humidity, lux, pressure)
 
     @staticmethod
     def _signed(value, bits):
@@ -494,9 +491,6 @@ class LivingAreaHardwareController:
             "humidity": humidity,
             "pressure": pressure,
             "light_lux": round(lux, 1),
-            "hvac_state": self.current_hvac_state,
-            "hvac_in_rest": self.is_resting,
-            "hvac_sequence_state": self.hvac_sequence_state,
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)

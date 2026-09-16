@@ -26,15 +26,15 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+from libraries.hvac_settings import HvacSettingsStore
 
 
 class HvacHardwareDaemon:
     """
-    Independent background loop driving real-time Raspberry Pi I2C relays,
-    BME climate polling, and safe HVAC sequencing limits.
+    Independent background loop driving real-time Raspberry Pi I2C relays
+    from temperature telemetry published by the living-area environment daemon.
     """
     I2C_RELAY_ADDR = 0x20  # Expander line module address (e.g. PCF8574)
-    I2C_BME_ADDR = 0x76  # Dynamic climate sensor address trace target
 
     def __init__(self):
         print(f"[INIT] Launching HVAC Daemon Subsystem. Platform Native Pi = {IS_RASPI}")
@@ -51,6 +51,8 @@ class HvacHardwareDaemon:
         self.min_run_seconds = 300.0
         self.max_run_seconds = 600.0
         self.rest_seconds = 300.0
+        self.settings_store = HvacSettingsStore()
+        self._load_persisted_settings()
 
         # Run State Machine Flags
         self.current_state = "OFF"  # Expected options: OFF, HEATING, COOLING
@@ -61,6 +63,7 @@ class HvacHardwareDaemon:
         self.in_rest_period = False
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
+        self.latest_inside_temperature = None
 
         # Initialize physical bus frameworks
         if IS_RASPI and smbus2:
@@ -111,10 +114,14 @@ class HvacHardwareDaemon:
         print(f"[MQTT] Connected successfully to broker ({self.broker_ip}). Listening for adjustments...")
         # Subscribe to dynamic UI targets
         self.client.subscribe("home/hvac/settings")
+        self.client.subscribe("home/environment/living")
 
     def _on_message(self, client, userdata, msg):
         try:
-            if msg.topic == "home/hvac/settings":
+            if msg.topic == "home/environment/living":
+                payload = json.loads(msg.payload.decode("utf-8"))
+                self.latest_inside_temperature = float(payload["temperature"])
+            elif msg.topic == "home/hvac/settings":
                 payload = json.loads(msg.payload.decode('utf-8'))
                 settings = {
                     "t_min": float(payload.get("target_min", self.t_min)),
@@ -141,6 +148,10 @@ class HvacHardwareDaemon:
                         return
                     for name, value in settings.items():
                         setattr(self, name, value)
+                    try:
+                        self.settings_store.save(self._settings_payload())
+                    except OSError as error:
+                        print(f"[SETTINGS ERROR] Unable to persist HVAC settings: {error}")
                 print(
                     f"[SETTINGS UPDATED] Min: {self.t_min}°C | Max: {self.t_max}°C | "
                     f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
@@ -161,19 +172,28 @@ class HvacHardwareDaemon:
             and settings["rest_seconds"] >= 0
         )
 
-    def _read_inside_temperature(self) -> float:
-        """Polls physical sensory inputs on the I2C line, falling back to dummy metrics if off-board."""
-        if IS_RASPI and self.bus:
-            try:
-                # Basic register read template mapping BME sensor data
-                # (Replace with an imported bme280 package block for production calibration)
-                data = self.bus.read_byte_data(self.I2C_BME_ADDR, 0xFA)
-                # Synthetic alignment mimicking typical sensor returns for demo fallback stability
-                return round(21.5 + (data % 5) * 0.2, 1)
-            except Exception:
-                pass
-        # Accurate baseline metric simulation for Windows environment testing
-        return 22.0
+    def _load_persisted_settings(self):
+        settings = self.settings_store.load()
+        if not settings:
+            return
+        self.t_min = settings["target_min"]
+        self.t_max = settings["target_max"]
+        self.fan_preheat_seconds = settings["fan_preheat_seconds"]
+        self.fan_postrun_seconds = settings["fan_postrun_seconds"]
+        self.min_run_seconds = settings["min_run_seconds"]
+        self.max_run_seconds = settings["max_run_seconds"]
+        self.rest_seconds = settings["rest_seconds"]
+
+    def _settings_payload(self):
+        return {
+            "target_min": self.t_min,
+            "target_max": self.t_max,
+            "fan_preheat_seconds": self.fan_preheat_seconds,
+            "fan_postrun_seconds": self.fan_postrun_seconds,
+            "min_run_seconds": self.min_run_seconds,
+            "max_run_seconds": self.max_run_seconds,
+            "rest_seconds": self.rest_seconds,
+        }
 
     def _write_relays(self, mode: str):
         """
@@ -204,8 +224,11 @@ class HvacHardwareDaemon:
 
     def _process_control_tick_locked(self):
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
-        current_temp = self._read_inside_temperature()
+        current_temp = self.latest_inside_temperature
         now = time.time()
+        if current_temp is None:
+            self._broadcast_status_telemetry(current_temp)
+            return
 
         if self.sequence_state == "POSTRUN":
             if now - self.sequence_started_at >= self.fan_postrun_seconds:
@@ -306,7 +329,7 @@ class HvacHardwareDaemon:
             self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": reason}))
             self.blind_pre_close_triggered = True
 
-    def _broadcast_status_telemetry(self, current_temp: float):
+    def _broadcast_status_telemetry(self, current_temp):
         """Pushes health data updates back out over the broker line to feed adaptive layouts."""
         telemetry_packet = {
             "temperature": current_temp,
