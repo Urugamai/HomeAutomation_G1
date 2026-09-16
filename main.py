@@ -118,6 +118,9 @@ class MainWindow(QMainWindow):
             location=socket.gethostname(),
         )
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
+        self.dashboard.hvac_settings_changed.connect(
+            self.mqtt_listener.set_hvac_settings
+        )
         self.mqtt_listener.start()
 
         # Query the operational mode flag state immediately to update the footer message
@@ -143,7 +146,15 @@ class MainWindow(QMainWindow):
         if self.dashboard.hvac_config_tab:
             current_run_state = data.get("hvac_state", "OFF")
             is_resting = data.get("hvac_in_rest", False)
-            self.dashboard.hvac_config_tab.update_status_from_mqtt(current_run_state, is_resting)
+            sequence_state = data.get("hvac_sequence_state", "OFF")
+            self.dashboard.hvac_config_tab.update_status_from_mqtt(
+                current_run_state,
+                is_resting,
+                sequence_state,
+            )
+            self.dashboard.hvac_config_tab.apply_settings(
+                data.get("hvac_settings", {})
+            )
 
     def _set_cbus_device(self, address, is_on, brightness):
         self.mqtt_listener.set_cbus_device(address, is_on, brightness)

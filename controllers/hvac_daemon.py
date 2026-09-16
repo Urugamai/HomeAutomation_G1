@@ -1,6 +1,8 @@
 import sys
 import time
 import json
+import math
+import threading
 from pathlib import Path
 import configparser
 
@@ -41,12 +43,21 @@ class HvacHardwareDaemon:
         self.broker_ip = self._load_broker_config()
 
         # Operational Boundaries (Synchronised via UI / Retained Broker Messages)
+        self._settings_lock = threading.RLock()
         self.t_min = 20.0
         self.t_max = 24.0
+        self.fan_preheat_seconds = 60.0
+        self.fan_postrun_seconds = 120.0
+        self.min_run_seconds = 300.0
+        self.max_run_seconds = 600.0
+        self.rest_seconds = 300.0
 
         # Run State Machine Flags
         self.current_state = "OFF"  # Expected options: OFF, HEATING, COOLING
-        self.last_state_change = time.time()
+        self.sequence_state = "OFF"
+        self.pending_state = None
+        self.sequence_started_at = time.time()
+        self.active_run_started_at = None
         self.in_rest_period = False
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
@@ -105,11 +116,50 @@ class HvacHardwareDaemon:
         try:
             if msg.topic == "home/hvac/settings":
                 payload = json.loads(msg.payload.decode('utf-8'))
-                self.t_min = float(payload.get("target_min", self.t_min))
-                self.t_max = float(payload.get("target_max", self.t_max))
-                print(f"[SETTINGS UPDATED] Min Threshold: {self.t_min}°C | Max Threshold: {self.t_max}°C")
-        except Exception as e:
+                settings = {
+                    "t_min": float(payload.get("target_min", self.t_min)),
+                    "t_max": float(payload.get("target_max", self.t_max)),
+                    "fan_preheat_seconds": float(
+                        payload.get("fan_preheat_seconds", self.fan_preheat_seconds)
+                    ),
+                    "fan_postrun_seconds": float(
+                        payload.get("fan_postrun_seconds", self.fan_postrun_seconds)
+                    ),
+                    "min_run_seconds": float(
+                        payload.get("min_run_seconds", self.min_run_seconds)
+                    ),
+                    "max_run_seconds": float(
+                        payload.get("max_run_seconds", self.max_run_seconds)
+                    ),
+                    "rest_seconds": float(
+                        payload.get("rest_seconds", self.rest_seconds)
+                    ),
+                }
+                with self._settings_lock:
+                    if not self._settings_are_valid(settings):
+                        print("[SETTINGS REJECTED] HVAC timing or target thresholds are invalid.")
+                        return
+                    for name, value in settings.items():
+                        setattr(self, name, value)
+                print(
+                    f"[SETTINGS UPDATED] Min: {self.t_min}°C | Max: {self.t_max}°C | "
+                    f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
+                )
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
             print(f"[PARSE EXCEPTION] Bad configuration update payload structure: {e}")
+
+    @staticmethod
+    def _settings_are_valid(settings: dict) -> bool:
+        values = tuple(settings.values())
+        return (
+            all(math.isfinite(value) for value in values)
+            and settings["t_min"] < settings["t_max"]
+            and settings["min_run_seconds"] > 0
+            and settings["max_run_seconds"] >= settings["min_run_seconds"]
+            and settings["fan_preheat_seconds"] >= 0
+            and settings["fan_postrun_seconds"] >= 0
+            and settings["rest_seconds"] >= 0
+        )
 
     def _read_inside_temperature(self) -> float:
         """Polls physical sensory inputs on the I2C line, falling back to dummy metrics if off-board."""
@@ -138,6 +188,8 @@ class HvacHardwareDaemon:
             byte_payload = 0x05  # 0b00000101 -> Heat On, Fan On, Cool Off
         elif mode == "COOLING":
             byte_payload = 0x06  # 0b00000110 -> Cool On, Fan On, Heat Off
+        elif mode == "FAN":
+            byte_payload = 0x04  # 0b00000100 -> Fan On, Heat and Cool Off
         else:
             byte_payload = 0x00  # 0b00000000 -> All Isolators Open (OFF)
 
@@ -147,75 +199,120 @@ class HvacHardwareDaemon:
             print(f"[HARDWARE EXCEPTION] Failed writing command to physical I2C expander: {e}")
 
     def _process_control_tick(self):
+        with self._settings_lock:
+            self._process_control_tick_locked()
+
+    def _process_control_tick_locked(self):
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
         current_temp = self._read_inside_temperature()
         now = time.time()
 
-        # Rule 1: Manage Rest Cycle Enforcements
+        if self.sequence_state == "POSTRUN":
+            if now - self.sequence_started_at >= self.fan_postrun_seconds:
+                self.sequence_state = "OFF"
+                self.pending_state = None
+                self._write_relays("OFF")
+                self.blind_pre_close_triggered = False
+            self._broadcast_status_telemetry(current_temp)
+            return
+
         if self.in_rest_period:
-            elapsed_rest = now - self.rest_start_time
-            if elapsed_rest >= 300:  # 5 Minute rest completed (300 seconds)
-                print("[SAFETY] 5-minute mandatory runtime rest interval cleared. Resuming control access.")
+            if now - self.rest_start_time >= self.rest_seconds:
+                print("[SAFETY] Mandatory runtime rest interval cleared. Resuming control access.")
                 self.in_rest_period = False
             else:
-                if self.current_state != "OFF":
-                    self.current_state = "OFF"
+                self._broadcast_status_telemetry(current_temp)
+                return
+
+        target_state = self._requested_state(current_temp)
+
+        if self.sequence_state == "PREHEAT":
+            if target_state != self.pending_state:
+                if target_state == "OFF":
+                    self.sequence_state = "OFF"
+                    self.pending_state = None
                     self._write_relays("OFF")
-                self._broadcast_status_telemetry(current_temp)
-                return
+                else:
+                    self.pending_state = target_state
+                    self.sequence_started_at = now
+            elif now - self.sequence_started_at >= self.fan_preheat_seconds:
+                self._start_active_run(self.pending_state, now)
+            self._broadcast_status_telemetry(current_temp)
+            return
 
-        # Rule 2: Enforce Maximum Active Continuous Run Window Limits
-        if self.current_state in ["HEATING", "COOLING"]:
-            active_duration = now - self.last_state_change
-            if active_duration >= 600:  # 10 Minute max execution boundary (600 seconds)
-                print(f"[SAFETY] Max 10-minute active run limit hit during {self.current_state}. Entering rest period.")
-                self.current_state = "OFF"
-                self._write_relays("OFF")
-                self.in_rest_period = True
-                self.rest_start_time = now
-                self.blind_pre_close_triggered = False
-                self._broadcast_status_telemetry(current_temp)
-                return
+        if self.current_state in ("HEATING", "COOLING"):
+            active_duration = now - self.active_run_started_at
+            if active_duration >= self.max_run_seconds:
+                print(f"[SAFETY] Maximum active run reached during {self.current_state}. Entering rest.")
+                self._end_active_run(now, start_rest=True)
+            elif target_state != self.current_state and active_duration >= self.min_run_seconds:
+                print(f"[STATE TRANSITION] Ending {self.current_state} after minimum run period.")
+                self._end_active_run(now)
+            self._broadcast_status_telemetry(current_temp)
+            return
 
-        # Rule 3: Evaluate Automation State Limits & Trigger Preparatory Commands
-        target_state = "OFF"
-
-        # Advance Warning Trigger: 1°C Buffer checks before active heating/cooling engagement zones
-        if current_temp <= (self.t_min + 1.0) and current_temp < self.t_max:
-            if not self.blind_pre_close_triggered and self.current_state == "OFF":
-                print("[AUTOMATION] Temperature approaching low limits. Issuing anticipatory blind close command.")
-                self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": "HVAC_PREHEAT"}))
-                self.blind_pre_close_triggered = True
-        elif current_temp >= (self.t_max - 1.0) and current_temp > self.t_min:
-            if not self.blind_pre_close_triggered and self.current_state == "OFF":
-                print("[AUTOMATION] Temperature approaching high limits. Issuing anticipatory blind close command.")
-                self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": "HVAC_PRECOOL"}))
-                self.blind_pre_close_triggered = True
-
-        # Core Switching Logic
-        if current_temp < self.t_min:
-            target_state = "HEATING"
-        elif current_temp > self.t_max:
-            target_state = "COOLING"
-
-        # Apply state changes safely
-        if target_state != self.current_state:
-            print(f"[STATE TRANSITION] Shifting operation profile: {self.current_state} -> {target_state}")
-            self.current_state = target_state
-            self.last_state_change = now
-            self._write_relays(target_state)
-            if target_state == "OFF":
-                self.blind_pre_close_triggered = False  # Reset flags on idle
-
-        # Broadcast telemetry feedback package to your network screens
+        if target_state != "OFF":
+            self._start_preheat(target_state, now)
+        else:
+            self._maybe_close_blinds(current_temp)
         self._broadcast_status_telemetry(current_temp)
+
+    def _requested_state(self, current_temp: float) -> str:
+        if current_temp < self.t_min:
+            return "HEATING"
+        if current_temp > self.t_max:
+            return "COOLING"
+        return "OFF"
+
+    def _start_preheat(self, target_state: str, now: float):
+        self.pending_state = target_state
+        self.sequence_state = "PREHEAT"
+        self.sequence_started_at = now
+        self._write_relays("FAN")
+        self._maybe_close_blinds_for_state(target_state)
+        if self.fan_preheat_seconds == 0:
+            self._start_active_run(target_state, now)
+
+    def _start_active_run(self, target_state: str, now: float):
+        self.current_state = target_state
+        self.pending_state = None
+        self.sequence_state = target_state
+        self.active_run_started_at = now
+        self._write_relays(target_state)
+        print(f"[STATE TRANSITION] Active {target_state} run started.")
+
+    def _end_active_run(self, now: float, start_rest: bool = False):
+        self.current_state = "OFF"
+        self.active_run_started_at = None
+        self.sequence_state = "POSTRUN"
+        self.sequence_started_at = now
+        self._write_relays("FAN" if self.fan_postrun_seconds > 0 else "OFF")
+        if self.fan_postrun_seconds == 0:
+            self.sequence_state = "OFF"
+        if start_rest:
+            self.in_rest_period = True
+            self.rest_start_time = now
+
+    def _maybe_close_blinds(self, current_temp: float):
+        if current_temp <= self.t_min + 1.0:
+            self._maybe_close_blinds_for_state("HEATING")
+        elif current_temp >= self.t_max - 1.0:
+            self._maybe_close_blinds_for_state("COOLING")
+
+    def _maybe_close_blinds_for_state(self, target_state: str):
+        if not self.blind_pre_close_triggered:
+            reason = "HVAC_PREHEAT" if target_state == "HEATING" else "HVAC_PRECOOL"
+            print("[AUTOMATION] Issuing anticipatory blind close command.")
+            self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": reason}))
+            self.blind_pre_close_triggered = True
 
     def _broadcast_status_telemetry(self, current_temp: float):
         """Pushes health data updates back out over the broker line to feed adaptive layouts."""
         telemetry_packet = {
             "temperature": current_temp,
             "hvac_state": self.current_state,
-            "hvac_in_rest": self.in_rest_period
+            "hvac_in_rest": self.in_rest_period,
+            "hvac_sequence_state": self.sequence_state,
         }
         # Publish to separate sensor node trace targets to ensure clean modular consumption loops
         self.client.publish("home/environment/inside", json.dumps(telemetry_packet))

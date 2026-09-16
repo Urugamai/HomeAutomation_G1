@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView, QSizePolicy,
 )
-from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect, QRectF
+from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
 from PyQt6.QtCore import QPointF
 
@@ -468,6 +468,8 @@ class EnvironmentSourcesPage(QWidget):
 
 
 class AdaptiveDashboard(QWidget):
+    hvac_settings_changed = pyqtSignal(dict)
+
     def __init__(self, power_chart_grid_interval_hours=1):
         super().__init__()
         self.root_layout = QHBoxLayout(self)
@@ -578,6 +580,9 @@ class AdaptiveDashboard(QWidget):
     def _mount_hvac_view(self, parent_tab_widget):
         if parent_tab_widget and self.hvac_config_tab is None:
             self.hvac_config_tab = HvacConfigurationPage()
+            self.hvac_config_tab.settings_changed.connect(
+                self.hvac_settings_changed.emit
+            )
             self.hvac_config_tab.update_display_metrics()
             parent_tab_widget.addTab(self.hvac_config_tab, "Climate Settings")
 

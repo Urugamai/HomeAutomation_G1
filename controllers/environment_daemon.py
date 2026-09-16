@@ -3,6 +3,8 @@ import time
 import json
 import socket
 import configparser
+import math
+import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -47,11 +49,20 @@ class LivingAreaHardwareController:
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
         self.hostname = socket.gethostname()
 
+        self._settings_lock = threading.RLock()
         self.t_min = 20.0
         self.t_max = 24.0
+        self.fan_preheat_seconds = 60.0
+        self.fan_postrun_seconds = 120.0
+        self.min_run_seconds = 300.0
+        self.max_run_seconds = 600.0
+        self.rest_seconds = 300.0
 
         self.current_hvac_state = "OFF"
-        self.last_state_change_time = time.time()
+        self.hvac_sequence_state = "OFF"
+        self.pending_hvac_state = None
+        self.sequence_started_at = time.time()
+        self.active_run_started_at = None
         self.is_resting = False
         self.rest_start_time = 0.0
         self.blind_pre_close_sent = False
@@ -181,11 +192,48 @@ class LivingAreaHardwareController:
     def _on_settings_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload.decode('utf-8'))
-            self.t_min = float(data.get("target_min", self.t_min))
-            self.t_max = float(data.get("target_max", self.t_max))
-            print(f"[SETTINGS] Thresholds adjusted -> Min: {self.t_min}°C | Max: {self.t_max}°C")
-        except Exception as e:
+            settings = {
+                "t_min": float(data.get("target_min", self.t_min)),
+                "t_max": float(data.get("target_max", self.t_max)),
+                "fan_preheat_seconds": float(
+                    data.get("fan_preheat_seconds", self.fan_preheat_seconds)
+                ),
+                "fan_postrun_seconds": float(
+                    data.get("fan_postrun_seconds", self.fan_postrun_seconds)
+                ),
+                "min_run_seconds": float(
+                    data.get("min_run_seconds", self.min_run_seconds)
+                ),
+                "max_run_seconds": float(
+                    data.get("max_run_seconds", self.max_run_seconds)
+                ),
+                "rest_seconds": float(data.get("rest_seconds", self.rest_seconds)),
+            }
+            with self._settings_lock:
+                if not self._settings_are_valid(settings):
+                    print("[SETTINGS REJECTED] HVAC timing or target thresholds are invalid.")
+                    return
+                for name, value in settings.items():
+                    setattr(self, name, value)
+            print(
+                f"[SETTINGS] Min: {self.t_min}°C | Max: {self.t_max}°C | "
+                f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
             print(f"[MQTT ERROR] Failed parsing setting adjustment frame: {e}")
+
+    @staticmethod
+    def _settings_are_valid(settings: dict) -> bool:
+        values = tuple(settings.values())
+        return (
+            all(math.isfinite(value) for value in values)
+            and settings["t_min"] < settings["t_max"]
+            and settings["min_run_seconds"] > 0
+            and settings["max_run_seconds"] >= settings["min_run_seconds"]
+            and settings["fan_preheat_seconds"] >= 0
+            and settings["fan_postrun_seconds"] >= 0
+            and settings["rest_seconds"] >= 0
+        )
 
     def _read_sensors(self) -> tuple[float, float, float, float]:
         """Polls physical sensors safely using factory calibration polynomials."""
@@ -315,71 +363,125 @@ class LivingAreaHardwareController:
         )
 
     def _apply_physical_relay_state(self, target_mode: str):
-        self.current_hvac_state = target_mode
-        self.last_state_change_time = time.time()
-
         if not IS_RASPI:
             print(f"[MOCK RELAY OUT] Switching Board Pins to State: -> {target_mode}")
             return
 
+        GPIO.output(self.RELAY_HEAT, GPIO.LOW)
+        GPIO.output(self.RELAY_COOL, GPIO.LOW)
         if target_mode == "HEATING":
-            GPIO.output(self.RELAY_COOL, GPIO.LOW)
-            time.sleep(0.05)
             GPIO.output(self.RELAY_HEAT, GPIO.HIGH)
             GPIO.output(self.RELAY_FAN, GPIO.HIGH)
         elif target_mode == "COOLING":
-            GPIO.output(self.RELAY_HEAT, GPIO.LOW)
-            time.sleep(0.05)
             GPIO.output(self.RELAY_COOL, GPIO.HIGH)
             GPIO.output(self.RELAY_FAN, GPIO.HIGH)
+        elif target_mode == "FAN":
+            GPIO.output(self.RELAY_FAN, GPIO.HIGH)
         else:
-            GPIO.output(self.RELAY_HEAT, GPIO.LOW)
-            GPIO.output(self.RELAY_COOL, GPIO.LOW)
             GPIO.output(self.RELAY_FAN, GPIO.LOW)
 
     def _process_automation_tick(self):
+        with self._settings_lock:
+            self._process_automation_tick_locked()
+
+    def _process_automation_tick_locked(self):
         current_temp, humidity, lux, pressure = self._read_sensors()
         now = time.time()
 
+        if self.hvac_sequence_state == "POSTRUN":
+            if now - self.sequence_started_at >= self.fan_postrun_seconds:
+                self.hvac_sequence_state = "OFF"
+                self.pending_hvac_state = None
+                self._apply_physical_relay_state("OFF")
+                self.blind_pre_close_sent = False
+            self._publish_telemetry(current_temp, humidity, lux, pressure)
+            return
+
         if self.is_resting:
-            if now - self.rest_start_time >= 300:
-                print("[SAFETY] 5-minute compressor rest cycle elapsed. Re-arming coils.")
+            if now - self.rest_start_time >= self.rest_seconds:
+                print("[SAFETY] Mandatory compressor rest interval elapsed. Re-arming coils.")
                 self.is_resting = False
             else:
-                if self.current_hvac_state != "OFF":
+                self._publish_telemetry(current_temp, humidity, lux, pressure)
+                return
+
+        next_state = self._requested_hvac_state(current_temp)
+
+        if self.hvac_sequence_state == "PREHEAT":
+            if next_state != self.pending_hvac_state:
+                if next_state == "OFF":
+                    self.hvac_sequence_state = "OFF"
+                    self.pending_hvac_state = None
                     self._apply_physical_relay_state("OFF")
-                self._publish_telemetry(current_temp, humidity, lux, pressure)
-                return
+                else:
+                    self.pending_hvac_state = next_state
+                    self.sequence_started_at = now
+            elif now - self.sequence_started_at >= self.fan_preheat_seconds:
+                self._start_active_run(self.pending_hvac_state, now)
+            self._publish_telemetry(current_temp, humidity, lux, pressure)
+            return
 
-        if self.current_hvac_state in ["HEATING", "COOLING"]:
-            if now - self.last_state_change_time >= 600:
-                print(f"[SAFETY] Max 10-minute continuous run boundary hit. Enforcing 5-minute rest.")
-                self._apply_physical_relay_state("OFF")
-                self.is_resting = True
-                self.rest_start_time = now
-                self.blind_pre_close_sent = False
-                self._publish_telemetry(current_temp, humidity, lux, pressure)
-                return
+        if self.current_hvac_state in ("HEATING", "COOLING"):
+            active_duration = now - self.active_run_started_at
+            if active_duration >= self.max_run_seconds:
+                print("[SAFETY] Maximum active run reached. Enforcing mandatory rest.")
+                self._end_active_run(now, start_rest=True)
+            elif next_state != self.current_hvac_state and active_duration >= self.min_run_seconds:
+                print(f"[AUTOMATION] Ending {self.current_hvac_state} after minimum run period.")
+                self._end_active_run(now)
+            self._publish_telemetry(current_temp, humidity, lux, pressure)
+            return
 
-        if current_temp <= (self.t_min + 1.0) or current_temp >= (self.t_max - 1.0):
-            if not self.blind_pre_close_sent and self.current_hvac_state == "OFF":
-                print("[ANTICIPATOR] Climate approaching thresholds. Issuing anticipatory blind drop.")
-                self.mqtt_client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": "LIVING_ZONE_ANTICIPATION"}))
-                self.blind_pre_close_sent = True
-
-        next_state = "OFF"
-        if current_temp < self.t_min:
-            next_state = "HEATING"
-        elif current_temp > self.t_max:
-            next_state = "COOLING"
-
-        if next_state != self.current_hvac_state and not self.is_resting:
-            print(f"[AUTOMATION] Thermal transition initiated: {self.current_hvac_state} -> {next_state}")
-            self._apply_physical_relay_state(next_state)
-            if next_state == "OFF":
-                self.blind_pre_close_sent = False
-
+        if next_state != "OFF":
+            self._start_preheat(next_state, now)
         self._publish_telemetry(current_temp, humidity, lux, pressure)
+
+    def _requested_hvac_state(self, current_temp: float) -> str:
+        if current_temp < self.t_min:
+            return "HEATING"
+        if current_temp > self.t_max:
+            return "COOLING"
+        return "OFF"
+
+    def _start_preheat(self, target_state: str, now: float):
+        self.pending_hvac_state = target_state
+        self.hvac_sequence_state = "PREHEAT"
+        self.sequence_started_at = now
+        self._apply_physical_relay_state("FAN")
+        self._send_blind_pre_close()
+        if self.fan_preheat_seconds == 0:
+            self._start_active_run(target_state, now)
+
+    def _start_active_run(self, target_state: str, now: float):
+        self.current_hvac_state = target_state
+        self.pending_hvac_state = None
+        self.hvac_sequence_state = target_state
+        self.active_run_started_at = now
+        self._apply_physical_relay_state(target_state)
+        print(f"[AUTOMATION] Active {target_state} run started.")
+
+    def _end_active_run(self, now: float, start_rest: bool = False):
+        self.current_hvac_state = "OFF"
+        self.active_run_started_at = None
+        self.hvac_sequence_state = "POSTRUN"
+        self.sequence_started_at = now
+        self._apply_physical_relay_state(
+            "FAN" if self.fan_postrun_seconds > 0 else "OFF"
+        )
+        if self.fan_postrun_seconds == 0:
+            self.hvac_sequence_state = "OFF"
+        if start_rest:
+            self.is_resting = True
+            self.rest_start_time = now
+
+    def _send_blind_pre_close(self):
+        if not self.blind_pre_close_sent:
+            print("[ANTICIPATOR] Climate request detected. Issuing anticipatory blind drop.")
+            self.mqtt_client.publish(
+                "home/blinds/command",
+                json.dumps({"action": "CLOSE", "reason": "LIVING_ZONE_ANTICIPATION"}),
+            )
+            self.blind_pre_close_sent = True
 
     def _publish_telemetry(
         self, temp: float, humidity: float, lux: float, pressure: float
@@ -394,6 +496,7 @@ class LivingAreaHardwareController:
             "light_lux": round(lux, 1),
             "hvac_state": self.current_hvac_state,
             "hvac_in_rest": self.is_resting,
+            "hvac_sequence_state": self.hvac_sequence_state,
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)

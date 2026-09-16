@@ -53,6 +53,8 @@ class MqttTelemetryListener(QObject):
             "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
             "hvac_in_rest": False,
+            "hvac_sequence_state": "OFF",
+            "hvac_settings": {},
             "forecast_set": [],
             "environment_sources": {},
             "cbus_devices": {},
@@ -75,6 +77,7 @@ class MqttTelemetryListener(QObject):
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         client.subscribe("home/environment/#")
+        client.subscribe("home/hvac/settings")
         client.subscribe("home/power/sigen")
         client.subscribe("homeassistant/light/+/config")
         client.subscribe("homeassistant/light/+/state")
@@ -85,7 +88,11 @@ class MqttTelemetryListener(QObject):
             payload = msg.payload.decode("utf-8").strip()
             data = json.loads(payload) if payload else {}
 
-            if topic.startswith("homeassistant/light/cbus_"):
+            if topic == "home/hvac/settings":
+                if not isinstance(data, dict):
+                    raise ValueError("HVAC settings payload must be an object")
+                self.cached_data["hvac_settings"] = data
+            elif topic.startswith("homeassistant/light/cbus_"):
                 self._process_cbus_message(topic, data)
                 self.telemetry_received.emit(self.cached_data.copy())
                 return
@@ -173,6 +180,9 @@ class MqttTelemetryListener(QObject):
         self._update_cached_float("room_pressure", data, "pressure")
         self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
         self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
+        self.cached_data["hvac_sequence_state"] = data.get(
+            "hvac_sequence_state", "OFF"
+        )
 
     def _process_cbus_message(self, topic, data):
         parts = topic.split("/")
@@ -205,6 +215,17 @@ class MqttTelemetryListener(QObject):
         }
         topic = f"homeassistant/light/cbus_{int(address)}/set"
         self.client.publish(topic, json.dumps(payload), qos=1, retain=False)
+
+    def set_hvac_settings(self, settings):
+        if self.client is None:
+            print("[HVAC ERROR] Cannot send settings before MQTT connection is ready")
+            return
+        self.client.publish(
+            "home/hvac/settings",
+            json.dumps(settings),
+            qos=1,
+            retain=True,
+        )
 
     @staticmethod
     def _get_float(data, *keys) -> float:
