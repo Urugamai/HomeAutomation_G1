@@ -54,9 +54,9 @@ def test_add_sample_discards_samples_older_than_24_hours(tmp_path):
 
 
 def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
-    assert battery_flow_color(-101) == DRAINING_COLOR
-    assert battery_flow_color(101) == CHARGING_COLOR
-    assert battery_flow_color(100, DRAINING_COLOR) == DRAINING_COLOR
+    assert battery_flow_color(-0.101) == DRAINING_COLOR
+    assert battery_flow_color(0.101) == CHARGING_COLOR
+    assert battery_flow_color(0.1, DRAINING_COLOR) == DRAINING_COLOR
 
 
 def test_low_battery_soc_overrides_battery_flow_color():
