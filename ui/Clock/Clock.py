@@ -28,7 +28,11 @@ if str(CLOCK_DIR) not in sys.path:
     sys.path.insert(0, str(CLOCK_DIR))
 
 from libraries.mqtt_engine import MqttTelemetryListener
-from ui.battery_indicator import CHARGING_COLOR, battery_soc_fill_color
+from ui.battery_indicator import (
+    CHARGING_COLOR,
+    battery_flow_color,
+    battery_soc_fill_color,
+)
 from clock_display import Ui_MainWindow
 
 LOGGER = logging.getLogger(__name__)
@@ -117,6 +121,7 @@ class ZeroCenteredPowerBar(QWidget):
         self.percentage_fill = percentage_fill
         self.bordered = bordered
         self.fill_percent = 0.0
+        self.flow_color = CHARGING_COLOR
         self.fill_color = CHARGING_COLOR
         self.display_text = ""
         self.setMinimumWidth(220)
@@ -135,11 +140,8 @@ class ZeroCenteredPowerBar(QWidget):
         self.update()
 
     def set_battery_soc(self, percentage, battery_flow, display_text):
-        self.fill_color = battery_soc_fill_color(
-            percentage,
-            battery_flow,
-            self.fill_color,
-        )
+        self.flow_color = battery_flow_color(battery_flow, self.flow_color)
+        self.fill_color = battery_soc_fill_color(percentage, self.flow_color)
         self.set_percentage(percentage, display_text)
 
     def set_flow(self, value_kw, display_text):

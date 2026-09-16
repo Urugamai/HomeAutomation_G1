@@ -14,7 +14,11 @@ from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
 from PyQt6.QtCore import QPointF
 
 from .hvac_page import HvacConfigurationPage
-from .battery_indicator import CHARGING_COLOR, battery_soc_fill_color
+from .battery_indicator import (
+    CHARGING_COLOR,
+    battery_flow_color,
+    battery_soc_fill_color,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -324,6 +328,7 @@ class AdaptiveSocBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.soc_val = None
+        self.flow_color = CHARGING_COLOR
         self.fill_color = CHARGING_COLOR
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self.setFixedWidth(56)
@@ -331,10 +336,10 @@ class AdaptiveSocBar(QWidget):
 
     def set_value(self, value: float, battery_flow: float):
         self.soc_val = max(0.0, min(100.0, float(value)))
+        self.flow_color = battery_flow_color(battery_flow, self.flow_color)
         self.fill_color = battery_soc_fill_color(
             self.soc_val,
-            battery_flow,
-            self.fill_color,
+            self.flow_color,
         )
         self.update()
 

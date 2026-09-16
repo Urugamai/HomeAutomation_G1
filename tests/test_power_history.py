@@ -6,6 +6,7 @@ from ui.battery_indicator import (
     CHARGING_COLOR,
     DRAINING_COLOR,
     LOW_SOC_COLOR,
+    battery_flow_color,
     battery_soc_fill_color,
 )
 
@@ -53,10 +54,11 @@ def test_add_sample_discards_samples_older_than_24_hours(tmp_path):
 
 
 def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
-    assert battery_soc_fill_color(80, -101) == DRAINING_COLOR
-    assert battery_soc_fill_color(80, 101) == CHARGING_COLOR
-    assert battery_soc_fill_color(80, 100, DRAINING_COLOR) == DRAINING_COLOR
+    assert battery_flow_color(-101) == DRAINING_COLOR
+    assert battery_flow_color(101) == CHARGING_COLOR
+    assert battery_flow_color(100, DRAINING_COLOR) == DRAINING_COLOR
 
 
 def test_low_battery_soc_overrides_battery_flow_color():
-    assert battery_soc_fill_color(9.9, 200) == LOW_SOC_COLOR
+    assert battery_soc_fill_color(9.9, CHARGING_COLOR) == LOW_SOC_COLOR
+    assert battery_soc_fill_color(100, CHARGING_COLOR) == CHARGING_COLOR
