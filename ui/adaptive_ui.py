@@ -601,7 +601,7 @@ class AdaptiveDashboard(QWidget):
             self._latest_power_sample = (
                 float(data.get("solar_power", 0.0))
                 - float(data.get("battery_flow", 0.0))
-                + float(data.get("grid_flow", 0.0))
+                - float(data.get("grid_flow", 0.0))
             )
             self.power_chart.set_latest_power(self._latest_power_sample)
         except (TypeError, ValueError):
