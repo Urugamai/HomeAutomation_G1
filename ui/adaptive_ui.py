@@ -440,6 +440,17 @@ class EnvironmentSourcesPage(QWidget):
         except (TypeError, ValueError):
             return str(value)
 
+    @staticmethod
+    def _timestamp(value):
+        if value is None:
+            return "--"
+        try:
+            return datetime.datetime.fromtimestamp(float(value)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except (TypeError, ValueError, OSError, OverflowError):
+            return str(value)
+
     @classmethod
     def _source_row(cls, source_key, source):
         is_ecowitt = source_key == "Ecowitt"
@@ -458,7 +469,7 @@ class EnvironmentSourcesPage(QWidget):
             ),
             cls._number(source, "wind_speed", "wind_speed_kmh", suffix=" km/h"),
             cls._number(source, "rain_rate", suffix=" mm/h"),
-            cls._number(source, "timestamp"),
+            cls._timestamp(source.get("timestamp")),
         )
 
     def refresh_sources(self, sources):

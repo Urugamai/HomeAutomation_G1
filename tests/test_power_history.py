@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from ui.adaptive_ui import PowerHistoryStore
+from ui.adaptive_ui import EnvironmentSourcesPage, PowerHistoryStore
 from ui.battery_indicator import (
     CHARGING_COLOR,
     DRAINING_COLOR,
@@ -62,3 +62,13 @@ def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
 def test_low_battery_soc_overrides_battery_flow_color():
     assert battery_soc_fill_color(9.9, CHARGING_COLOR) == LOW_SOC_COLOR
     assert battery_soc_fill_color(100, CHARGING_COLOR) == CHARGING_COLOR
+
+
+def test_environment_timestamp_is_formatted_as_local_datetime():
+    source = {"timestamp": 1_726_000_000}
+
+    row = EnvironmentSourcesPage._source_row("Living", source)
+
+    assert row[-1] == datetime.datetime.fromtimestamp(1_726_000_000).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
