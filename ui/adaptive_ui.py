@@ -404,7 +404,7 @@ class EnvironmentSourcesPage(QWidget):
 
     COLUMNS = (
         "Source", "Hostname", "Temperature", "Humidity", "Pressure",
-        "Light", "Wind", "Rain", "Updated",
+        "Light", "Updated",
     )
 
     def __init__(self):
@@ -467,8 +467,6 @@ class EnvironmentSourcesPage(QWidget):
                 "outside_lux",
                 suffix=light_suffix,
             ),
-            cls._number(source, "wind_speed", "wind_speed_kmh", suffix=" km/h"),
-            cls._number(source, "rain_rate", suffix=" mm/h"),
             cls._timestamp(source.get("timestamp")),
         )
 
