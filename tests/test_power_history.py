@@ -72,3 +72,4 @@ def test_environment_timestamp_is_formatted_as_local_datetime():
     assert row[-1] == datetime.datetime.fromtimestamp(1_726_000_000).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
+    assert row[4] == "--"

@@ -454,7 +454,7 @@ class EnvironmentSourcesPage(QWidget):
     @classmethod
     def _source_row(cls, source_key, source):
         is_ecowitt = source_key == "Ecowitt"
-        light_suffix = " W/m²" if is_ecowitt else " lx"
+        light_suffix = " W/m²"
         return (
             "Ecowitt" if is_ecowitt else source_key,
             source.get("hostname") or source.get("device_name") or "--",

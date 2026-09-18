@@ -24,7 +24,7 @@ class EcowittLanIngestionDaemon:
     """
     Headless background supervisor pulling real-time outdoor AND indoor metrics
     from a local Ecowitt GW2000 gateway device using low-latency LAN socket queries.
-    Routes indoor details explicitly to a unique Rumpus Room topic path.
+    Routes indoor details explicitly as a distinct Ecowitt source.
     """
 
     def __init__(self):
@@ -114,10 +114,11 @@ class EcowittLanIngestionDaemon:
                 try:
                     api_payload = self._fetch_api_payload()
                     if api_payload:
-                        self._publish_payloads({}, api_payload)
+                        outdoor_payload, indoor_payload = api_payload
+                        self._publish_payloads(indoor_payload, outdoor_payload)
                         print(
                             "[ECOWITT API] Published "
-                            f"{len(api_payload) - 1} outdoor measurements."
+                            f"{len(outdoor_payload) - 1} outdoor measurements."
                         )
                     self._last_api_poll = time.monotonic()
                 except Exception as e:
@@ -143,7 +144,11 @@ class EcowittLanIngestionDaemon:
             in_humidity = int(raw_bytes[9]) if len(raw_bytes) > 10 and raw_bytes[9] != 0xFF else 45
 
             pressure_raw = (raw_bytes[11] << 8) | raw_bytes[12] if len(raw_bytes) > 13 else 0xFFFF
-            pressure_hpa = round(pressure_raw / 10.0, 1) if pressure_raw != 0xFFFF else 1013.2
+            pressure_hpa = (
+                round(pressure_raw / 10.0, 1)
+                if pressure_raw != 0xFFFF and 8000 <= pressure_raw <= 11000
+                else None
+            )
 
             outdoor_payload = {
                 "temperature": out_temp_c,
@@ -154,16 +159,15 @@ class EcowittLanIngestionDaemon:
                 "timestamp": time.time()
             }
 
-            # Annotated unique payload structure representing the Rumpus Room location bounds
-            rumpus_payload = {
-                "room_name": "Rumpus Room",
+            indoor_payload = {
+                "device_name": "ecowitt-indoor",
                 "temperature": in_temp_c,
                 "humidity": in_humidity,
                 "pressure": pressure_hpa,
                 "timestamp": time.time()
             }
 
-            self._publish_payloads(rumpus_payload, outdoor_payload)
+            self._publish_payloads(indoor_payload, outdoor_payload)
 
         except Exception as e:
             print(f"[DECODE ERROR] Failed to segment byte map array fields: {e}")
@@ -208,6 +212,15 @@ class EcowittLanIngestionDaemon:
         temperature, temperature_unit = measurement_in(
             ("outdoor", "outdoor_temperature"), ("temperature", "temp", "temp_c"))
         humidity, _ = measurement_in(("outdoor",), ("humidity", "humidity_pct"))
+        indoor_temperature, indoor_temperature_unit = measurement_in(
+            ("indoor", "indoor_temperature"), ("temperature", "temp", "temp_c")
+        )
+        indoor_humidity, _ = measurement_in(
+            ("indoor", "indoor_temperature"), ("humidity", "humidity_pct")
+        )
+        indoor_pressure, _ = measurement_in(
+            ("indoor", "indoor_temperature"), ("pressure", "barom", "barometer")
+        )
         solar, _ = measurement_in(
             ("solar_and_uvi", "solar", "light"),
             ("solar", "solarradiation", "solar_radiation", "light", "lux"))
@@ -239,6 +252,11 @@ class EcowittLanIngestionDaemon:
             ("wind",), ("wind_direction", "winddir", "direction"))
 
         temperature = cls._fahrenheit_to_celsius(temperature, temperature_unit)
+        indoor_temperature = cls._fahrenheit_to_celsius(
+            indoor_temperature, indoor_temperature_unit
+        )
+        if indoor_pressure is not None and not 800.0 <= indoor_pressure <= 1100.0:
+            indoor_pressure = None
         rain_rate = cls._inches_to_mm(rain_rate, rain_rate_unit)
         rain_daily = cls._inches_to_mm(rain_daily, rain_daily_unit)
         rain_event = cls._inches_to_mm(rain_event, rain_event_unit)
@@ -269,7 +287,11 @@ class EcowittLanIngestionDaemon:
         cls._set_if_number(result, "wind_speed_kmh", wind_speed)
         cls._set_if_number(result, "wind_gust", wind_gust)
         cls._set_if_number(result, "wind_direction", wind_direction)
-        return result
+        indoor_result = {"device_name": "ecowitt-indoor", "timestamp": time.time()}
+        cls._set_if_number(indoor_result, "temperature", indoor_temperature)
+        cls._set_if_number(indoor_result, "humidity", indoor_humidity)
+        cls._set_if_number(indoor_result, "pressure", indoor_pressure)
+        return result, indoor_result if len(indoor_result) > 2 else {}
 
     @staticmethod
     def _find_section(value, names):
@@ -364,23 +386,26 @@ class EcowittLanIngestionDaemon:
             "timestamp": time.time()
         }
 
-        rumpus_payload = {
-            "room_name": "Rumpus Room",
+        indoor_payload = {
+            "device_name": "ecowitt-indoor",
             "temperature": round(21.8 + random.uniform(-0.05, 0.05), 1),
             "humidity": random.randint(45, 50),
             "pressure": round(1014.5 + random.uniform(-0.2, 0.2), 1),
             "timestamp": time.time()
         }
-        self._publish_payloads(rumpus_payload, outdoor_payload)
+        self._publish_payloads(indoor_payload, outdoor_payload)
 
-    def _publish_payloads(self, rumpus_dict, outdoor_dict):
+    def _publish_payloads(self, indoor_dict, outdoor_dict):
         # 1. Standard outdoor metrics
         self.mqtt_client.publish("home/environment/ecowitt", json.dumps(outdoor_dict), retain=True)
 
-        # 2. FIXED: Publish to a unique, dedicated room sub-topic path to allow scale expansions
-        if rumpus_dict:
-            self.mqtt_client.publish("home/environment/rumpus", json.dumps(rumpus_dict), retain=True)
-        print(f"[ECOWITT SYNC] Dispatched outdoor and unique Rumpus Room telemetry parameters.")
+        if indoor_dict:
+            self.mqtt_client.publish(
+                "home/environment/ecowitt-indoor",
+                json.dumps(indoor_dict),
+                retain=True,
+            )
+        print("[ECOWITT SYNC] Dispatched outdoor and indoor telemetry parameters.")
 
 
 if __name__ == "__main__":

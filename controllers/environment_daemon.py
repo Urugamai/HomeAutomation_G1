@@ -234,7 +234,7 @@ class LivingAreaHardwareController:
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0, 1013.0
 
-        temp_c, humidity, lux, pressure = 22.0, 50.0, 0.0, 1013.0
+        temp_c, humidity, lux, pressure = None, None, 0.0, None
 
         try:
             if self.bme_sensor_type == "BME280_DIRECT":
@@ -265,6 +265,9 @@ class LivingAreaHardwareController:
         except Exception as e:
             print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
 
+        if pressure is not None and not 800.0 <= pressure <= 1100.0:
+            print(f"[SENSOR WARN] Ignoring invalid pressure reading: {pressure}")
+            pressure = None
         return temp_c, humidity, lux, pressure
 
     def _process_environment_tick(self):
@@ -502,7 +505,8 @@ class LivingAreaHardwareController:
         )
         print(
             f"[TELEMETRY] {self.hostname}: "
-            f"{temp:.1f}°C, {humidity:.1f}% RH, {lux:.1f} lx"
+            f"{temp if temp is not None else '--'}°C, "
+            f"{humidity if humidity is not None else '--'}% RH, {lux:.1f} lx"
         )
 
 
