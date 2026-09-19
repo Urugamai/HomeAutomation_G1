@@ -455,6 +455,12 @@ class EnvironmentSourcesPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
 
+        self.summary_lbl = QLabel("Summary: Indoor average temperature: --")
+        self.summary_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.summary_lbl.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.summary_lbl.setStyleSheet("color: #505050; padding: 4px;")
+        layout.addWidget(self.summary_lbl)
+
     @staticmethod
     def _value(source, *keys, default="--"):
         for key in keys:
@@ -503,6 +509,27 @@ class EnvironmentSourcesPage(QWidget):
             cls._timestamp(source.get("timestamp")),
         )
 
+    @classmethod
+    def _indoor_temperature_average(cls, sources):
+        temperatures = []
+        for source_key, source in sources.items():
+            if source_key == "Ecowitt":
+                continue
+            value = cls._value(
+                source,
+                "temperature",
+                "outside_temp",
+                "outdoor_temp",
+                default=None,
+            )
+            try:
+                temperatures.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        if not temperatures:
+            return None, 0
+        return sum(temperatures) / len(temperatures), len(temperatures)
+
     def refresh_sources(self, sources):
         ordered_sources = sorted(
             sources.items(),
@@ -512,6 +539,15 @@ class EnvironmentSourcesPage(QWidget):
         for row, (source_key, source) in enumerate(ordered_sources):
             for column, value in enumerate(self._source_row(source_key, source)):
                 self.table.setItem(row, column, QTableWidgetItem(str(value)))
+        average_temperature, sensor_count = self._indoor_temperature_average(sources)
+        if average_temperature is None:
+            self.summary_lbl.setText("Summary: Indoor average temperature: --")
+        else:
+            suffix = "sensor" if sensor_count == 1 else "sensors"
+            self.summary_lbl.setText(
+                f"Summary: Indoor average temperature: {average_temperature:.1f} °C "
+                f"({sensor_count} {suffix})"
+            )
 
 
 class AdaptiveDashboard(QWidget):

@@ -98,3 +98,17 @@ def test_environment_light_lux_is_displayed_without_conversion():
     row = EnvironmentSourcesPage._source_row("living", {"light_lux": 320})
 
     assert row[5] == "320.0 lx"
+
+
+def test_environment_indoor_average_excludes_ecowitt_outdoor_source():
+    average, sensor_count = EnvironmentSourcesPage._indoor_temperature_average(
+        {
+            "Ecowitt": {"temperature": 12.0},
+            "living": {"temperature": 21.0},
+            "ecowitt-indoor": {"temperature": 22.0},
+            "offline": {},
+        }
+    )
+
+    assert average == 21.5
+    assert sensor_count == 2
