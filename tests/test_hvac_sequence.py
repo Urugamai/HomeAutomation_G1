@@ -89,6 +89,68 @@ def test_hvac_turns_outputs_off_when_no_indoor_temperature_is_available():
     assert commands == ["OFF"]
 
 
+def test_manual_heat_waits_for_fan_lead_before_energizing_heater(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    controller.latest_inside_temperature = 21.0
+    commands = []
+    clock = [0.0]
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
+    controller._write_relays = commands.append
+
+    controller._handle_manual_command("HEATING")
+
+    assert controller.manual_target == "HEATING"
+    assert controller.sequence_state == "PREHEAT"
+    assert commands == ["FAN"]
+
+    clock[0] = controller.fan_preheat_seconds
+    controller._process_control_tick()
+
+    assert controller.current_state == "HEATING"
+    assert commands[-1] == "HEATING"
+
+
+def test_manual_fan_toggle_never_turns_fan_off_during_heating(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    controller.latest_inside_temperature = 21.0
+    controller.current_state = "HEATING"
+    controller.sequence_state = "HEATING"
+    controller.active_run_started_at = 0.0
+    controller.manual_target = "HEATING"
+    commands = []
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: 0.0)
+    controller._write_relays = commands.append
+
+    controller._handle_manual_command("FAN")
+
+    assert controller.current_state == "HEATING"
+    assert controller.sequence_state == "HEATING"
+    assert commands == []
+
+
+def test_manual_fan_can_be_turned_on_and_off_without_heat_or_cooling(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    controller.latest_inside_temperature = None
+    commands = []
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: 0.0)
+
+    def write_relays(mode):
+        commands.append(mode)
+        controller.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+    controller._write_relays = write_relays
+
+    controller._handle_manual_command("FAN")
+    controller._handle_manual_command("FAN")
+
+    assert commands == ["FAN", "OFF"]
+    assert controller.manual_target == "OFF"
+    assert controller.sequence_state == "OFF"
+
+
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):
     storage_path = tmp_path / "hvac_settings.json"
     saved = HvacSettingsStore(storage_path).save(

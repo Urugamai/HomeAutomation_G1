@@ -536,6 +536,7 @@ class EnvironmentSourcesPage(QWidget):
 
 class AdaptiveDashboard(QWidget):
     hvac_settings_changed = pyqtSignal(dict)
+    hvac_command_requested = pyqtSignal(dict)
 
     def __init__(self, power_chart_grid_interval_hours=1):
         super().__init__()
@@ -650,6 +651,9 @@ class AdaptiveDashboard(QWidget):
             self.hvac_config_tab = HvacConfigurationPage()
             self.hvac_config_tab.settings_changed.connect(
                 self.hvac_settings_changed.emit
+            )
+            self.hvac_config_tab.command_requested.connect(
+                self.hvac_command_requested.emit
             )
             self.hvac_config_tab.update_display_metrics()
             parent_tab_widget.addTab(self.hvac_config_tab, "Climate Settings")

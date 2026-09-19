@@ -292,6 +292,7 @@ class HvacConfigurationPage(QWidget):
     """
     # Event custom emitter passing target payload structures back to the MQTT driver
     settings_changed = pyqtSignal(dict)
+    command_requested = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
@@ -357,13 +358,25 @@ class HvacConfigurationPage(QWidget):
 
         relay_layout = QHBoxLayout()
         relay_layout.setSpacing(10)
-        self.heater_relay_indicator = self._build_relay_indicator("Heater")
-        self.cooler_relay_indicator = self._build_relay_indicator("Cooler")
-        self.fan_relay_indicator = self._build_relay_indicator("Fan")
+        self.heater_relay_indicator = self._build_relay_indicator(
+            "Heater", "HEATING"
+        )
+        self.cooler_relay_indicator = self._build_relay_indicator(
+            "Cooler", "COOLING"
+        )
+        self.fan_relay_indicator = self._build_relay_indicator("Fan", "FAN")
         relay_layout.addWidget(self.heater_relay_indicator)
         relay_layout.addWidget(self.cooler_relay_indicator)
         relay_layout.addWidget(self.fan_relay_indicator)
         self.main_layout.addLayout(relay_layout)
+
+        self.auto_control_button = QPushButton("Return to automatic control")
+        self.auto_control_button.setMinimumHeight(36)
+        self.auto_control_button.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.auto_control_button.clicked.connect(
+            lambda: self.command_requested.emit({"action": "AUTO"})
+        )
+        self.main_layout.addWidget(self.auto_control_button)
 
         # Diagnostics / Status Bar Footer Readout
         self.status_lbl = QLabel("System Status: Idle (OFF) | Interlocks Free")
@@ -442,20 +455,26 @@ class HvacConfigurationPage(QWidget):
         layout.addWidget(picker)
         return container
 
-    @staticmethod
-    def _build_relay_indicator(name: str) -> QLabel:
-        indicator = QLabel(f"{name}\nOFF")
-        indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    def _build_relay_indicator(self, name: str, action: str) -> QPushButton:
+        indicator = QPushButton(f"{name}\nOFF")
         indicator.setMinimumHeight(54)
         indicator.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         indicator.setStyleSheet(
             "background-color: #eeeeee; color: #606060; "
             "border: 1px solid #aaaaaa; border-radius: 4px;"
         )
+        indicator.clicked.connect(
+            lambda: self.command_requested.emit({"action": action})
+        )
         return indicator
 
     @staticmethod
-    def _set_relay_indicator(indicator: QLabel, name: str, is_on: bool, color: str):
+    def _set_relay_indicator(
+        indicator: QPushButton,
+        name: str,
+        is_on: bool,
+        color: str,
+    ):
         if is_on:
             indicator.setText(f"{name}\nON")
             indicator.setStyleSheet(

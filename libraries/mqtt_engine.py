@@ -54,6 +54,7 @@ class MqttTelemetryListener(QObject):
             "hvac_state": "OFF",
             "hvac_in_rest": False,
             "hvac_sequence_state": "OFF",
+            "hvac_control_mode": "AUTO",
             "heater_relay_on": False,
             "cooler_relay_on": False,
             "fan_relay_on": False,
@@ -199,6 +200,9 @@ class MqttTelemetryListener(QObject):
         self.cached_data["hvac_sequence_state"] = data.get(
             "hvac_sequence_state", self.cached_data["hvac_sequence_state"]
         )
+        self.cached_data["hvac_control_mode"] = data.get(
+            "hvac_control_mode", self.cached_data["hvac_control_mode"]
+        )
         for key in ("heater_relay_on", "cooler_relay_on", "fan_relay_on"):
             if key in data:
                 self.cached_data[key] = bool(data[key])
@@ -244,6 +248,17 @@ class MqttTelemetryListener(QObject):
             json.dumps(settings),
             qos=1,
             retain=True,
+        )
+
+    def set_hvac_command(self, command):
+        if self.client is None:
+            print("[HVAC ERROR] Cannot send command before MQTT connection is ready")
+            return
+        self.client.publish(
+            "home/hvac/command",
+            json.dumps(command),
+            qos=1,
+            retain=False,
         )
 
     @staticmethod

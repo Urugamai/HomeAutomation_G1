@@ -121,6 +121,9 @@ class MainWindow(QMainWindow):
         self.dashboard.hvac_settings_changed.connect(
             self.mqtt_listener.set_hvac_settings
         )
+        self.dashboard.hvac_command_requested.connect(
+            self.mqtt_listener.set_hvac_command
+        )
         self.mqtt_listener.start()
 
         # Query the operational mode flag state immediately to update the footer message

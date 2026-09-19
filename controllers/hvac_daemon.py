@@ -70,6 +70,7 @@ class HvacHardwareDaemon:
         self.latest_inside_temperature = None
         self.indoor_sensor_count = 0
         self.environment_sources = {}
+        self.manual_target = None
         self.heater_relay_on = False
         self.cooler_relay_on = False
         self.fan_relay_on = False
@@ -123,6 +124,7 @@ class HvacHardwareDaemon:
         print(f"[MQTT] Connected successfully to broker ({self.broker_ip}). Listening for adjustments...")
         # Subscribe to dynamic UI targets
         self.client.subscribe("home/hvac/settings")
+        self.client.subscribe("home/hvac/command")
         self.client.subscribe("home/environment/#")
 
     def _on_message(self, client, userdata, msg):
@@ -162,6 +164,9 @@ class HvacHardwareDaemon:
                     f"[SETTINGS UPDATED] Min: {self.t_min}°C | Max: {self.t_max}°C | "
                     f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
                 )
+            elif msg.topic == "home/hvac/command":
+                payload = json.loads(msg.payload.decode("utf-8"))
+                self._handle_manual_command(payload.get("action"))
             elif (
                 msg.topic.startswith("home/environment/")
                 and msg.topic not in (
@@ -173,6 +178,50 @@ class HvacHardwareDaemon:
                 self._record_environment_source(msg.topic, payload)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
             print(f"[PARSE EXCEPTION] Bad configuration update payload structure: {e}")
+
+    def _handle_manual_command(self, action):
+        action = str(action or "").upper()
+        if action not in ("HEATING", "COOLING", "FAN", "AUTO"):
+            raise ValueError(f"Unsupported HVAC command: {action}")
+
+        with self._settings_lock:
+            if action == "AUTO":
+                self.manual_target = None
+                if self.sequence_state == "MANUAL_FAN":
+                    self.sequence_state = "OFF"
+                    self._write_relays("OFF")
+                print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
+            elif action == "FAN":
+                if self.current_state in ("HEATING", "COOLING") or self.sequence_state in (
+                    "PREHEAT",
+                    "POSTRUN",
+                ):
+                    print("[MANUAL CONTROL] Fan cannot be turned off while HVAC sequencing requires it.")
+                elif self.manual_target == "FAN":
+                    self.manual_target = "OFF"
+                    self.sequence_state = "OFF"
+                    self._write_relays("OFF")
+                else:
+                    self.manual_target = "FAN"
+                    self.current_state = "OFF"
+                    self.sequence_state = "MANUAL_FAN"
+                    self._write_relays("FAN")
+            elif (
+                self.current_state == action
+                or self.manual_target == action
+                or (
+                    self.sequence_state == "PREHEAT"
+                    and self.pending_state == action
+                )
+            ):
+                self.manual_target = "OFF"
+            else:
+                self.manual_target = action
+                if self.sequence_state == "MANUAL_FAN":
+                    self.sequence_state = "OFF"
+                    self._write_relays("OFF")
+
+            self._process_control_tick_locked()
 
     def _record_environment_source(self, topic, payload):
         if topic == "home/environment/ecowitt":
@@ -260,6 +309,15 @@ class HvacHardwareDaemon:
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
         current_temp = self.latest_inside_temperature
         now = time.time()
+        if self.manual_target == "FAN":
+            self.current_state = "OFF"
+            self.pending_state = None
+            self.sequence_state = "MANUAL_FAN"
+            if not self.fan_relay_on:
+                self._write_relays("FAN")
+            self._broadcast_status_telemetry(current_temp)
+            return
+
         if current_temp is None:
             if self.current_state != "OFF" or self.sequence_state != "OFF":
                 print("[SAFETY] No valid indoor temperature is available. Turning HVAC outputs off.")
@@ -322,6 +380,8 @@ class HvacHardwareDaemon:
         self._broadcast_status_telemetry(current_temp)
 
     def _requested_state(self, current_temp: float) -> str:
+        if self.manual_target in ("HEATING", "COOLING", "OFF"):
+            return self.manual_target
         if current_temp < self.t_min:
             return "HEATING"
         if current_temp > self.t_max:
@@ -375,6 +435,7 @@ class HvacHardwareDaemon:
         telemetry_packet = {
             "temperature": current_temp,
             "indoor_sensor_count": self.indoor_sensor_count,
+            "hvac_control_mode": "MANUAL" if self.manual_target is not None else "AUTO",
             "hvac_state": self.current_state,
             "hvac_in_rest": self.in_rest_period,
             "hvac_sequence_state": self.sequence_state,
