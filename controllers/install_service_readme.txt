@@ -3,8 +3,8 @@
 # Update the system package repository index lists
 sudo apt update
 
-# Install PyQt6 and the physical system I2C bus tools natively
-sudo apt install -y python3-pyqt6 python3-smbus2 python3-pip
+# Install PyQt6, the physical I2C bus tools, and Waveshare relay GPIO support.
+sudo apt install -y python3-pyqt6 python3-smbus2 python3-rpi.gpio python3-pip
 
 # Install the remaining purely Pythonic driver dependencies from your manifest
 pip3 install paho-mqtt pymodbus aiohttp pycryptodome bme680 --break-system-packages

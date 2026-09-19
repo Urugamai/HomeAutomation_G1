@@ -10,13 +10,11 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Safe fallback logic loops for physical hardware interaction bindings
 try:
-    import smbus2
-
+    import RPi.GPIO as GPIO
     IS_RASPI = True
 except ImportError:
-    smbus2 = None
+    GPIO = None
     IS_RASPI = False
 
 try:
@@ -35,10 +33,12 @@ from libraries.hvac_settings import HvacSettingsStore
 
 class HvacHardwareDaemon:
     """
-    Independent background loop driving real-time Raspberry Pi I2C relays
+    Independent background loop driving real-time Raspberry Pi GPIO relays
     from temperature telemetry published by the living-area environment daemon.
     """
-    I2C_RELAY_ADDR = 0x20  # Expander line module address (e.g. PCF8574)
+    RELAY_HEAT = 26  # Waveshare RPi Relay Board CH1, physical pin 37
+    RELAY_COOL = 20  # Waveshare RPi Relay Board CH2, physical pin 38
+    RELAY_FAN = 21  # Waveshare RPi Relay Board CH3, physical pin 40
 
     def __init__(self):
         print(f"[INIT] Launching HVAC Daemon Subsystem. Platform Native Pi = {IS_RASPI}")
@@ -74,17 +74,20 @@ class HvacHardwareDaemon:
         self.heater_relay_on = False
         self.cooler_relay_on = False
         self.fan_relay_on = False
+        self.gpio_ready = False
 
-        # Initialize physical bus frameworks
-        if IS_RASPI and smbus2:
+        if IS_RASPI:
             try:
-                self.bus = smbus2.SMBus(1)
-                self._write_relays("OFF")  # Enforce clean isolation on start
+                GPIO.setmode(GPIO.BCM)
+                GPIO.setwarnings(False)
+                for pin in (self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN):
+                    GPIO.setup(pin, GPIO.OUT, initial=GPIO.HIGH)
+                self.gpio_ready = True
+                self._write_relays("OFF")
             except Exception as e:
-                print(f"[I2C ERROR] Could not bind physical I2C interface lines: {e}")
-                self.bus = None
+                print(f"[GPIO ERROR] Could not configure Waveshare relay board: {e}")
         else:
-            self.bus = None
+            print("[GPIO ERROR] RPi.GPIO is unavailable; relay outputs are disabled.")
 
     def _load_broker_config(self) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -276,30 +279,34 @@ class HvacHardwareDaemon:
 
     def _write_relays(self, mode: str):
         """
-        Enforces a strict mutually exclusive mechanical/software configuration:
-        Relay 1 (Heating) and Relay 2 (Cooling) can NEVER be driven hot simultaneously.
+        Commands the active-low Waveshare RPi Relay Board while enforcing
+        mutually exclusive heating and cooling outputs.
         """
-        self.heater_relay_on = mode == "HEATING"
-        self.cooler_relay_on = mode == "COOLING"
-        self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
-
-        if not IS_RASPI or not self.bus:
+        if not self.gpio_ready:
             return
 
-        # Bit definitions: Bit 0 = Heat Relay, Bit 1 = Cool Relay, Bit 2 = Master Fan Enable
-        if mode == "HEATING":
-            byte_payload = 0x05  # 0b00000101 -> Heat On, Fan On, Cool Off
-        elif mode == "COOLING":
-            byte_payload = 0x06  # 0b00000110 -> Cool On, Fan On, Heat Off
-        elif mode == "FAN":
-            byte_payload = 0x04  # 0b00000100 -> Fan On, Heat and Cool Off
-        else:
-            byte_payload = 0x00  # 0b00000000 -> All Isolators Open (OFF)
-
         try:
-            self.bus.write_byte_data(self.I2C_RELAY_ADDR, 0, byte_payload)
+            # The Waveshare inputs are active-low. Drop both appliances first
+            # so no transition can briefly energize heating and cooling together.
+            GPIO.output(self.RELAY_HEAT, GPIO.HIGH)
+            GPIO.output(self.RELAY_COOL, GPIO.HIGH)
+
+            if mode == "HEATING":
+                GPIO.output(self.RELAY_FAN, GPIO.LOW)
+                GPIO.output(self.RELAY_HEAT, GPIO.LOW)
+            elif mode == "COOLING":
+                GPIO.output(self.RELAY_FAN, GPIO.LOW)
+                GPIO.output(self.RELAY_COOL, GPIO.LOW)
+            elif mode == "FAN":
+                GPIO.output(self.RELAY_FAN, GPIO.LOW)
+            else:
+                GPIO.output(self.RELAY_FAN, GPIO.HIGH)
+
+            self.heater_relay_on = mode == "HEATING"
+            self.cooler_relay_on = mode == "COOLING"
+            self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
         except Exception as e:
-            print(f"[HARDWARE EXCEPTION] Failed writing command to physical I2C expander: {e}")
+            print(f"[GPIO ERROR] Failed writing Waveshare relay outputs: {e}")
 
     def _process_control_tick(self):
         with self._settings_lock:

@@ -25,6 +25,47 @@ class _Message:
         self.payload = json.dumps(payload).encode("utf-8")
 
 
+class _FakeGpio:
+    BCM = "BCM"
+    OUT = "OUT"
+    HIGH = 1
+    LOW = 0
+
+    def __init__(self):
+        self.outputs = {}
+
+    def setmode(self, mode):
+        assert mode == self.BCM
+
+    def setwarnings(self, enabled):
+        assert enabled is False
+
+    def setup(self, pin, mode, initial):
+        assert mode == self.OUT
+        self.outputs[pin] = initial
+
+    def output(self, pin, value):
+        self.outputs[pin] = value
+
+
+def test_waveshare_relay_mapping_uses_active_low_gpio(monkeypatch):
+    gpio = _FakeGpio()
+    monkeypatch.setattr(hvac_daemon, "GPIO", gpio)
+    monkeypatch.setattr(hvac_daemon, "IS_RASPI", True)
+
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller._write_relays("HEATING")
+
+    assert gpio.outputs == {
+        controller.RELAY_HEAT: gpio.LOW,
+        controller.RELAY_COOL: gpio.HIGH,
+        controller.RELAY_FAN: gpio.LOW,
+    }
+    assert controller.heater_relay_on is True
+    assert controller.cooler_relay_on is False
+    assert controller.fan_relay_on is True
+
+
 def test_hvac_controls_from_the_average_of_indoor_sources():
     controller = hvac_daemon.HvacHardwareDaemon()
 
@@ -62,8 +103,8 @@ def test_hvac_controls_from_the_average_of_indoor_sources():
 def test_hvac_status_includes_commanded_relay_states():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _RecordingMqttClient()
-
-    controller._write_relays("HEATING")
+    controller.heater_relay_on = True
+    controller.fan_relay_on = True
     controller._broadcast_status_telemetry(19.0)
 
     topic, payload = controller.client.messages[-1]
