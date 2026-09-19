@@ -86,6 +86,7 @@ grep -E 'dtoverlay=.*vc4|display_rotate' /boot/firmware/config.txt
 display_rotate=1
 ```
 
+
 Then reboot.
 <br>
 <h1>The service assumes:</h1>
