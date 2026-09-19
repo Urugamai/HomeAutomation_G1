@@ -406,7 +406,6 @@ class EnvironmentSourcesPage(QWidget):
         "Source", "Hostname", "Temperature", "Humidity", "Pressure",
         "Light", "Updated",
     )
-    LUX_PER_WATT_PER_SQUARE_METRE = 126.7
 
     def __init__(self):
         super().__init__()
@@ -453,23 +452,10 @@ class EnvironmentSourcesPage(QWidget):
             return str(value)
 
     @classmethod
-    def _light_w_m2(cls, source, is_ecowitt):
+    def _light_reading(cls, source, is_ecowitt):
         if is_ecowitt:
             return cls._number(source, "solar_radiation", suffix=" W/m²")
-        value = cls._value(source, "light_w_m2", default=None)
-        if value is None:
-            value = cls._value(source, "light_lux", "outside_lux", default=None)
-            if value is not None:
-                try:
-                    value = float(value) / cls.LUX_PER_WATT_PER_SQUARE_METRE
-                except (TypeError, ValueError):
-                    return str(value)
-        if value is None:
-            return "--"
-        try:
-            return f"{float(value):.1f} W/m²"
-        except (TypeError, ValueError):
-            return str(value)
+        return cls._number(source, "light_lux", "outside_lux", suffix=" lx")
 
     @classmethod
     def _source_row(cls, source_key, source):
@@ -480,7 +466,7 @@ class EnvironmentSourcesPage(QWidget):
             cls._number(source, "temperature", "outside_temp", "outdoor_temp", suffix=" °C"),
             cls._number(source, "humidity", "outside_humidity", suffix=" %"),
             cls._number(source, "pressure", suffix=" hPa"),
-            cls._light_w_m2(source, is_ecowitt),
+            cls._light_reading(source, is_ecowitt),
             cls._timestamp(source.get("timestamp")),
         )
 
@@ -631,9 +617,8 @@ class AdaptiveDashboard(QWidget):
             self._latest_power_sample = None
 
         if self.temp_lbl.isVisible():
-            # FIXED: Render high-resolution Lux light parameters directly alongside room temperatures
             l_temp = data.get("living_temp", 0.0)
-            l_solar = data.get("living_light_w_m2", 0.0)
+            l_lux = data.get("living_lux", 0.0)
             o_temp = data.get("outside_temp", 0.0)
             o_solar = data.get("solar_radiation", 0.0)
             o_humidity = data.get("outside_humidity", 0.0)
@@ -643,7 +628,7 @@ class AdaptiveDashboard(QWidget):
             rain_today = data.get("rain_today", 0.0)
             rain_rate = data.get("rain_rate", 0.0)
             self.temp_lbl.setText(
-                f"Living: {l_temp:.1f}°C ({l_solar:.1f} W/m²)  |  "
+                f"Living: {l_temp:.1f}°C ({l_lux:.1f} lx)  |  "
                 f"Outside: {o_temp:.1f}°C, {o_humidity:.0f}% RH "
                 f"({o_solar:.1f} W/m²)<br>"
                 f"Wind: {wind_speed:.1f} km/h (gust {wind_gust:.1f}) "

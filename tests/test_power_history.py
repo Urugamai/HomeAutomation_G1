@@ -75,7 +75,7 @@ def test_environment_timestamp_is_formatted_as_local_datetime():
     assert row[4] == "--"
 
 
-def test_environment_light_lux_is_converted_to_irradiance():
+def test_environment_light_lux_is_displayed_without_conversion():
     row = EnvironmentSourcesPage._source_row("living", {"light_lux": 320})
 
-    assert row[5] == "2.5 W/m²"
+    assert row[5] == "320.0 lx"

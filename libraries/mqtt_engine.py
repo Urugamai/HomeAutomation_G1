@@ -28,7 +28,6 @@ class MqttTelemetryListener(QObject):
         self.cached_data = {
             "living_temp": 0.0,
             "living_lux": 0.0,  # FIXED: Added ambient room tracking cache
-            "living_light_w_m2": 0.0,
             "room_temp": 0.0,
             "room_humidity": 0.0,
             "room_pressure": 0.0,
@@ -173,9 +172,6 @@ class MqttTelemetryListener(QObject):
         self.cached_data["room_temp"] = self.cached_data["living_temp"]
         self._update_cached_float(
             "living_lux", data, "light_lux", "living_lux", "outside_lux"
-        )
-        self._update_cached_float(
-            "living_light_w_m2", data, "light_w_m2"
         )
         self.cached_data["room_source"] = data.get(
             "hostname", data.get("device_name", self.location or "")
