@@ -11,11 +11,11 @@ if str(REPO_ROOT) not in sys.path:
 
 try:
     import smbus2
-
-    IS_RASPI = True
 except ImportError:
     smbus2 = None
-    IS_RASPI = False
+
+IS_RASPI = sys.platform.startswith("linux")
+IS_SIMULATION = sys.platform == "win32"
 
 try:
     import bme680
@@ -64,7 +64,13 @@ class LivingAreaHardwareController:
     def _initialize_hardware(self):
         """Configures physical board pin states and queries active I2C addresses."""
         if not IS_RASPI:
-            print("[HARDWARE] Windows 11 detected. Arming virtual device simulation abstractions.")
+            if IS_SIMULATION:
+                print("[HARDWARE] Windows detected. Arming virtual device simulation abstractions.")
+            else:
+                print("[HARDWARE] No Raspberry Pi I2C hardware is available.")
+            return
+        if smbus2 is None:
+            print("[HARDWARE] smbus2 is unavailable; environment readings will be null.")
             return
 
         try:
@@ -226,13 +232,17 @@ class LivingAreaHardwareController:
             "rest_seconds": self.rest_seconds,
         }
 
-    def _read_sensors(self) -> tuple[float, float, float, float]:
+    def _read_sensors(self) -> tuple[float | None, float | None, float | None, float | None]:
         """Polls physical sensors safely using factory calibration polynomials."""
-        if not IS_RASPI or not self.bus:
+        if not IS_RASPI:
+            if not IS_SIMULATION:
+                return None, None, None, None
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0, 1013.0
+        if not self.bus:
+            return None, None, None, None
 
-        temp_c, humidity, lux, pressure = None, None, 0.0, None
+        temp_c, humidity, lux, pressure = None, None, None, None
 
         try:
             if self.bme_sensor_type == "BME280_DIRECT":
@@ -482,7 +492,11 @@ class LivingAreaHardwareController:
             self.blind_pre_close_sent = True
 
     def _publish_telemetry(
-        self, temp: float, humidity: float, lux: float, pressure: float
+        self,
+        temp: float | None,
+        humidity: float | None,
+        lux: float | None,
+        pressure: float | None,
     ):
         payload = {
             "room_name": self.hostname,
@@ -491,11 +505,16 @@ class LivingAreaHardwareController:
             "temperature": temp,
             "humidity": humidity,
             "pressure": pressure,
-            "light_lux": round(lux, 1),
+            "light_lux": round(lux, 1) if lux is not None else None,
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)
-        self.mqtt_client.publish("home/environment/living", payload_json, retain=True)
+        if temp is not None:
+            self.mqtt_client.publish(
+                "home/environment/living",
+                payload_json,
+                retain=True,
+            )
         self.mqtt_client.publish(
             f"home/environment/living/{self.hostname}",
             payload_json,
@@ -504,7 +523,8 @@ class LivingAreaHardwareController:
         print(
             f"[TELEMETRY] {self.hostname}: "
             f"{temp if temp is not None else '--'}°C, "
-            f"{humidity if humidity is not None else '--'}% RH, {lux:.1f} lx"
+            f"{humidity if humidity is not None else '--'}% RH, "
+            f"{f'{lux:.1f}' if lux is not None else '--'} lx"
         )
 
 
