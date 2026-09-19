@@ -47,6 +47,7 @@ class LivingAreaHardwareController:
         self.bme_calibration_params = None
         self.bme680_sensor = None
         self.veml_is_online = False
+        self._shared_null_published = False
 
         self._initialize_hardware()
 
@@ -509,12 +510,14 @@ class LivingAreaHardwareController:
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)
-        if temp is not None:
+        if temp is not None or not getattr(self, "_shared_null_published", False):
             self.mqtt_client.publish(
                 "home/environment/living",
                 payload_json,
                 retain=True,
             )
+            if temp is None:
+                self._shared_null_published = True
         self.mqtt_client.publish(
             f"home/environment/living/{self.hostname}",
             payload_json,

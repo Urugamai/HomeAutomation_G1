@@ -93,11 +93,19 @@ def test_telemetry_serializes_missing_sensor_readings_as_null():
 
     controller._publish_telemetry(None, None, None, None)
 
-    topic, payload, retained = controller.mqtt_client.messages[0]
+    shared_topic, shared_payload, retained = controller.mqtt_client.messages[0]
+    assert shared_topic == "home/environment/living"
+    assert retained is True
+    assert shared_payload["temperature"] is None
+    assert shared_payload["humidity"] is None
+    assert shared_payload["pressure"] is None
+    assert shared_payload["light_lux"] is None
+
+    topic, payload, retained = controller.mqtt_client.messages[1]
     assert topic == "home/environment/living/sensorless-host"
     assert retained is True
-    assert payload["temperature"] is None
-    assert payload["humidity"] is None
-    assert payload["pressure"] is None
-    assert payload["light_lux"] is None
-    assert len(controller.mqtt_client.messages) == 1
+    assert payload == shared_payload
+
+    controller._publish_telemetry(None, None, None, None)
+
+    assert len(controller.mqtt_client.messages) == 3
