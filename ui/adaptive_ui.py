@@ -406,6 +406,7 @@ class EnvironmentSourcesPage(QWidget):
         "Source", "Hostname", "Temperature", "Humidity", "Pressure",
         "Light", "Updated",
     )
+    LUX_PER_WATT_PER_SQUARE_METRE = 126.7
 
     def __init__(self):
         super().__init__()
@@ -452,21 +453,34 @@ class EnvironmentSourcesPage(QWidget):
             return str(value)
 
     @classmethod
+    def _light_w_m2(cls, source, is_ecowitt):
+        if is_ecowitt:
+            return cls._number(source, "solar_radiation", suffix=" W/m²")
+        value = cls._value(source, "light_w_m2", default=None)
+        if value is None:
+            value = cls._value(source, "light_lux", "outside_lux", default=None)
+            if value is not None:
+                try:
+                    value = float(value) / cls.LUX_PER_WATT_PER_SQUARE_METRE
+                except (TypeError, ValueError):
+                    return str(value)
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.1f} W/m²"
+        except (TypeError, ValueError):
+            return str(value)
+
+    @classmethod
     def _source_row(cls, source_key, source):
         is_ecowitt = source_key == "Ecowitt"
-        light_suffix = " W/m²"
         return (
             "Ecowitt" if is_ecowitt else source_key,
             source.get("hostname") or source.get("device_name") or "--",
             cls._number(source, "temperature", "outside_temp", "outdoor_temp", suffix=" °C"),
             cls._number(source, "humidity", "outside_humidity", suffix=" %"),
             cls._number(source, "pressure", suffix=" hPa"),
-            cls._number(
-                source,
-                "solar_radiation" if is_ecowitt else "light_lux",
-                "outside_lux",
-                suffix=light_suffix,
-            ),
+            cls._light_w_m2(source, is_ecowitt),
             cls._timestamp(source.get("timestamp")),
         )
 
@@ -619,7 +633,7 @@ class AdaptiveDashboard(QWidget):
         if self.temp_lbl.isVisible():
             # FIXED: Render high-resolution Lux light parameters directly alongside room temperatures
             l_temp = data.get("living_temp", 0.0)
-            l_solar = data.get("living_lux", 0.0)
+            l_solar = data.get("living_light_w_m2", 0.0)
             o_temp = data.get("outside_temp", 0.0)
             o_solar = data.get("solar_radiation", 0.0)
             o_humidity = data.get("outside_humidity", 0.0)

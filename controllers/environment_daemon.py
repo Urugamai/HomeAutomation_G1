@@ -494,6 +494,7 @@ class LivingAreaHardwareController:
             "humidity": humidity,
             "pressure": pressure,
             "light_lux": round(lux, 1),
+            "light_w_m2": round(lux / 126.7, 2),
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)
