@@ -158,8 +158,9 @@ class ClimateValidationChart(QWidget):
 
         painter.setPen(QPen(QColor("#202020"), 1))
         painter.drawText(8, 16, "Climate validation (last 24 hours)")
-        painter.drawText(8, 32, "Indoor sensors:")
-        legend_x = 96
+        indoor_label = "Indoor sensors:"
+        painter.drawText(8, 32, indoor_label)
+        legend_x = 8 + painter.fontMetrics().horizontalAdvance(indoor_label) + 8
         for index, source in enumerate(source_names):
             painter.setPen(self.INDOOR_COLORS[index % len(self.INDOOR_COLORS)])
             painter.drawText(legend_x, 32, source)
