@@ -19,6 +19,46 @@ class _RecordingMqttClient:
         self.messages.append((topic, json.loads(payload)))
 
 
+class _Message:
+    def __init__(self, topic, payload):
+        self.topic = topic
+        self.payload = json.dumps(payload).encode("utf-8")
+
+
+def test_hvac_controls_from_the_average_of_indoor_sources():
+    controller = hvac_daemon.HvacHardwareDaemon()
+
+    controller._on_message(
+        None,
+        None,
+        _Message("home/environment/ecowitt", {"temperature": 12.0}),
+    )
+    controller._on_message(
+        None,
+        None,
+        _Message("home/environment/living", {"hostname": "living", "temperature": 20.0}),
+    )
+    controller._on_message(
+        None,
+        None,
+        _Message(
+            "home/environment/living/living",
+            {"hostname": "living", "temperature": 20.0},
+        ),
+    )
+    controller._on_message(
+        None,
+        None,
+        _Message(
+            "home/environment/ecowitt-indoor",
+            {"device_name": "ecowitt-indoor", "temperature": 22.0},
+        ),
+    )
+
+    assert controller.latest_inside_temperature == 21.0
+    assert controller.indoor_sensor_count == 2
+
+
 def test_hvac_status_includes_commanded_relay_states():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _RecordingMqttClient()
@@ -31,6 +71,22 @@ def test_hvac_status_includes_commanded_relay_states():
     assert payload["heater_relay_on"] is True
     assert payload["cooler_relay_on"] is False
     assert payload["fan_relay_on"] is True
+
+
+def test_hvac_turns_outputs_off_when_no_indoor_temperature_is_available():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    controller.current_state = "HEATING"
+    controller.sequence_state = "HEATING"
+    controller.latest_inside_temperature = None
+    commands = []
+    controller._write_relays = commands.append
+
+    controller._process_control_tick()
+
+    assert controller.current_state == "OFF"
+    assert controller.sequence_state == "OFF"
+    assert commands == ["OFF"]
 
 
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):

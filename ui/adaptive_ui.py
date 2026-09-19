@@ -19,6 +19,7 @@ from .battery_indicator import (
     battery_flow_color,
     battery_soc_fill_color,
 )
+from libraries.environment_metrics import indoor_temperature_average
 
 LOGGER = logging.getLogger(__name__)
 
@@ -511,24 +512,7 @@ class EnvironmentSourcesPage(QWidget):
 
     @classmethod
     def _indoor_temperature_average(cls, sources):
-        temperatures = []
-        for source_key, source in sources.items():
-            if source_key == "Ecowitt":
-                continue
-            value = cls._value(
-                source,
-                "temperature",
-                "outside_temp",
-                "outdoor_temp",
-                default=None,
-            )
-            try:
-                temperatures.append(float(value))
-            except (TypeError, ValueError):
-                continue
-        if not temperatures:
-            return None, 0
-        return sum(temperatures) / len(temperatures), len(temperatures)
+        return indoor_temperature_average(sources)
 
     def refresh_sources(self, sources):
         ordered_sources = sorted(

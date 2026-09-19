@@ -26,6 +26,10 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+from libraries.environment_metrics import (
+    OUTDOOR_ECOWITT_SOURCE,
+    indoor_temperature_average,
+)
 from libraries.hvac_settings import HvacSettingsStore
 
 
@@ -64,6 +68,8 @@ class HvacHardwareDaemon:
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
         self.latest_inside_temperature = None
+        self.indoor_sensor_count = 0
+        self.environment_sources = {}
         self.heater_relay_on = False
         self.cooler_relay_on = False
         self.fan_relay_on = False
@@ -117,15 +123,12 @@ class HvacHardwareDaemon:
         print(f"[MQTT] Connected successfully to broker ({self.broker_ip}). Listening for adjustments...")
         # Subscribe to dynamic UI targets
         self.client.subscribe("home/hvac/settings")
-        self.client.subscribe("home/environment/living")
+        self.client.subscribe("home/environment/#")
 
     def _on_message(self, client, userdata, msg):
         try:
-            if msg.topic == "home/environment/living":
+            if msg.topic == "home/hvac/settings":
                 payload = json.loads(msg.payload.decode("utf-8"))
-                self.latest_inside_temperature = float(payload["temperature"])
-            elif msg.topic == "home/hvac/settings":
-                payload = json.loads(msg.payload.decode('utf-8'))
                 settings = {
                     "t_min": float(payload.get("target_min", self.t_min)),
                     "t_max": float(payload.get("target_max", self.t_max)),
@@ -159,8 +162,32 @@ class HvacHardwareDaemon:
                     f"[SETTINGS UPDATED] Min: {self.t_min}°C | Max: {self.t_max}°C | "
                     f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
                 )
+            elif (
+                msg.topic.startswith("home/environment/")
+                and msg.topic not in (
+                    "home/environment/inside",
+                    "home/environment/forecast",
+                )
+            ):
+                payload = json.loads(msg.payload.decode("utf-8"))
+                self._record_environment_source(msg.topic, payload)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
             print(f"[PARSE EXCEPTION] Bad configuration update payload structure: {e}")
+
+    def _record_environment_source(self, topic, payload):
+        if topic == "home/environment/ecowitt":
+            source_key = OUTDOOR_ECOWITT_SOURCE
+        else:
+            source_key = (
+                payload.get("hostname")
+                or payload.get("device_name")
+                or topic.rsplit("/", 1)[-1]
+            )
+        self.environment_sources[source_key] = payload
+        (
+            self.latest_inside_temperature,
+            self.indoor_sensor_count,
+        ) = indoor_temperature_average(self.environment_sources)
 
     @staticmethod
     def _settings_are_valid(settings: dict) -> bool:
@@ -234,6 +261,13 @@ class HvacHardwareDaemon:
         current_temp = self.latest_inside_temperature
         now = time.time()
         if current_temp is None:
+            if self.current_state != "OFF" or self.sequence_state != "OFF":
+                print("[SAFETY] No valid indoor temperature is available. Turning HVAC outputs off.")
+                self.current_state = "OFF"
+                self.sequence_state = "OFF"
+                self.pending_state = None
+                self.active_run_started_at = None
+                self._write_relays("OFF")
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -340,6 +374,7 @@ class HvacHardwareDaemon:
         """Pushes health data updates back out over the broker line to feed adaptive layouts."""
         telemetry_packet = {
             "temperature": current_temp,
+            "indoor_sensor_count": self.indoor_sensor_count,
             "hvac_state": self.current_state,
             "hvac_in_rest": self.in_rest_period,
             "hvac_sequence_state": self.sequence_state,
