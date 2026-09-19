@@ -1,11 +1,288 @@
+import datetime
 import json
+import logging
+import math
+import os
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSpinBox,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QPointF, QRectF
+from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 
 from libraries.hvac_settings import HvacSettingsStore
+
+LOGGER = logging.getLogger(__name__)
+
+
+class ClimateHistoryStore:
+    """Persists a rolling climate and HVAC relay history for validation."""
+
+    STORAGE_PATH = Path("/mnt/WatsonHome/home_climate_history.json")
+    RETENTION_PERIOD = datetime.timedelta(hours=24)
+
+    def __init__(self, storage_path=None):
+        self.storage_path = Path(storage_path or self.STORAGE_PATH)
+        self.samples = []
+        self._storage_warning_logged = False
+        self._load_recent()
+
+    def _load_recent(self):
+        if not self.storage_path.is_file():
+            return
+        try:
+            with self.storage_path.open("r", encoding="utf-8") as history_file:
+                payload = json.load(history_file)
+            self.samples = [
+                {
+                    **item,
+                    "timestamp": datetime.datetime.fromisoformat(item["timestamp"]),
+                }
+                for item in payload.get("samples", [])
+            ]
+            self._prune(datetime.datetime.now())
+        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            LOGGER.warning("Unable to load climate history from %s: %s", self.storage_path, exc)
+            self.samples = []
+
+    def _prune(self, reference_time):
+        cutoff = reference_time - self.RETENTION_PERIOD
+        self.samples = [
+            sample
+            for sample in self.samples
+            if cutoff <= sample["timestamp"] <= reference_time
+        ]
+
+    def add_sample(
+        self,
+        timestamp,
+        indoor_temperatures,
+        outdoor_temperature,
+        heating_setpoint,
+        cooling_setpoint,
+        heater_on,
+        cooler_on,
+        fan_on,
+    ):
+        self._prune(timestamp)
+        self.samples.append(
+            {
+                "timestamp": timestamp,
+                "indoor_temperatures": dict(indoor_temperatures),
+                "outdoor_temperature": outdoor_temperature,
+                "heating_setpoint": float(heating_setpoint),
+                "cooling_setpoint": float(cooling_setpoint),
+                "heater_on": bool(heater_on),
+                "cooler_on": bool(cooler_on),
+                "fan_on": bool(fan_on),
+            }
+        )
+        self._write()
+
+    def _write(self):
+        if not self.storage_path.parent.is_dir():
+            if not self._storage_warning_logged:
+                LOGGER.warning(
+                    "Climate history storage is unavailable: %s",
+                    self.storage_path.parent,
+                )
+                self._storage_warning_logged = True
+            return
+
+        payload = {
+            "samples": [
+                {
+                    **sample,
+                    "timestamp": sample["timestamp"].isoformat(timespec="seconds"),
+                }
+                for sample in self.samples
+            ]
+        }
+        temporary_path = self.storage_path.with_suffix(".tmp")
+        try:
+            with temporary_path.open("w", encoding="utf-8") as history_file:
+                json.dump(payload, history_file, separators=(",", ":"))
+                history_file.flush()
+                os.fsync(history_file.fileno())
+            os.replace(temporary_path, self.storage_path)
+        except OSError as exc:
+            LOGGER.warning("Unable to save climate history to %s: %s", self.storage_path, exc)
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+
+
+class ClimateValidationChart(QWidget):
+    """Plots sensor temperatures and HVAC output command intervals."""
+
+    INDOOR_COLORS = (
+        QColor("#2ca02c"),
+        QColor("#9467bd"),
+        QColor("#17becf"),
+        QColor("#e377c2"),
+        QColor("#bcbd22"),
+    )
+
+    def __init__(self):
+        super().__init__()
+        self.samples = []
+        self.setMinimumHeight(250)
+
+    def set_samples(self, samples):
+        self.samples = list(samples)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor("#ffffff"))
+
+        source_names = sorted(
+            {
+                source
+                for sample in self.samples
+                for source in sample.get("indoor_temperatures", {})
+            }
+        )
+
+        left, right, top, bottom = 52, 24, 58, 30
+        plot = QRectF(
+            left,
+            top,
+            max(1, self.width() - left - right),
+            max(1, self.height() - top - bottom),
+        )
+        window_end = datetime.datetime.now()
+        window_start = window_end - ClimateHistoryStore.RETENTION_PERIOD
+
+        painter.setPen(QPen(QColor("#202020"), 1))
+        painter.drawText(8, 16, "Climate validation (last 24 hours)")
+        painter.drawText(8, 32, "Indoor sensors:")
+        legend_x = 96
+        for index, source in enumerate(source_names):
+            painter.setPen(self.INDOOR_COLORS[index % len(self.INDOOR_COLORS)])
+            painter.drawText(legend_x, 32, source)
+            legend_x += painter.fontMetrics().horizontalAdvance(source) + 14
+        painter.setPen(QPen(QColor("#202020"), 1))
+        painter.drawText(
+            8,
+            48,
+            "Outdoor: black | "
+            "Cool: blue | Heat: brown | Fan: gray | Fault: red",
+        )
+        painter.drawRect(plot)
+
+        temperatures = []
+        for sample in self.samples:
+            temperatures.extend(sample.get("indoor_temperatures", {}).values())
+            outdoor = sample.get("outdoor_temperature")
+            if outdoor is not None:
+                temperatures.append(outdoor)
+            temperatures.extend(
+                (
+                    sample.get("heating_setpoint"),
+                    sample.get("cooling_setpoint"),
+                )
+            )
+        temperatures = [float(value) for value in temperatures if value is not None]
+        if temperatures:
+            chart_min = math.floor(min(temperatures) - 1.0)
+            chart_max = math.ceil(max(temperatures) + 1.0)
+            if chart_max <= chart_min:
+                chart_max = chart_min + 2.0
+        else:
+            chart_min, chart_max = 15.0, 30.0
+
+        def point_for(timestamp, temperature):
+            seconds = (timestamp - window_start).total_seconds()
+            x = plot.left() + plot.width() * seconds / ClimateHistoryStore.RETENTION_PERIOD.total_seconds()
+            y = plot.bottom() - (
+                (temperature - chart_min) / (chart_max - chart_min) * plot.height()
+            )
+            return QPointF(x, y)
+
+        for hour in range(0, 25, 2):
+            x = plot.left() + plot.width() * hour / 24
+            painter.setPen(QPen(QColor("#e0e0e0"), 1))
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()))
+            painter.setPen(QColor("#404040"))
+            painter.setFont(QFont("Arial", 8))
+            painter.drawText(
+                int(x - 14),
+                self.height() - 8,
+                (window_start + datetime.timedelta(hours=hour)).strftime("%H:%M"),
+            )
+
+        step = 1.0 if chart_max - chart_min <= 12.0 else 2.0
+        tick = math.ceil(chart_min / step) * step
+        while tick <= chart_max + 1e-6:
+            y = point_for(window_start, tick).y()
+            painter.setPen(QPen(QColor("#eaeaea"), 1))
+            painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
+            painter.setPen(QColor("#505050"))
+            painter.setFont(QFont("Arial", 8))
+            painter.drawText(
+                QRectF(0, y - 8, left - 6, 16),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                f"{tick:.0f}°",
+            )
+            tick += step
+
+        for first, second in zip(self.samples, self.samples[1:]):
+            start = point_for(first["timestamp"], chart_min).x()
+            end = point_for(second["timestamp"], chart_min).x()
+            heater_on = first.get("heater_on", False)
+            cooler_on = first.get("cooler_on", False)
+            fan_on = first.get("fan_on", False)
+            unsafe = (heater_on and cooler_on) or (
+                (heater_on or cooler_on) and not fan_on
+            )
+            if unsafe:
+                painter.setBrush(QBrush(QColor(220, 53, 69, 105)))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRect(QRectF(start, plot.top(), end - start, plot.height()))
+            elif cooler_on:
+                target_y = point_for(first["timestamp"], first["cooling_setpoint"]).y()
+                painter.setBrush(QBrush(QColor(0, 122, 255, 85)))
+                painter.setPen(QPen(QColor("#007aff"), 1))
+                painter.drawRect(QRectF(start, target_y, end - start, plot.bottom() - target_y))
+            elif heater_on:
+                target_y = point_for(first["timestamp"], first["heating_setpoint"]).y()
+                painter.setBrush(QBrush(QColor(139, 69, 19, 85)))
+                painter.setPen(QPen(QColor("#8b4513"), 1))
+                painter.drawRect(QRectF(start, target_y, end - start, plot.bottom() - target_y))
+
+            if fan_on:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QBrush(QColor(128, 128, 128, 180)))
+                painter.drawRect(QRectF(start, plot.bottom() - 6, end - start, 6))
+
+        for index, source in enumerate(source_names):
+            painter.setPen(QPen(self.INDOOR_COLORS[index % len(self.INDOOR_COLORS)], 2))
+            for first, second in zip(self.samples, self.samples[1:]):
+                first_temperature = first.get("indoor_temperatures", {}).get(source)
+                second_temperature = second.get("indoor_temperatures", {}).get(source)
+                if first_temperature is not None and second_temperature is not None:
+                    painter.drawLine(
+                        point_for(first["timestamp"], first_temperature),
+                        point_for(second["timestamp"], second_temperature),
+                    )
+
+        painter.setPen(QPen(QColor("#202020"), 2, Qt.PenStyle.DashLine))
+        for first, second in zip(self.samples, self.samples[1:]):
+            first_temperature = first.get("outdoor_temperature")
+            second_temperature = second.get("outdoor_temperature")
+            if first_temperature is not None and second_temperature is not None:
+                painter.drawLine(
+                    point_for(first["timestamp"], first_temperature),
+                    point_for(second["timestamp"], second_temperature),
+                )
+
+        if not self.samples:
+            painter.setPen(QColor("#606060"))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "Waiting for climate samples")
 
 
 class HvacConfigurationPage(QWidget):
@@ -78,12 +355,31 @@ class HvacConfigurationPage(QWidget):
         )
         self.main_layout.addLayout(timings_layout)
 
+        relay_layout = QHBoxLayout()
+        relay_layout.setSpacing(10)
+        self.heater_relay_indicator = self._build_relay_indicator("Heater")
+        self.cooler_relay_indicator = self._build_relay_indicator("Cooler")
+        self.fan_relay_indicator = self._build_relay_indicator("Fan")
+        relay_layout.addWidget(self.heater_relay_indicator)
+        relay_layout.addWidget(self.cooler_relay_indicator)
+        relay_layout.addWidget(self.fan_relay_indicator)
+        self.main_layout.addLayout(relay_layout)
+
         # Diagnostics / Status Bar Footer Readout
         self.status_lbl = QLabel("System Status: Idle (OFF) | Interlocks Free")
         self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
         self.status_lbl.setStyleSheet("color: #777777;")
         self.main_layout.addWidget(self.status_lbl)
+
+        self.climate_history = ClimateHistoryStore()
+        self.climate_chart = ClimateValidationChart()
+        self.climate_chart.set_samples(self.climate_history.samples)
+        self.main_layout.addWidget(self.climate_chart, 1)
+        self._latest_climate_telemetry = None
+        self.climate_sample_timer = QTimer(self)
+        self.climate_sample_timer.timeout.connect(self._record_climate_sample)
+        self.climate_sample_timer.start(15_000)
 
     def _build_temp_picker(self, title_text: str, target_var: str) -> QWidget:
         """Helper matrix producing large touch-friendly increment panels."""
@@ -145,6 +441,33 @@ class HvacConfigurationPage(QWidget):
         setattr(self, f"{target_var}_picker", picker)
         layout.addWidget(picker)
         return container
+
+    @staticmethod
+    def _build_relay_indicator(name: str) -> QLabel:
+        indicator = QLabel(f"{name}\nOFF")
+        indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        indicator.setMinimumHeight(54)
+        indicator.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        indicator.setStyleSheet(
+            "background-color: #eeeeee; color: #606060; "
+            "border: 1px solid #aaaaaa; border-radius: 4px;"
+        )
+        return indicator
+
+    @staticmethod
+    def _set_relay_indicator(indicator: QLabel, name: str, is_on: bool, color: str):
+        if is_on:
+            indicator.setText(f"{name}\nON")
+            indicator.setStyleSheet(
+                f"background-color: {color}; color: white; "
+                "border: 1px solid #555555; border-radius: 4px;"
+            )
+        else:
+            indicator.setText(f"{name}\nOFF")
+            indicator.setStyleSheet(
+                "background-color: #eeeeee; color: #606060; "
+                "border: 1px solid #aaaaaa; border-radius: 4px;"
+            )
 
     def _adjust_value(self, target_var: str, amount: float):
         """Processes logic steps securely before formatting outbound communication payloads."""
@@ -232,10 +555,31 @@ class HvacConfigurationPage(QWidget):
         current_state: str,
         is_resting: bool,
         sequence_state: str = "OFF",
+        heater_relay_on: bool = False,
+        cooler_relay_on: bool = False,
+        fan_relay_on: bool = False,
     ):
         """Updates diagnostic fields based on messages coming back from your Pi's hardware daemon."""
         self.system_mode = current_state
         self.is_resting = is_resting
+        self._set_relay_indicator(
+            self.heater_relay_indicator,
+            "Heater",
+            heater_relay_on,
+            "#8b4513",
+        )
+        self._set_relay_indicator(
+            self.cooler_relay_indicator,
+            "Cooler",
+            cooler_relay_on,
+            "#007aff",
+        )
+        self._set_relay_indicator(
+            self.fan_relay_indicator,
+            "Fan",
+            fan_relay_on,
+            "#808080",
+        )
 
         if is_resting:
             status_text = "System State: Rest period active"
@@ -254,6 +598,54 @@ class HvacConfigurationPage(QWidget):
             self.status_lbl.setStyleSheet("color: #007aff; font-weight: bold;")
         else:
             self.status_lbl.setStyleSheet("color: #777777;")
+
+    def update_climate_telemetry(self, data: dict):
+        self._latest_climate_telemetry = data
+
+    @staticmethod
+    def _temperature(source):
+        for key in ("temperature", "outside_temp", "outdoor_temp", "room_temp"):
+            value = source.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _record_climate_sample(self):
+        if self._latest_climate_telemetry is None:
+            return
+
+        sources = self._latest_climate_telemetry.get("environment_sources", {})
+        indoor_temperatures = {}
+        for source_name, source in sources.items():
+            if source_name == "Ecowitt" or not isinstance(source, dict):
+                continue
+            temperature = self._temperature(source)
+            if temperature is not None:
+                indoor_temperatures[source_name] = temperature
+
+        outdoor_source = sources.get("Ecowitt", {})
+        outdoor_temperature = (
+            self._temperature(outdoor_source)
+            if isinstance(outdoor_source, dict)
+            else None
+        )
+        if not indoor_temperatures and outdoor_temperature is None:
+            return
+
+        self.climate_history.add_sample(
+            datetime.datetime.now(),
+            indoor_temperatures,
+            outdoor_temperature,
+            self.t_min,
+            self.t_max,
+            self._latest_climate_telemetry.get("heater_relay_on", False),
+            self._latest_climate_telemetry.get("cooler_relay_on", False),
+            self._latest_climate_telemetry.get("fan_relay_on", False),
+        )
+        self.climate_chart.set_samples(self.climate_history.samples)
 
     def _emit_current_configuration(self):
         """Constructs the canonical JSON packet definition required by your background daemon."""

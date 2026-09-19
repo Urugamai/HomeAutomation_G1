@@ -151,10 +151,14 @@ class MainWindow(QMainWindow):
                 current_run_state,
                 is_resting,
                 sequence_state,
+                data.get("heater_relay_on", False),
+                data.get("cooler_relay_on", False),
+                data.get("fan_relay_on", False),
             )
             self.dashboard.hvac_config_tab.apply_settings(
                 data.get("hvac_settings", {})
             )
+            self.dashboard.hvac_config_tab.update_climate_telemetry(data)
 
     def _set_cbus_device(self, address, is_on, brightness):
         self.mqtt_listener.set_cbus_device(address, is_on, brightness)

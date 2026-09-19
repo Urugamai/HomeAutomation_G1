@@ -54,6 +54,9 @@ class MqttTelemetryListener(QObject):
             "hvac_state": "OFF",
             "hvac_in_rest": False,
             "hvac_sequence_state": "OFF",
+            "heater_relay_on": False,
+            "cooler_relay_on": False,
+            "fan_relay_on": False,
             "hvac_settings": {},
             "forecast_set": [],
             "environment_sources": {},
@@ -127,6 +130,8 @@ class MqttTelemetryListener(QObject):
                 self._update_cached_float("wind_gust", data, "wind_gust", "windgust")
                 self._update_cached_float(
                     "wind_direction", data, "wind_direction", "winddir")
+            elif topic == "home/environment/inside":
+                self._update_hvac_status(data)
             elif topic == "home/environment/forecast":
                 if "forecast_set" in data:
                     self._update_persistent_forecast_cache(data["forecast_set"])
@@ -183,6 +188,20 @@ class MqttTelemetryListener(QObject):
         self.cached_data["hvac_sequence_state"] = data.get(
             "hvac_sequence_state", "OFF"
         )
+
+    def _update_hvac_status(self, data):
+        self.cached_data["hvac_state"] = data.get(
+            "hvac_state", self.cached_data["hvac_state"]
+        )
+        self.cached_data["hvac_in_rest"] = bool(
+            data.get("hvac_in_rest", self.cached_data["hvac_in_rest"])
+        )
+        self.cached_data["hvac_sequence_state"] = data.get(
+            "hvac_sequence_state", self.cached_data["hvac_sequence_state"]
+        )
+        for key in ("heater_relay_on", "cooler_relay_on", "fan_relay_on"):
+            if key in data:
+                self.cached_data[key] = bool(data[key])
 
     def _process_cbus_message(self, topic, data):
         parts = topic.split("/")

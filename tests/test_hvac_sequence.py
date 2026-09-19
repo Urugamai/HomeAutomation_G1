@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import controllers.hvac_daemon as hvac_daemon
@@ -7,6 +9,28 @@ from libraries.hvac_settings import HvacSettingsStore
 class _MqttClient:
     def publish(self, *args, **kwargs):
         pass
+
+
+class _RecordingMqttClient:
+    def __init__(self):
+        self.messages = []
+
+    def publish(self, topic, payload):
+        self.messages.append((topic, json.loads(payload)))
+
+
+def test_hvac_status_includes_commanded_relay_states():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+
+    controller._write_relays("HEATING")
+    controller._broadcast_status_telemetry(19.0)
+
+    topic, payload = controller.client.messages[-1]
+    assert topic == "home/environment/inside"
+    assert payload["heater_relay_on"] is True
+    assert payload["cooler_relay_on"] is False
+    assert payload["fan_relay_on"] is True
 
 
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):

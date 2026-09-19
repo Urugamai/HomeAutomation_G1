@@ -64,6 +64,9 @@ class HvacHardwareDaemon:
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
         self.latest_inside_temperature = None
+        self.heater_relay_on = False
+        self.cooler_relay_on = False
+        self.fan_relay_on = False
 
         # Initialize physical bus frameworks
         if IS_RASPI and smbus2:
@@ -200,6 +203,10 @@ class HvacHardwareDaemon:
         Enforces a strict mutually exclusive mechanical/software configuration:
         Relay 1 (Heating) and Relay 2 (Cooling) can NEVER be driven hot simultaneously.
         """
+        self.heater_relay_on = mode == "HEATING"
+        self.cooler_relay_on = mode == "COOLING"
+        self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
         if not IS_RASPI or not self.bus:
             return
 
@@ -336,6 +343,9 @@ class HvacHardwareDaemon:
             "hvac_state": self.current_state,
             "hvac_in_rest": self.in_rest_period,
             "hvac_sequence_state": self.sequence_state,
+            "heater_relay_on": self.heater_relay_on,
+            "cooler_relay_on": self.cooler_relay_on,
+            "fan_relay_on": self.fan_relay_on,
         }
         # Publish to separate sensor node trace targets to ensure clean modular consumption loops
         self.client.publish("home/environment/inside", json.dumps(telemetry_packet))
