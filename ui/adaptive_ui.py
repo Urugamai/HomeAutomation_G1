@@ -45,6 +45,7 @@ class PowerHistoryStore:
                 (
                     datetime.datetime.fromisoformat(item["timestamp"]),
                     float(item["power_kw"]),
+                    float(item["solar_kw"]) if item.get("solar_kw") is not None else None,
                 )
                 for item in payload.get("samples", [])
             ]
@@ -56,14 +57,20 @@ class PowerHistoryStore:
     def _prune(self, reference_time):
         cutoff = reference_time - self.RETENTION_PERIOD
         self.samples = [
-            (timestamp, power_kw)
-            for timestamp, power_kw in self.samples
+            (timestamp, power_kw, solar_kw)
+            for timestamp, power_kw, solar_kw in self.samples
             if cutoff <= timestamp <= reference_time
         ]
 
-    def add_sample(self, timestamp, power_kw):
+    def add_sample(self, timestamp, power_kw, solar_kw=None):
         self._prune(timestamp)
-        self.samples.append((timestamp, float(power_kw)))
+        self.samples.append(
+            (
+                timestamp,
+                float(power_kw),
+                float(solar_kw) if solar_kw is not None else None,
+            )
+        )
         self._write()
 
     def _write(self):
@@ -81,8 +88,9 @@ class PowerHistoryStore:
                 {
                     "timestamp": timestamp.isoformat(timespec="seconds"),
                     "power_kw": power_kw,
+                    **({"solar_kw": solar_kw} if solar_kw is not None else {}),
                 }
-                for timestamp, power_kw in self.samples
+                for timestamp, power_kw, solar_kw in self.samples
             ],
         }
         temporary_path = self.storage_path.with_suffix(".tmp")
@@ -101,23 +109,26 @@ class PowerHistoryStore:
 
 
 class PowerConsumptionChart(QWidget):
-    """Paints a rolling 24-hour house power chart."""
+    """Paints rolling 24-hour house consumption and solar generation."""
 
     def __init__(self, grid_interval_hours=1):
         super().__init__()
         self.grid_interval_hours = int(grid_interval_hours)
         self.samples = []
         self.latest_power_kw = None
+        self.latest_solar_kw = None
         self.setMinimumHeight(150)
 
     def set_samples(self, samples):
         self.samples = list(samples)
         if self.samples:
             self.latest_power_kw = self.samples[-1][1]
+            self.latest_solar_kw = self.samples[-1][2]
         self.update()
 
-    def set_latest_power(self, power_kw):
+    def set_latest_power(self, power_kw, solar_kw):
         self.latest_power_kw = float(power_kw)
+        self.latest_solar_kw = float(solar_kw)
         self.update()
 
     def paintEvent(self, event):
@@ -134,11 +145,20 @@ class PowerConsumptionChart(QWidget):
 
         painter.setPen(QPen(QColor("#202020"), 1))
         latest_text = (
-            f"Latest: {self.latest_power_kw:.2f} kW"
+            f"Latest consumption: {self.latest_power_kw:.2f} kW"
             if self.latest_power_kw is not None
-            else "Latest: --"
+            else "Latest consumption: --"
         )
-        painter.drawText(8, 16, f"House power consumption (last 24 hours)   {latest_text}")
+        solar_text = (
+            f"Solar: {self.latest_solar_kw:.2f} kW"
+            if self.latest_solar_kw is not None
+            else "Solar: --"
+        )
+        painter.drawText(
+            8,
+            16,
+            f"House power (last 24 hours)   {latest_text}   {solar_text}",
+        )
         painter.drawRect(plot)
 
         # X-axis time grid lines and labels
@@ -158,7 +178,12 @@ class PowerConsumptionChart(QWidget):
             )
 
         if self.samples:
-            values = [value for _, value in self.samples]
+            values = [
+                value
+                for _, power_kw, solar_kw in self.samples
+                for value in (power_kw, solar_kw)
+                if value is not None
+            ]
             minimum = min(values)
             maximum = max(values)
             raw_min = min(0.0, minimum)
@@ -239,10 +264,11 @@ class PowerConsumptionChart(QWidget):
 
         green_pen = QPen(QColor("#2ca02c"), 2)
         red_pen = QPen(QColor("#d62728"), 2)
+        solar_pen = QPen(QColor("#ff9800"), 2)
 
         for i in range(len(self.samples) - 1):
-            t1, v1 = self.samples[i]
-            t2, v2 = self.samples[i + 1]
+            t1, v1, _ = self.samples[i]
+            t2, v2, _ = self.samples[i + 1]
             p1 = point_for(t1, v1)
             p2 = point_for(t2, v2)
 
@@ -266,6 +292,13 @@ class PowerConsumptionChart(QWidget):
                     painter.drawLine(p1, pz)
                     painter.setPen(green_pen)
                     painter.drawLine(pz, p2)
+
+        for i in range(len(self.samples) - 1):
+            t1, _, solar1 = self.samples[i]
+            t2, _, solar2 = self.samples[i + 1]
+            if solar1 is not None and solar2 is not None:
+                painter.setPen(solar_pen)
+                painter.drawLine(point_for(t1, solar1), point_for(t2, solar2))
 
 class HighResZeroCenteredBar(QWidget):
     """A custom graphical meter that dynamically paints vector bars relative to a central zero."""
@@ -548,6 +581,7 @@ class AdaptiveDashboard(QWidget):
         self.power_chart = PowerConsumptionChart(power_chart_grid_interval_hours)
         self.main_layout.addWidget(self.power_chart, 1)
         self._latest_power_sample = None
+        self._latest_solar_sample = None
         self.power_sample_timer = QTimer(self)
         self.power_sample_timer.timeout.connect(self._record_power_sample)
         self.power_sample_timer.start(15_000)
@@ -607,14 +641,19 @@ class AdaptiveDashboard(QWidget):
 
     def refresh_telemetry_ui(self, data: dict):
         try:
+            self._latest_solar_sample = float(data.get("solar_power", 0.0))
             self._latest_power_sample = (
-                float(data.get("solar_power", 0.0))
+                self._latest_solar_sample
                 - float(data.get("battery_flow", 0.0))
                 - float(data.get("grid_flow", 0.0))
             )
-            self.power_chart.set_latest_power(self._latest_power_sample)
+            self.power_chart.set_latest_power(
+                self._latest_power_sample,
+                self._latest_solar_sample,
+            )
         except (TypeError, ValueError):
             self._latest_power_sample = None
+            self._latest_solar_sample = None
 
         if self.temp_lbl.isVisible():
             l_temp = data.get("living_temp", 0.0)
@@ -658,6 +697,7 @@ class AdaptiveDashboard(QWidget):
         self.power_history.add_sample(
             datetime.datetime.now(),
             self._latest_power_sample,
+            self._latest_solar_sample,
         )
         self.power_chart.set_samples(self.power_history.samples)
 

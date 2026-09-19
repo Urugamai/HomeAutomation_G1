@@ -34,23 +34,42 @@ def test_load_keeps_only_rolling_24_hour_window(tmp_path):
 
     history = PowerHistoryStore(storage_path)
 
-    assert history.samples == [(now - datetime.timedelta(hours=23), 2.0)]
+    assert history.samples == [(now - datetime.timedelta(hours=23), 2.0, None)]
 
 
 def test_add_sample_discards_samples_older_than_24_hours(tmp_path):
     history = PowerHistoryStore(tmp_path / "home_power_history.json")
     now = datetime.datetime.now().replace(microsecond=0)
     history.samples = [
-        (now - datetime.timedelta(hours=24, seconds=1), 1.0),
-        (now - datetime.timedelta(hours=23), 2.0),
+        (now - datetime.timedelta(hours=24, seconds=1), 1.0, None),
+        (now - datetime.timedelta(hours=23), 2.0, None),
     ]
 
-    history.add_sample(now, 3.0)
+    history.add_sample(now, 3.0, 1.5)
 
     assert history.samples == [
-        (now - datetime.timedelta(hours=23), 2.0),
-        (now, 3.0),
+        (now - datetime.timedelta(hours=23), 2.0, None),
+        (now, 3.0, 1.5),
     ]
+
+
+def test_add_sample_persists_solar_generation(tmp_path):
+    storage_path = tmp_path / "home_power_history.json"
+    history = PowerHistoryStore(storage_path)
+    now = datetime.datetime.now().replace(microsecond=0)
+
+    history.add_sample(now, 2.0, 1.25)
+
+    assert json.loads(storage_path.read_text(encoding="utf-8")) == {
+        "samples": [
+            {
+                "timestamp": now.isoformat(),
+                "power_kw": 2.0,
+                "solar_kw": 1.25,
+            }
+        ]
+    }
+    assert PowerHistoryStore(storage_path).samples == [(now, 2.0, 1.25)]
 
 
 def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
