@@ -68,8 +68,6 @@ class LivingAreaHardwareController:
             return
 
         try:
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setwarnings(False)
             self.bus = smbus2.SMBus(self.I2C_BUS_ID)
 
             for addr in [self.ADDR_BME_MAIN, self.ADDR_BME_ALT]:
