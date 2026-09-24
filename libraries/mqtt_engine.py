@@ -184,11 +184,12 @@ class MqttTelemetryListener(QObject):
         )
         self._update_cached_float("room_humidity", data, "humidity")
         self._update_cached_float("room_pressure", data, "pressure")
-        self.cached_data["hvac_state"] = data.get("hvac_state", "OFF")
-        self.cached_data["hvac_in_rest"] = bool(data.get("hvac_in_rest", False))
-        self.cached_data["hvac_sequence_state"] = data.get(
-            "hvac_sequence_state", "OFF"
-        )
+        if "hvac_state" in data:
+            self.cached_data["hvac_state"] = data["hvac_state"]
+        if "hvac_in_rest" in data:
+            self.cached_data["hvac_in_rest"] = bool(data["hvac_in_rest"])
+        if "hvac_sequence_state" in data:
+            self.cached_data["hvac_sequence_state"] = data["hvac_sequence_state"]
 
     def _update_hvac_status(self, data):
         self.cached_data["hvac_state"] = data.get(
