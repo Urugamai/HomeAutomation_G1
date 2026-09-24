@@ -179,7 +179,10 @@ def test_manual_commands_toggle_relays_without_temperature_telemetry(
 
     controller._handle_manual_command(action)
 
-    assert controller.manual_target == action
+    expected_target = "OFF" if action == "FAN" else action
+    assert controller.manual_target == expected_target
+    if action == "FAN":
+        assert controller.manual_fan_requested is True
     assert controller.sequence_state == sequence_state
 
     controller._handle_manual_command(action)
@@ -190,7 +193,30 @@ def test_manual_commands_toggle_relays_without_temperature_telemetry(
     assert controller.sequence_state == "OFF"
 
 
-def test_manual_fan_toggle_never_turns_fan_off_during_heating(monkeypatch):
+def test_manual_fan_remains_on_after_heating_is_turned_off():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    commands = []
+
+    def write_relays(mode):
+        commands.append(mode)
+        controller.heater_relay_on = mode == "HEATING"
+        controller.cooler_relay_on = mode == "COOLING"
+        controller.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+    controller._write_relays = write_relays
+
+    controller._handle_manual_command("HEATING")
+    controller._handle_manual_command("FAN")
+    controller._handle_manual_command("HEATING")
+
+    assert controller.manual_target == "OFF"
+    assert controller.manual_fan_requested is True
+    assert controller.sequence_state == "MANUAL_FAN"
+    assert commands == ["HEATING", "FAN"]
+
+
+def test_manual_fan_command_does_not_disable_manual_heating(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
     controller.latest_inside_temperature = 21.0
@@ -198,6 +224,8 @@ def test_manual_fan_toggle_never_turns_fan_off_during_heating(monkeypatch):
     controller.sequence_state = "HEATING"
     controller.active_run_started_at = 0.0
     controller.manual_target = "HEATING"
+    controller.heater_relay_on = True
+    controller.fan_relay_on = True
     commands = []
     monkeypatch.setattr(hvac_daemon.time, "time", lambda: 0.0)
     controller._write_relays = commands.append
@@ -205,7 +233,8 @@ def test_manual_fan_toggle_never_turns_fan_off_during_heating(monkeypatch):
     controller._handle_manual_command("FAN")
 
     assert controller.current_state == "HEATING"
-    assert controller.sequence_state == "HEATING"
+    assert controller.sequence_state == "MANUAL_HEATING"
+    assert controller.manual_fan_requested is True
     assert commands == []
 
 

@@ -71,6 +71,7 @@ class HvacHardwareDaemon:
         self.indoor_sensor_count = 0
         self.environment_sources = {}
         self.manual_target = None
+        self.manual_fan_requested = False
         self.heater_relay_on = False
         self.cooler_relay_on = False
         self.fan_relay_on = False
@@ -190,6 +191,7 @@ class HvacHardwareDaemon:
         with self._settings_lock:
             if action == "AUTO":
                 self.manual_target = None
+                self.manual_fan_requested = False
                 if self.sequence_state.startswith("MANUAL_"):
                     self.current_state = "OFF"
                     self.sequence_state = "OFF"
@@ -198,33 +200,12 @@ class HvacHardwareDaemon:
                     self._write_relays("OFF")
                 print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
             elif action == "FAN":
-                if self.current_state in ("HEATING", "COOLING"):
-                    print("[MANUAL CONTROL] Turn off heating or cooling before switching to fan-only mode.")
-                    return
-                if self.manual_target == "FAN":
-                    self.manual_target = "OFF"
-                    self.current_state = "OFF"
-                    self.sequence_state = "OFF"
-                    self._write_relays("OFF")
-                else:
-                    self.manual_target = "FAN"
-                    self.current_state = "OFF"
-                    self.sequence_state = "MANUAL_FAN"
-                    self._write_relays("FAN")
+                self.manual_target = self.manual_target or "OFF"
+                self.manual_fan_requested = not self.manual_fan_requested
             elif self.manual_target == action:
                 self.manual_target = "OFF"
-                self.current_state = "OFF"
-                self.sequence_state = "OFF"
-                self.pending_state = None
-                self.active_run_started_at = None
-                self._write_relays("OFF")
             else:
                 self.manual_target = action
-                self.current_state = action
-                self.sequence_state = f"MANUAL_{action}"
-                self.pending_state = None
-                self.active_run_started_at = None
-                self._write_relays(action)
 
             self._process_control_tick_locked()
 
@@ -284,6 +265,10 @@ class HvacHardwareDaemon:
         Commands the active-low Waveshare RPi Relay Board while enforcing
         mutually exclusive heating and cooling outputs.
         """
+        self.heater_relay_on = mode == "HEATING"
+        self.cooler_relay_on = mode == "COOLING"
+        self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
         if not self.gpio_ready:
             return
 
@@ -304,9 +289,6 @@ class HvacHardwareDaemon:
             else:
                 GPIO.output(self.RELAY_FAN, GPIO.HIGH)
 
-            self.heater_relay_on = mode == "HEATING"
-            self.cooler_relay_on = mode == "COOLING"
-            self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
         except Exception as e:
             print(f"[GPIO ERROR] Failed writing Waveshare relay outputs: {e}")
 
@@ -318,24 +300,17 @@ class HvacHardwareDaemon:
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
         current_temp = self.latest_inside_temperature
         now = time.time()
-        if self.manual_target == "FAN":
-            self.current_state = "OFF"
+        if self.manual_target is not None or self.manual_fan_requested:
+            mode = self._manual_mode()
+            self.current_state = mode if mode in ("HEATING", "COOLING") else "OFF"
             self.pending_state = None
-            self.sequence_state = "MANUAL_FAN"
-            if not self.fan_relay_on:
-                self._write_relays("FAN")
-            self._broadcast_status_telemetry(current_temp)
-            return
-
-        if self.manual_target in ("HEATING", "COOLING"):
-            self.current_state = self.manual_target
-            self.pending_state = None
-            self.sequence_state = f"MANUAL_{self.manual_target}"
+            self.sequence_state = "OFF" if mode == "OFF" else f"MANUAL_{mode}"
             if (
-                (self.manual_target == "HEATING" and not self.heater_relay_on)
-                or (self.manual_target == "COOLING" and not self.cooler_relay_on)
+                self.heater_relay_on != (mode == "HEATING")
+                or self.cooler_relay_on != (mode == "COOLING")
+                or self.fan_relay_on != (mode in ("HEATING", "COOLING", "FAN"))
             ):
-                self._write_relays(self.manual_target)
+                self._write_relays(mode)
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -409,6 +384,13 @@ class HvacHardwareDaemon:
             return "COOLING"
         return "OFF"
 
+    def _manual_mode(self) -> str:
+        if self.manual_target in ("HEATING", "COOLING"):
+            return self.manual_target
+        if self.manual_fan_requested:
+            return "FAN"
+        return "OFF"
+
     def _start_preheat(self, target_state: str, now: float):
         self.pending_state = target_state
         self.sequence_state = "PREHEAT"
@@ -456,7 +438,11 @@ class HvacHardwareDaemon:
         telemetry_packet = {
             "temperature": current_temp,
             "indoor_sensor_count": self.indoor_sensor_count,
-            "hvac_control_mode": "MANUAL" if self.manual_target is not None else "AUTO",
+            "hvac_control_mode": (
+                "MANUAL"
+                if self.manual_target is not None or self.manual_fan_requested
+                else "AUTO"
+            ),
             "hvac_state": self.current_state,
             "hvac_in_rest": self.in_rest_period,
             "hvac_sequence_state": self.sequence_state,
