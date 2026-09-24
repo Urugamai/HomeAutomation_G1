@@ -2,12 +2,14 @@ import sys
 import os
 import time
 import configparser
+import subprocess
 import traceback
 import socket
 from pathlib import Path
 from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton, QWidget)
+    QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton, QMessageBox,
+    QWidget)
 
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
@@ -17,6 +19,7 @@ from libraries.mqtt_engine import MqttTelemetryListener
 HOME_CONTROLLER_CONFIG_PATH = (
     Path(__file__).resolve().parent / "config" / "home-controller-host-config.yml"
 )
+HEARTBEAT_PATH = Path("/run/home-controller/heartbeat")
 
 
 def _load_power_chart_grid_interval(hostname):
@@ -69,6 +72,10 @@ class MainWindow(QMainWindow):
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._sleep_display)
         QApplication.instance().installEventFilter(self)
+        self._heartbeat_timer = QTimer(self)
+        self._heartbeat_timer.timeout.connect(self._write_heartbeat)
+        self._heartbeat_timer.start(30_000)
+        self._write_heartbeat()
 
         self.tabs = QTabWidget()
 
@@ -108,6 +115,14 @@ class MainWindow(QMainWindow):
             self.exit_button.setToolTip("Exit the testing display")
             self.exit_button.clicked.connect(QApplication.instance().quit)
             self.status_bar.addPermanentWidget(self.exit_button)
+        else:
+            self.reboot_button = QPushButton("Reboot system")
+            self.reboot_button.setToolTip("Restart this Raspberry Pi")
+            self.reboot_button.setStyleSheet(
+                "background-color: #b00020; color: white; font-weight: bold;"
+            )
+            self.reboot_button.clicked.connect(self._confirm_reboot)
+            self.status_bar.addPermanentWidget(self.reboot_button)
 
         # 3. FIXED: Force the application frame to draw without window borders in full screen
         self.showFullScreen()  # <--- REMOVE ANY LATER .show() AND CALL THIS INSIDE THE CONSTRUCTOR
@@ -166,6 +181,39 @@ class MainWindow(QMainWindow):
     def _set_cbus_device(self, address, is_on, brightness):
         self.mqtt_listener.set_cbus_device(address, is_on, brightness)
 
+    def _write_heartbeat(self):
+        try:
+            HEARTBEAT_PATH.touch(exist_ok=True)
+        except OSError as error:
+            print(f"[WATCHDOG ERROR] Unable to update heartbeat: {error}")
+
+    def _confirm_reboot(self):
+        choice = QMessageBox.question(
+            self,
+            "Restart Raspberry Pi",
+            "Restart the Raspberry Pi now? All home automation services will stop briefly.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+
+        self.reboot_button.setEnabled(False)
+        self.status_bar.showMessage("Restarting Raspberry Pi...")
+        try:
+            subprocess.run(
+                ["sudo", "-n", "/usr/bin/systemctl", "reboot"],
+                check=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            self.reboot_button.setEnabled(True)
+            QMessageBox.critical(
+                self,
+                "Restart failed",
+                f"Unable to restart the Raspberry Pi: {error}",
+            )
+
     def eventFilter(self, watched, event):
         input_events = {
             QEvent.Type.MouseButtonPress,
@@ -197,6 +245,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         QApplication.instance().removeEventFilter(self)
         self._idle_timer.stop()
+        self._heartbeat_timer.stop()
         self.mqtt_listener.stop()
         super().closeEvent(event)
 

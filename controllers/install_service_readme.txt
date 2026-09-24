@@ -67,6 +67,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable home_controller.service
 sudo systemctl start home_controller.service
 
+# HOME CONTROLLER WATCHDOG AND REBOOT CONTROL
+sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller_watchdog.service /etc/systemd/system/
+sudo visudo -cf /home/markw/HomeAutomation_G1/controllers/home_controller_reboot.sudoers
+sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller_reboot.sudoers /etc/sudoers.d/home_controller_reboot
+sudo chmod 0440 /etc/sudoers.d/home_controller_reboot
+sudo systemctl daemon-reload
+sudo systemctl enable --now home_controller_watchdog.service
+
 # Verify the display controller logs
 sudo journalctl -u home_controller.service -f -n 20
 

@@ -17,6 +17,8 @@ ExecStart=/bin/bash /home/markw/HomeAutomation_G1/autostart.sh
 Restart=always
 RestartSec=10
 User=markw
+RuntimeDirectory=home-controller
+RuntimeDirectoryMode=0755
 StandardOutput=journal
 StandardError=journal
 

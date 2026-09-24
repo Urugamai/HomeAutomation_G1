@@ -13,12 +13,13 @@ services=(
     blinds.service
     hvac.service
     home_controller.service
+    home_controller_watchdog.service
 #    cbus.service
 )
 
 failed=0
 
-for service in living_zone.service hvac.service; do
+for service in living_zone.service hvac.service home_controller.service home_controller_watchdog.service; do
     source_file="$repo_root/controllers/$service"
     if [[ ! -f "$source_file" ]]; then
         echo "MISSING SERVICE FILE: $source_file"
@@ -32,6 +33,18 @@ for service in living_zone.service hvac.service; do
         failed=1
     fi
 done
+
+sudoers_file="$repo_root/controllers/home_controller_reboot.sudoers"
+if ! sudo visudo -cf "$sudoers_file"; then
+    echo "INVALID SUDOERS FILE: $sudoers_file"
+    failed=1
+else
+    echo "INSTALLING: home_controller_reboot.sudoers"
+    if ! sudo install -m 0440 "$sudoers_file" /etc/sudoers.d/home_controller_reboot; then
+        echo "FAILED TO INSTALL: home_controller_reboot.sudoers"
+        failed=1
+    fi
+fi
 
 sudo systemctl daemon-reload
 
