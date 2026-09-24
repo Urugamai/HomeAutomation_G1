@@ -12,10 +12,17 @@ if str(project_root) not in sys.path:
 
 try:
     import RPi.GPIO as GPIO
-    IS_RASPI = True
 except ImportError:
     GPIO = None
-    IS_RASPI = False
+
+try:
+    import lgpio
+except ImportError:
+    lgpio = None
+
+IS_RASPI = GPIO is not None or lgpio is not None
+RELAY_ON = 0
+RELAY_OFF = 1
 
 try:
     import paho.mqtt.client as mqtt
@@ -76,19 +83,81 @@ class HvacHardwareDaemon:
         self.cooler_relay_on = False
         self.fan_relay_on = False
         self.gpio_ready = False
+        self._gpio_backend = None
+        self._lgpio_chip = None
 
         if IS_RASPI:
-            try:
-                GPIO.setmode(GPIO.BCM)
-                GPIO.setwarnings(False)
-                for pin in (self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN):
-                    GPIO.setup(pin, GPIO.OUT, initial=GPIO.HIGH)
-                self.gpio_ready = True
-                self._write_relays("OFF")
-            except Exception as e:
-                print(f"[GPIO ERROR] Could not configure Waveshare relay board: {e}")
+            if GPIO is not None:
+                try:
+                    GPIO.setmode(GPIO.BCM)
+                    GPIO.setwarnings(False)
+                    for pin in (self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN):
+                        GPIO.setup(pin, GPIO.OUT, initial=GPIO.HIGH)
+                    self._gpio_backend = "rpi_gpio"
+                    self.gpio_ready = True
+                    self._write_relays("OFF")
+                except Exception as error:
+                    print(f"[GPIO WARN] RPi.GPIO initialization failed: {error}")
+            if not self.gpio_ready and lgpio is not None:
+                try:
+                    self._lgpio_chip = lgpio.gpiochip_open(0)
+                    for pin in (self.RELAY_HEAT, self.RELAY_COOL, self.RELAY_FAN):
+                        lgpio.gpio_claim_output(self._lgpio_chip, pin, RELAY_OFF)
+                    self._gpio_backend = "lgpio"
+                    self.gpio_ready = True
+                    self._write_relays("OFF")
+                    print("[GPIO] Using lgpio relay backend.")
+                except Exception as error:
+                    if self._lgpio_chip is not None:
+                        lgpio.gpiochip_close(self._lgpio_chip)
+                        self._lgpio_chip = None
+                    print(f"[GPIO ERROR] Could not configure lgpio relay outputs: {error}")
+            if not self.gpio_ready:
+                print(
+                    "[GPIO ERROR] Relay outputs are unavailable. Install python3-lgpio "
+                    "on newer Raspberry Pi hardware."
+                )
         else:
-            print("[GPIO ERROR] RPi.GPIO is unavailable; relay outputs are disabled.")
+            print("[GPIO ERROR] No supported GPIO library is available; relay outputs are disabled.")
+
+    def _write_relays(self, mode: str):
+        """
+        Commands the active-low Waveshare RPi Relay Board while enforcing
+        mutually exclusive heating and cooling outputs.
+        """
+        self.heater_relay_on = mode == "HEATING"
+        self.cooler_relay_on = mode == "COOLING"
+        self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+        if not self.gpio_ready:
+            return
+
+        try:
+            if self._gpio_backend == "lgpio":
+                write = lambda pin, value: lgpio.gpio_write(
+                    self._lgpio_chip, pin, value
+                )
+            else:
+                write = GPIO.output
+
+            # The Waveshare inputs are active-low. Drop both appliances first
+            # so no transition can briefly energize heating and cooling together.
+            write(self.RELAY_HEAT, RELAY_OFF)
+            write(self.RELAY_COOL, RELAY_OFF)
+
+            if mode == "HEATING":
+                write(self.RELAY_FAN, RELAY_ON)
+                write(self.RELAY_HEAT, RELAY_ON)
+            elif mode == "COOLING":
+                write(self.RELAY_FAN, RELAY_ON)
+                write(self.RELAY_COOL, RELAY_ON)
+            elif mode == "FAN":
+                write(self.RELAY_FAN, RELAY_ON)
+            else:
+                write(self.RELAY_FAN, RELAY_OFF)
+        except Exception as e:
+            print(f"[GPIO ERROR] Failed writing Waveshare relay outputs: {e}")
+
 
     def _load_broker_config(self) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -208,6 +277,7 @@ class HvacHardwareDaemon:
                 self.manual_target = action
 
             self._process_control_tick_locked()
+            print(f"[MANUAL CONTROL] Requested {action}; relay mode is {self._manual_mode()}.")
 
     def _record_environment_source(self, topic, payload):
         if topic == "home/environment/ecowitt":
@@ -259,38 +329,6 @@ class HvacHardwareDaemon:
             "max_run_seconds": self.max_run_seconds,
             "rest_seconds": self.rest_seconds,
         }
-
-    def _write_relays(self, mode: str):
-        """
-        Commands the active-low Waveshare RPi Relay Board while enforcing
-        mutually exclusive heating and cooling outputs.
-        """
-        self.heater_relay_on = mode == "HEATING"
-        self.cooler_relay_on = mode == "COOLING"
-        self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
-
-        if not self.gpio_ready:
-            return
-
-        try:
-            # The Waveshare inputs are active-low. Drop both appliances first
-            # so no transition can briefly energize heating and cooling together.
-            GPIO.output(self.RELAY_HEAT, GPIO.HIGH)
-            GPIO.output(self.RELAY_COOL, GPIO.HIGH)
-
-            if mode == "HEATING":
-                GPIO.output(self.RELAY_FAN, GPIO.LOW)
-                GPIO.output(self.RELAY_HEAT, GPIO.LOW)
-            elif mode == "COOLING":
-                GPIO.output(self.RELAY_FAN, GPIO.LOW)
-                GPIO.output(self.RELAY_COOL, GPIO.LOW)
-            elif mode == "FAN":
-                GPIO.output(self.RELAY_FAN, GPIO.LOW)
-            else:
-                GPIO.output(self.RELAY_FAN, GPIO.HIGH)
-
-        except Exception as e:
-            print(f"[GPIO ERROR] Failed writing Waveshare relay outputs: {e}")
 
     def _process_control_tick(self):
         with self._settings_lock:

@@ -7,7 +7,7 @@ On a new Raspberry Pi, assuming the repository is installed at
 <br>
 sudo apt update
 <br>
-sudo apt install -y python3-pyqt6 python3-paho-mqtt python-rpi.gpio
+sudo apt install -y python3-pyqt6 python3-paho-mqtt python-rpi.gpio python3-lgpio
 <br>
 cd /home/markw
 <br>

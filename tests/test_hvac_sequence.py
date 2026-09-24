@@ -48,6 +48,32 @@ class _FakeGpio:
         self.outputs[pin] = value
 
 
+class _FailingGpio:
+    HIGH = 1
+
+    def setmode(self, mode):
+        raise RuntimeError("Cannot determine SOC peripheral base address")
+
+
+class _FakeLgpio:
+    def __init__(self):
+        self.claims = []
+        self.writes = []
+
+    def gpiochip_open(self, chip):
+        assert chip == 0
+        return 1
+
+    def gpio_claim_output(self, chip, pin, value):
+        self.claims.append((chip, pin, value))
+
+    def gpio_write(self, chip, pin, value):
+        self.writes.append((chip, pin, value))
+
+    def gpiochip_close(self, chip):
+        raise AssertionError(f"Unexpected close for GPIO chip {chip}")
+
+
 def test_waveshare_relay_mapping_uses_active_low_gpio(monkeypatch):
     gpio = _FakeGpio()
     monkeypatch.setattr(hvac_daemon, "GPIO", gpio)
@@ -64,6 +90,29 @@ def test_waveshare_relay_mapping_uses_active_low_gpio(monkeypatch):
     assert controller.heater_relay_on is True
     assert controller.cooler_relay_on is False
     assert controller.fan_relay_on is True
+
+
+def test_waveshare_relay_mapping_falls_back_to_lgpio(monkeypatch):
+    lgpio = _FakeLgpio()
+    monkeypatch.setattr(hvac_daemon, "GPIO", _FailingGpio())
+    monkeypatch.setattr(hvac_daemon, "lgpio", lgpio)
+    monkeypatch.setattr(hvac_daemon, "IS_RASPI", True)
+
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller._write_relays("COOLING")
+
+    assert controller._gpio_backend == "lgpio"
+    assert lgpio.claims == [
+        (1, controller.RELAY_HEAT, 1),
+        (1, controller.RELAY_COOL, 1),
+        (1, controller.RELAY_FAN, 1),
+    ]
+    assert lgpio.writes[-4:] == [
+        (1, controller.RELAY_HEAT, 1),
+        (1, controller.RELAY_COOL, 1),
+        (1, controller.RELAY_FAN, 0),
+        (1, controller.RELAY_COOL, 0),
+    ]
 
 
 def test_hvac_controls_from_the_average_of_indoor_sources():
