@@ -11,33 +11,29 @@ services=(
     sigen_power.service
     charger.service
     blinds.service
+    hvac.service
     home_controller.service
 #    cbus.service
 )
 
 failed=0
 
-source_file="$repo_root/controllers/living_zone.service"
-if [[ ! -f "$source_file" ]]; then
-    echo "MISSING SERVICE FILE: $source_file"
-    failed=1
-else
-    echo "INSTALLING: living_zone.service"
-    if ! sudo install -m 0644 "$source_file" /etc/systemd/system/living_zone.service; then
-        echo "FAILED TO INSTALL: living_zone.service"
+for service in living_zone.service hvac.service; do
+    source_file="$repo_root/controllers/$service"
+    if [[ ! -f "$source_file" ]]; then
+        echo "MISSING SERVICE FILE: $source_file"
+        failed=1
+        continue
+    fi
+
+    echo "INSTALLING: $service"
+    if ! sudo install -m 0644 "$source_file" "/etc/systemd/system/$service"; then
+        echo "FAILED TO INSTALL: $service"
         failed=1
     fi
-fi
+done
 
 sudo systemctl daemon-reload
-
-if sudo systemctl cat "hvac.service" >/dev/null 2>&1; then
-    echo "DISABLING LEGACY: hvac.service"
-    if ! sudo systemctl disable --now "hvac.service" >/dev/null; then
-        echo "FAILED TO DISABLE LEGACY: hvac.service"
-        failed=1
-    fi
-fi
 
 for service in "${services[@]}"; do
     if ! sudo systemctl cat "$service" >/dev/null 2>&1; then

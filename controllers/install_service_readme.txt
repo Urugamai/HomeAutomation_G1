@@ -54,8 +54,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
 
-# Disable the legacy duplicate HVAC expander daemon.
-sudo systemctl disable --now hvac.service
+# HVAC RELAY CONTROLLER
+# Runs alongside living_zone.service, which publishes sensor telemetry.
+sudo cp /home/markw/HomeAutomation_G1/controllers/hvac.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable hvac.service
+sudo systemctl start hvac.service
 
 # HOME CONTROLLER DISPLAY
 sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller.service /etc/systemd/system/
