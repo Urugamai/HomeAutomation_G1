@@ -130,26 +130,64 @@ def test_hvac_turns_outputs_off_when_no_indoor_temperature_is_available():
     assert commands == ["OFF"]
 
 
-def test_manual_heat_waits_for_fan_lead_before_energizing_heater(monkeypatch):
+def test_manual_heat_toggles_the_heater_without_automatic_cycle_delays():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
-    controller.latest_inside_temperature = 21.0
     commands = []
-    clock = [0.0]
-    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
-    controller._write_relays = commands.append
+
+    def write_relays(mode):
+        commands.append(mode)
+        controller.heater_relay_on = mode == "HEATING"
+        controller.cooler_relay_on = mode == "COOLING"
+        controller.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+    controller._write_relays = write_relays
 
     controller._handle_manual_command("HEATING")
 
     assert controller.manual_target == "HEATING"
-    assert controller.sequence_state == "PREHEAT"
-    assert commands == ["FAN"]
-
-    clock[0] = controller.fan_preheat_seconds
-    controller._process_control_tick()
-
     assert controller.current_state == "HEATING"
-    assert commands[-1] == "HEATING"
+    assert controller.sequence_state == "MANUAL_HEATING"
+    assert commands == ["HEATING"]
+
+    controller._handle_manual_command("HEATING")
+
+    assert controller.manual_target == "OFF"
+    assert controller.current_state == "OFF"
+    assert controller.sequence_state == "OFF"
+    assert commands[-1] == "OFF"
+
+
+@pytest.mark.parametrize(
+    ("action", "sequence_state"),
+    (("COOLING", "MANUAL_COOLING"), ("FAN", "MANUAL_FAN")),
+)
+def test_manual_commands_toggle_relays_without_temperature_telemetry(
+    action, sequence_state
+):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    commands = []
+
+    def write_relays(mode):
+        commands.append(mode)
+        controller.heater_relay_on = mode == "HEATING"
+        controller.cooler_relay_on = mode == "COOLING"
+        controller.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+    controller._write_relays = write_relays
+
+    controller._handle_manual_command(action)
+
+    assert controller.manual_target == action
+    assert controller.sequence_state == sequence_state
+
+    controller._handle_manual_command(action)
+
+    assert commands[0] == action
+    assert commands[-1] == "OFF"
+    assert controller.manual_target == "OFF"
+    assert controller.sequence_state == "OFF"
 
 
 def test_manual_fan_toggle_never_turns_fan_off_during_heating(monkeypatch):

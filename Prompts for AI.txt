@@ -1,0 +1,33 @@
+
+On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
+Things to set:
+- General heat-to and cool-to temperatures (basically the current settings we have on the climate settings page)
+- Button to add a specification (added specifications will have a button to allow them to be deleted)
+	- An added specification will be: Day of week list (can be all, or any combination of days - probably list all days with a checkbox beside each), Starttime endtime heat-to and cool-to temperatures
+
+There are some HVAC rules that I would like a settings page available via a button on the climate Settings page (i.e. it is not a new tab).  The rules to be available to change are:
+- The maximum run time for heat, cool (2 settings)
+- The fan pre-start duration in minutes for heat, cool (2 settings)
+- The fan post-stop duration in minutes for heat, cool (2 settings)
+- how long before the next setting value do we start trying to get to that value (based on the settings from the finer controls section)
+
+I need a button on the climate setting page called 'Vacation'. This needs to pop up a calendar starting from today, where I can click a day which becomes the 'start of vacation' day. I then move forward on the calendar and click a second day, this becomes the 'End of vacation' date.  If I click a date before the current end date then that becomes the new start date.  If I click a date greater than the start date then that becomes the end date.  It is not to be possible to click any date that is in the past relative to today (though today can be selected as a start date).
+Having selected a vacation window (start and end date) these are to be displayed as text on a status line that will read something like Vacation start yyyy-mm-dd through yyyy-mm-dd.
+On the start date, at midnight, the hvac is to stop heating/cooling the house.  It is to run either heating or cooling for 5 minutes once each week to keep the system fresh.
+On the last day of the vacation, from midnight, the system is to start returning the house to the desired temperature using the standard rules in the hvac controller (not running more than 10 minutes before resting for 5, etc).
+
+HVAC Control is to:
+	- ensure we do not heat if any room is above the cool-to temperature or becomes higher than that temperature.
+	- Ensure we do not cool if any room is below the heat-to temperature or becomes lower than that temperature.
+	- Turn off once the average reaches the target temperature or one of the above rules is reached.
+	- If we need to heat but a room is above the cool-to temperature then we close the blinds/shutters in that room first and give it 5 minutes to have an effect.
+	- if we need to cool but a room is below the heat-to temperature then we open the blinds/shutters in that room first and give it 5 minutes to have an effect.
+	- blinds are not opened if it is dark outside (outside light <100) - this should probably be in the blind-controller daemon though hvac should also be aware so it doesnt keep trying when there is no point
+
+I need a button on the climate page for 'emtpy house' where a popup will allow me to indicate the start and end times for today where the house does not need heating/cooling.  The HVAC should stop working on maintaining temperature from 30 minutes after the start time until 1 hour before the end time at which time it will resume normal operation.
+
+We need a watchdog for the home_controller that will reboot the system if the application/daemon is not responding for more than 10 minutes as I dont have easy access to the power supply to turn it off and on again when it goes away.  Can we also add a reboot button to the home screen of the raspi in case all the daemons are stopped.
+
+google: wireless solar powered hvac vent control
+
+I need a settings yml file that the blind controller daemon uses to define the opening and closing conditions for each blind and shutter in the house.  Blinds and shutters have a b or s in the third set of underscore separated words on the CBUS device name.  Initial condition settings include that the study (STDY in the second word of the cbus device name) is to stay down until 0900 (setting).  The rumpus (RMPS) shutters are to go up when the outside light level (ecowitt) is over 50 (setting). They are all to close when the light level is below 50 (setting) except for the lounge west (W in the forth word) which are to wait for 30 minutes (setting) after sunset so we can watch the sunset.  If the blind or shutter is changed manually then the daemon is NOT to change that position for that blind for 1 hour (setting).  All the settings are to be per-blind.  The hvac controller daemon can override the blind controller when it comes to closing blinds as it will decide to close them when cooling and the blind daemon is not to then open them again.  All automated changes are not to be reversed for at least 1 hour normally. Can we have the climate page button that returns to automatic control also reset the 1 hour delay in case I want automatic operation to resume rather than wait for the timeout.  All this needs to remain relevant across device resets (e.g. power failure, reboot, etc).

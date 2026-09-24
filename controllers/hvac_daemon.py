@@ -190,18 +190,20 @@ class HvacHardwareDaemon:
         with self._settings_lock:
             if action == "AUTO":
                 self.manual_target = None
-                if self.sequence_state == "MANUAL_FAN":
+                if self.sequence_state.startswith("MANUAL_"):
+                    self.current_state = "OFF"
                     self.sequence_state = "OFF"
+                    self.pending_state = None
+                    self.active_run_started_at = None
                     self._write_relays("OFF")
                 print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
             elif action == "FAN":
-                if self.current_state in ("HEATING", "COOLING") or self.sequence_state in (
-                    "PREHEAT",
-                    "POSTRUN",
-                ):
-                    print("[MANUAL CONTROL] Fan cannot be turned off while HVAC sequencing requires it.")
-                elif self.manual_target == "FAN":
+                if self.current_state in ("HEATING", "COOLING"):
+                    print("[MANUAL CONTROL] Turn off heating or cooling before switching to fan-only mode.")
+                    return
+                if self.manual_target == "FAN":
                     self.manual_target = "OFF"
+                    self.current_state = "OFF"
                     self.sequence_state = "OFF"
                     self._write_relays("OFF")
                 else:
@@ -209,20 +211,20 @@ class HvacHardwareDaemon:
                     self.current_state = "OFF"
                     self.sequence_state = "MANUAL_FAN"
                     self._write_relays("FAN")
-            elif (
-                self.current_state == action
-                or self.manual_target == action
-                or (
-                    self.sequence_state == "PREHEAT"
-                    and self.pending_state == action
-                )
-            ):
+            elif self.manual_target == action:
                 self.manual_target = "OFF"
+                self.current_state = "OFF"
+                self.sequence_state = "OFF"
+                self.pending_state = None
+                self.active_run_started_at = None
+                self._write_relays("OFF")
             else:
                 self.manual_target = action
-                if self.sequence_state == "MANUAL_FAN":
-                    self.sequence_state = "OFF"
-                    self._write_relays("OFF")
+                self.current_state = action
+                self.sequence_state = f"MANUAL_{action}"
+                self.pending_state = None
+                self.active_run_started_at = None
+                self._write_relays(action)
 
             self._process_control_tick_locked()
 
@@ -322,6 +324,18 @@ class HvacHardwareDaemon:
             self.sequence_state = "MANUAL_FAN"
             if not self.fan_relay_on:
                 self._write_relays("FAN")
+            self._broadcast_status_telemetry(current_temp)
+            return
+
+        if self.manual_target in ("HEATING", "COOLING"):
+            self.current_state = self.manual_target
+            self.pending_state = None
+            self.sequence_state = f"MANUAL_{self.manual_target}"
+            if (
+                (self.manual_target == "HEATING" and not self.heater_relay_on)
+                or (self.manual_target == "COOLING" and not self.cooler_relay_on)
+            ):
+                self._write_relays(self.manual_target)
             self._broadcast_status_telemetry(current_temp)
             return
 
