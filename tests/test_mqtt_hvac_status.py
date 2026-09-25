@@ -21,6 +21,14 @@ def test_hvac_status_updates_individual_relay_states():
     assert listener.cached_data["fan_relay_on"] is True
 
 
+def test_hvac_status_retains_the_daemon_indoor_average_temperature():
+    listener = MqttTelemetryListener()
+
+    listener._update_hvac_status({"temperature": 21.75})
+
+    assert listener.cached_data["hvac_temperature"] == 21.75
+
+
 def test_local_environment_telemetry_preserves_hvac_sequence_status():
     listener = MqttTelemetryListener(location="living")
     listener._update_hvac_status(

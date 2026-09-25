@@ -52,6 +52,7 @@ class MqttTelemetryListener(QObject):
             "solar_power": 0.0,
             "solar_kwh_today": 0.0,
             "hvac_state": "OFF",
+            "hvac_temperature": None,
             "hvac_in_rest": False,
             "hvac_sequence_state": "OFF",
             "hvac_control_mode": "AUTO",
@@ -192,6 +193,11 @@ class MqttTelemetryListener(QObject):
             self.cached_data["hvac_sequence_state"] = data["hvac_sequence_state"]
 
     def _update_hvac_status(self, data):
+        if "temperature" in data:
+            value = data["temperature"]
+            self.cached_data["hvac_temperature"] = (
+                float(value) if value is not None else None
+            )
         self.cached_data["hvac_state"] = data.get(
             "hvac_state", self.cached_data["hvac_state"]
         )

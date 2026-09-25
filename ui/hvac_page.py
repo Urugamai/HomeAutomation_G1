@@ -322,11 +322,9 @@ class HvacConfigurationPage(QWidget):
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(self._build_temp_picker("Min Target (Heat)", "t_min"))
 
-        # Add visual separator line
-        v_line = QFrame()
-        v_line.setFrameShape(QFrame.Shape.VLine)
-        v_line.setFrameShadow(QFrame.Shadow.Sunken)
-        controls_layout.addWidget(v_line)
+        controls_layout.addWidget(self._build_vertical_separator())
+        controls_layout.addWidget(self._build_average_temperature_display())
+        controls_layout.addWidget(self._build_vertical_separator())
 
         controls_layout.addWidget(self._build_temp_picker("Max Target (Cool)", "t_max"))
         self.main_layout.addLayout(controls_layout)
@@ -428,6 +426,30 @@ class HvacConfigurationPage(QWidget):
         btn_layout.addWidget(btn_up)
         layout.addLayout(btn_layout)
 
+        return container
+
+    @staticmethod
+    def _build_vertical_separator() -> QFrame:
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        return separator
+
+    def _build_average_temperature_display(self) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        title = QLabel("Average House Temperature")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        self.average_house_temp_lbl = QLabel("--")
+        self.average_house_temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.average_house_temp_lbl.setFont(QFont("Monospace", 24, QFont.Weight.Bold))
+        layout.addWidget(self.average_house_temp_lbl)
+        layout.addStretch(1)
         return container
 
     def _build_duration_picker(
@@ -621,6 +643,26 @@ class HvacConfigurationPage(QWidget):
 
     def update_climate_telemetry(self, data: dict):
         self._latest_climate_telemetry = data
+        temperature = data.get("hvac_temperature")
+        if temperature is None:
+            temperature = self._average_indoor_temperature(
+                data.get("environment_sources", {})
+            )
+        try:
+            self.average_house_temp_lbl.setText(f"{float(temperature):.1f} °C")
+        except (TypeError, ValueError):
+            self.average_house_temp_lbl.setText("--")
+
+    def _average_indoor_temperature(self, sources):
+        if not isinstance(sources, dict):
+            return None
+        temperatures = [
+            self._temperature(source)
+            for source_name, source in sources.items()
+            if source_name != "Ecowitt" and isinstance(source, dict)
+        ]
+        temperatures = [value for value in temperatures if value is not None]
+        return sum(temperatures) / len(temperatures) if temperatures else None
 
     @staticmethod
     def _temperature(source):
