@@ -30,5 +30,5 @@ I need a settings yml file that the blind controller daemon uses to define the o
 
 google:
 	wireless solar powered hvac vent control
-	outlook continuously asking to ok login details for my mail accounts even though they are all working normally
+	outlook continuously asking to ok login details for my mail accounts even though they are all working normally. how can I stop this.
 	

@@ -29,6 +29,7 @@ class BlindAutomationDaemon:
 
     SETTINGS_PATH = project_root / "config" / "blind-settings.yml"
     STATE_PATH = Path("/mnt/WatsonHome/blind_automation_state.json")
+    STATE_VERSION = 2
 
     def __init__(self, settings_path=None, state_path=None):
         print("[INIT] Launching Autonomous Blind Controller Daemon...")
@@ -92,12 +93,15 @@ class BlindAutomationDaemon:
                     "automated_hold_minutes",
                 ):
                     policy[setting] = float(policy[setting])
+                policy["closed_state"] = str(policy["closed_state"]).upper()
             except (KeyError, TypeError, ValueError) as error:
                 raise RuntimeError(f"Invalid settings for {label}: {error}") from error
             if not 0 <= address <= 255:
                 raise RuntimeError(f"{label} has an invalid C-Bus group address: {address}")
             if any(value < 0 for value in policy.values() if isinstance(value, float)):
                 raise RuntimeError(f"{label} has a negative automation duration or lux value")
+            if policy["closed_state"] not in ("ON", "OFF"):
+                raise RuntimeError(f"{label} closed_state must be ON or OFF")
             if address in devices:
                 raise RuntimeError(f"Duplicate C-Bus group address in blind settings: {address}")
             policy["label"] = label
@@ -113,6 +117,9 @@ class BlindAutomationDaemon:
         try:
             with self.state_path.open("r", encoding="utf-8") as state_file:
                 payload = json.load(state_file)
+            if payload.get("version") != self.STATE_VERSION:
+                print("[STATE] Resetting stale blind state after relay polarity update.")
+                return {}, None
             states = payload.get("devices", {})
             if not isinstance(states, dict):
                 raise ValueError("devices must be a mapping")
@@ -123,7 +130,11 @@ class BlindAutomationDaemon:
             return {}, None
 
     def _save_state(self):
-        payload = {"devices": self.states, "dark_since": self.dark_since}
+        payload = {
+            "version": self.STATE_VERSION,
+            "devices": self.states,
+            "dark_since": self.dark_since,
+        }
         temporary_path = self.state_path.with_suffix(".tmp")
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +246,12 @@ class BlindAutomationDaemon:
         address = int(address_text)
         if address not in self.devices:
             return
-        position = "CLOSED" if str(payload.get("state", "")).upper() == "ON" else "OPEN"
+        position = (
+            "CLOSED"
+            if str(payload.get("state", "")).upper()
+            == self.devices[address]["closed_state"]
+            else "OPEN"
+        )
         state = self._state_for(address)
         state["position"] = position
         if payload.get("cbus_source_addr") is not None:
@@ -260,22 +276,24 @@ class BlindAutomationDaemon:
 
         for address, policy in self.devices.items():
             state = self._state_for(address)
-            if state["hvac_locked"] or now < state["manual_hold_until"]:
-                continue
-
-            target = None
             if outside_lux < policy["close_below_lux"]:
                 delay_seconds = policy["sunset_delay_minutes"] * 60
                 if now - self.dark_since >= delay_seconds:
-                    target = "CLOSED"
-            elif (
+                    self._move(address, "CLOSED", automated=True)
+                continue
+
+            if (
+                state["hvac_locked"]
+                or now < state["manual_hold_until"]
+                or now < state["automated_hold_until"]
+            ):
+                continue
+
+            if (
                 outside_lux > policy["open_above_lux"]
                 and datetime.datetime.now().time() >= policy["open_after"]
             ):
-                target = "OPEN"
-
-            if target and now >= state["automated_hold_until"]:
-                self._move(address, target, automated=True)
+                self._move(address, "OPEN", automated=True)
         self._save_state()
 
     def _move(self, address, target_position, automated, force=False):
@@ -284,8 +302,21 @@ class BlindAutomationDaemon:
             return
         policy = self.devices[address]
         payload = {
-            "state": "ON" if target_position == "CLOSED" else "OFF",
-            "brightness": 255 if target_position == "CLOSED" else 0,
+            "state": (
+                policy["closed_state"]
+                if target_position == "CLOSED"
+                else "OFF" if policy["closed_state"] == "ON" else "ON"
+            ),
+            "brightness": (
+                255
+                if (
+                    target_position == "CLOSED" and policy["closed_state"] == "ON"
+                )
+                or (
+                    target_position == "OPEN" and policy["closed_state"] == "OFF"
+                )
+                else 0
+            ),
             "transition": 0,
         }
         self.client.publish(
