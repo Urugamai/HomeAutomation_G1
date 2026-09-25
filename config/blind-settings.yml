@@ -1,0 +1,113 @@
+devices:
+  G_STDY_B_W:
+    address: 31
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "09:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  G_RMPS_S_EL:
+    address: 23
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  G_RMPS_S_ER:
+    address: 37
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  G_RMPS_S_NL:
+    address: 39
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  G_RMPS_S_NR:
+    address: 40
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_LNG_B_WL:
+    address: 29
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 30
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_LNG_B_WC:
+    address: 11
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 30
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_LNG_B_WR:
+    address: 20
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 30
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_LNG_B_SR:
+    address: 19
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_SIT_B_N:
+    address: 13
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_SIT_B_S:
+    address: 17
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_SIT_B_W:
+    address: 33
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_DIN_B_N:
+    address: 15
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60
+  1_DIN_B_W:
+    address: 27
+    close_below_lux: 50
+    open_above_lux: 50
+    open_after: "00:00"
+    sunset_delay_minutes: 0
+    manual_hold_minutes: 60
+    automated_hold_minutes: 60

@@ -26,8 +26,9 @@ HVAC Control is to:
 
 I need a button on the climate page for 'emtpy house' where a popup will allow me to indicate the start and end times for today where the house does not need heating/cooling.  The HVAC should stop working on maintaining temperature from 30 minutes after the start time until 1 hour before the end time at which time it will resume normal operation.
 
-We need a watchdog for the home_controller that will reboot the system if the application/daemon is not responding for more than 10 minutes as I dont have easy access to the power supply to turn it off and on again when it goes away.  Can we also add a reboot button to the home screen of the raspi in case all the daemons are stopped.
-
-google: wireless solar powered hvac vent control
-
 I need a settings yml file that the blind controller daemon uses to define the opening and closing conditions for each blind and shutter in the house.  Blinds and shutters have a b or s in the third set of underscore separated words on the CBUS device name.  Initial condition settings include that the study (STDY in the second word of the cbus device name) is to stay down until 0900 (setting).  The rumpus (RMPS) shutters are to go up when the outside light level (ecowitt) is over 50 (setting). They are all to close when the light level is below 50 (setting) except for the lounge west (W in the forth word) which are to wait for 30 minutes (setting) after sunset so we can watch the sunset.  If the blind or shutter is changed manually then the daemon is NOT to change that position for that blind for 1 hour (setting).  All the settings are to be per-blind.  The hvac controller daemon can override the blind controller when it comes to closing blinds as it will decide to close them when cooling and the blind daemon is not to then open them again.  All automated changes are not to be reversed for at least 1 hour normally. Can we have the climate page button that returns to automatic control also reset the 1 hour delay in case I want automatic operation to resume rather than wait for the timeout.  All this needs to remain relevant across device resets (e.g. power failure, reboot, etc).
+
+google:
+	wireless solar powered hvac vent control
+	outlook continuously asking to ok login details for my mail accounts even though they are all working normally
+	

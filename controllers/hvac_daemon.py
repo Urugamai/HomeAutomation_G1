@@ -267,6 +267,15 @@ class HvacHardwareDaemon:
                     self.pending_state = None
                     self.active_run_started_at = None
                     self._write_relays("OFF")
+                self.client.publish(
+                    "home/blinds/command",
+                    json.dumps(
+                        {
+                            "action": "RESET_AUTOMATION_HOLDS",
+                            "reason": "HVAC_AUTO",
+                        }
+                    ),
+                )
                 print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
             elif action == "FAN":
                 self.manual_target = self.manual_target or "OFF"

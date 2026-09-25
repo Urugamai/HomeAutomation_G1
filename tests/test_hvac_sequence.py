@@ -308,6 +308,26 @@ def test_manual_fan_can_be_turned_on_and_off_without_heat_or_cooling(monkeypatch
     assert controller.sequence_state == "OFF"
 
 
+def test_returning_hvac_to_auto_clears_blind_automation_holds():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    controller.manual_target = "HEATING"
+    controller.sequence_state = "MANUAL_HEATING"
+    controller._write_relays = lambda mode: None
+
+    controller._handle_manual_command("AUTO")
+
+    topic, payload = next(
+        message
+        for message in controller.client.messages
+        if message[0] == "home/blinds/command"
+    )
+    assert payload == {
+        "action": "RESET_AUTOMATION_HOLDS",
+        "reason": "HVAC_AUTO",
+    }
+
+
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):
     storage_path = tmp_path / "hvac_settings.json"
     saved = HvacSettingsStore(storage_path).save(

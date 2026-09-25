@@ -61,6 +61,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable hvac.service
 sudo systemctl start hvac.service
 
+# BLIND AND SHUTTER AUTOMATION
+# Review config/blind-settings.yml before enabling blinds.service. It contains
+# the per-C-Bus-group light thresholds, timing rules, and hold durations.
+sudo systemctl daemon-reload
+sudo systemctl enable blinds.service
+sudo systemctl start blinds.service
+
 # HOME CONTROLLER DISPLAY
 sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller.service /etc/systemd/system/
 sudo systemctl daemon-reload
