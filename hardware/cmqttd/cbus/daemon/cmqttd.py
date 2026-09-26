@@ -19,6 +19,7 @@ from asyncio import get_event_loop, run
 from argparse import ArgumentParser, FileType
 import json
 import logging
+import time
 from typing import Any, BinaryIO, Dict, Optional, Text, TextIO
 
 import paho.mqtt.client as mqtt
@@ -132,6 +133,23 @@ class CBusHandler(PCIProtocol):
 
 class MqttClient(mqtt.Client):
 
+    def __init__(self, *args, command_delay_seconds=0.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.command_delay_seconds = command_delay_seconds
+        self._last_cbus_command_at = None
+
+    def _wait_for_command_slot(self):
+        if self._last_cbus_command_at is not None:
+            elapsed = time.monotonic() - self._last_cbus_command_at
+            remaining = self.command_delay_seconds - elapsed
+            if remaining > 0:
+                logger.debug(
+                    'Waiting %.3f seconds before the next C-Bus command',
+                    remaining,
+                )
+                time.sleep(remaining)
+        self._last_cbus_command_at = time.monotonic()
+
     def on_connect(self, client, userdata: CBusHandler, flags, rc):
         logger.info('Connected to MQTT broker')
         userdata.mqtt_api = self
@@ -176,6 +194,7 @@ class MqttClient(mqtt.Client):
             transition_time = 0
 
         # push state to CBus and republish on MQTT
+        self._wait_for_command_slot()
         if light_on:
             if brightness == 255 and transition_time == 0:
                 # lighting on
@@ -441,6 +460,14 @@ async def _main():
              'time source, or you have another device on the CBus network '
              'providing time services. [default: %(default)s]')
 
+    group.add_argument(
+        '--command-delay-ms',
+        dest='command_delay_ms',
+        type=int,
+        default=0,
+        help='Minimum delay between C-Bus actuator commands. [default: %(default)s ms]',
+    )
+
     group = parser.add_argument_group('Label options')
 
     group.add_argument(
@@ -456,6 +483,8 @@ async def _main():
     if bool(option.broker_client_cert) != bool(option.broker_client_key):
         return parser.error(
             'To use client certificates, both -k and -K must be specified.')
+    if option.command_delay_ms < 0:
+        return parser.error('--command-delay-ms cannot be negative')
 
     global_logger = logging.getLogger('cbus')
     global_logger.setLevel(option.verbosity)
@@ -482,7 +511,10 @@ async def _main():
         _, protocol = await loop.create_connection(
             factory, addr[0], int(addr[1]))
 
-    mqtt_client = MqttClient(userdata=protocol)
+    mqtt_client = MqttClient(
+        userdata=protocol,
+        command_delay_seconds=option.command_delay_ms / 1000,
+    )
     if option.broker_auth:
         read_auth(mqtt_client, option.broker_auth)
     if option.broker_disable_tls:
