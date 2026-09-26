@@ -211,11 +211,18 @@ class BlindAutomationDaemon:
     def _handle_blind_command(self, payload):
         action = str(payload.get("action", "")).upper()
         if action == "CLOSE":
-            print(f"[COMMAND] HVAC requested blind close: {payload.get('reason', 'UNKNOWN')}")
+            reason = str(payload.get("reason", "UNKNOWN"))
+            print(f"[COMMAND] HVAC requested blind close: {reason}")
             for address in self.devices:
                 state = self._state_for(address)
                 state["hvac_locked"] = True
-                self._move(address, "CLOSED", automated=False, force=True)
+                self._move(
+                    address,
+                    "CLOSED",
+                    automated=False,
+                    reason=f"HVAC override ({reason})",
+                    force=True,
+                )
             self._save_state()
         elif action == "RESET_AUTOMATION_HOLDS":
             print("[COMMAND] Clearing blind automation holds at HVAC AUTO request.")
@@ -279,7 +286,16 @@ class BlindAutomationDaemon:
             if outside_lux < policy["close_below_lux"]:
                 delay_seconds = policy["sunset_delay_minutes"] * 60
                 if now - self.dark_since >= delay_seconds:
-                    self._move(address, "CLOSED", automated=True)
+                    self._move(
+                        address,
+                        "CLOSED",
+                        automated=True,
+                        reason=(
+                            f"outside_lux={outside_lux:.1f} below "
+                            f"close_below_lux={policy['close_below_lux']:.1f}; "
+                            f"dusk delay={policy['sunset_delay_minutes']:.0f}m elapsed"
+                        ),
+                    )
                 continue
 
             if (
@@ -293,10 +309,19 @@ class BlindAutomationDaemon:
                 outside_lux > policy["open_above_lux"]
                 and datetime.datetime.now().time() >= policy["open_after"]
             ):
-                self._move(address, "OPEN", automated=True)
+                self._move(
+                    address,
+                    "OPEN",
+                    automated=True,
+                    reason=(
+                        f"outside_lux={outside_lux:.1f} above "
+                        f"open_above_lux={policy['open_above_lux']:.1f}; "
+                        f"opening allowed after {policy['open_after'].isoformat(timespec='minutes')}"
+                    ),
+                )
         self._save_state()
 
-    def _move(self, address, target_position, automated, force=False):
+    def _move(self, address, target_position, automated, reason, force=False):
         state = self._state_for(address)
         if not force and state["position"] == target_position:
             return
@@ -330,7 +355,10 @@ class BlindAutomationDaemon:
             state["automated_hold_until"] = (
                 time.time() + policy["automated_hold_minutes"] * 60
             )
-        print(f"[AUTOMATION] {policy['label']} -> {target_position}")
+        print(
+            f"[AUTOMATION] device={policy['label']} address={address} "
+            f"action={target_position} cbus_state={payload['state']} reason={reason}"
+        )
 
 
 if __name__ == "__main__":

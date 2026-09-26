@@ -33,7 +33,7 @@ def write_settings(path):
     )
 
 
-def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path):
+def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys):
     settings_path = tmp_path / "blind-settings.yml"
     state_path = tmp_path / "blind-state.json"
     write_settings(settings_path)
@@ -51,6 +51,10 @@ def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path):
         )
     ]
     assert daemon.states["31"]["position"] == "CLOSED"
+    assert (
+        "reason=outside_lux=49.0 below close_below_lux=50.0; "
+        "dusk delay=0m elapsed" in capsys.readouterr().out
+    )
 
 
 def test_manual_hold_persists_and_blocks_automation_after_restart(tmp_path, monkeypatch):
