@@ -207,6 +207,31 @@ def test_cooling_requests_blind_closure():
     )
 
 
+def test_hvac_continues_heat_and_cooling_half_degree_beyond_setpoints():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.environment_sources["Ecowitt"] = {"temperature": 20.0}
+
+    controller.current_state = "HEATING"
+    assert controller._requested_state(controller.t_min + 0.49) == "HEATING"
+    assert controller._requested_state(controller.t_min + 0.5) == "OFF"
+
+    controller.current_state = "COOLING"
+    controller.environment_sources["Ecowitt"] = {"temperature": 24.0}
+    assert controller._requested_state(controller.t_max - 0.49) == "COOLING"
+    assert controller._requested_state(controller.t_max - 0.5) == "OFF"
+
+
+def test_hvac_outdoor_midpoint_gate_blocks_inefficient_modes():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    midpoint = (controller.t_min + controller.t_max) / 2
+
+    controller.environment_sources["Ecowitt"] = {"temperature": midpoint + 0.1}
+    assert controller._requested_state(controller.t_min - 1.0) == "OFF"
+
+    controller.environment_sources["Ecowitt"] = {"temperature": midpoint - 0.1}
+    assert controller._requested_state(controller.t_max + 1.0) == "OFF"
+
+
 def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()

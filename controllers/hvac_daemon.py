@@ -23,6 +23,7 @@ except ImportError:
 IS_RASPI = GPIO is not None or lgpio is not None
 RELAY_ON = 0
 RELAY_OFF = 1
+SETPOINT_HYSTERESIS_C = 0.5
 
 try:
     import paho.mqtt.client as mqtt
@@ -34,6 +35,7 @@ from libraries.paho_compat import create_client
 from libraries.environment_metrics import (
     OUTDOOR_ECOWITT_SOURCE,
     indoor_temperature_average,
+    temperature_value,
 )
 from libraries.hvac_settings import HvacSettingsStore
 
@@ -446,11 +448,38 @@ class HvacHardwareDaemon:
     def _requested_state(self, current_temp: float) -> str:
         if self.manual_target in ("HEATING", "COOLING", "OFF"):
             return self.manual_target
-        if current_temp < self.t_min:
+        outdoor_temp = self._outdoor_temperature()
+        midpoint = (self.t_min + self.t_max) / 2
+        heating_active = self.current_state == "HEATING" or (
+            self.sequence_state == "PREHEAT" and self.pending_state == "HEATING"
+        )
+        cooling_active = self.current_state == "COOLING" or (
+            self.sequence_state == "PREHEAT" and self.pending_state == "COOLING"
+        )
+        heating_allowed = outdoor_temp is None or outdoor_temp <= midpoint
+        cooling_allowed = outdoor_temp is None or outdoor_temp >= midpoint
+
+        if heating_allowed and current_temp < (
+            self.t_min + SETPOINT_HYSTERESIS_C
+            if heating_active
+            else self.t_min
+        ):
             return "HEATING"
-        if current_temp > self.t_max:
+        if cooling_allowed and current_temp > (
+            self.t_max - SETPOINT_HYSTERESIS_C
+            if cooling_active
+            else self.t_max
+        ):
             return "COOLING"
         return "OFF"
+
+    def _outdoor_temperature(self):
+        outdoor_source = self.environment_sources.get(OUTDOOR_ECOWITT_SOURCE, {})
+        return (
+            temperature_value(outdoor_source)
+            if isinstance(outdoor_source, dict)
+            else None
+        )
 
     def _process_manual_control_tick(self, now: float):
         if self.sequence_state == "MANUAL_PREHEAT":
