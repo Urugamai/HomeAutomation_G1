@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import time
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSpinBox,
@@ -312,6 +313,14 @@ class HvacConfigurationPage(QWidget):
             self._set_settings_values(saved_settings)
         self.system_mode = "OFF"
         self.is_resting = False
+        self._relay_state = {
+            "heater": False,
+            "cooler": False,
+            "fan": False,
+        }
+        self._hvac_sequence_state = "OFF"
+        self._hvac_pending_state = None
+        self._hvac_transition_ends_at = None
 
         # Central Layout
         self.main_layout = QVBoxLayout(self)
@@ -383,6 +392,10 @@ class HvacConfigurationPage(QWidget):
         self.status_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
         self.status_lbl.setStyleSheet("color: #777777;")
         self.main_layout.addWidget(self.status_lbl)
+
+        self.relay_status_timer = QTimer(self)
+        self.relay_status_timer.timeout.connect(self._refresh_relay_indicators)
+        self.relay_status_timer.start(1_000)
 
         self.climate_history = ClimateHistoryStore()
         self.climate_chart = ClimateValidationChart()
@@ -495,17 +508,18 @@ class HvacConfigurationPage(QWidget):
     def _set_relay_indicator(
         indicator: QPushButton,
         name: str,
+        status: str,
         is_on: bool,
         color: str,
     ):
         if is_on:
-            indicator.setText(f"{name}\nON")
+            indicator.setText(f"{name}\n{status}")
             indicator.setStyleSheet(
                 f"background-color: {color}; color: white; "
                 "border: 1px solid #555555; border-radius: 4px;"
             )
         else:
-            indicator.setText(f"{name}\nOFF")
+            indicator.setText(f"{name}\n{status}")
             indicator.setStyleSheet(
                 "background-color: #eeeeee; color: #606060; "
                 "border: 1px solid #aaaaaa; border-radius: 4px;"
@@ -600,34 +614,27 @@ class HvacConfigurationPage(QWidget):
         heater_relay_on: bool = False,
         cooler_relay_on: bool = False,
         fan_relay_on: bool = False,
+        pending_state: str | None = None,
+        transition_ends_at: float | None = None,
     ):
         """Updates diagnostic fields based on messages coming back from your Pi's hardware daemon."""
         self.system_mode = current_state
         self.is_resting = is_resting
-        self._set_relay_indicator(
-            self.heater_relay_indicator,
-            "Heater",
-            heater_relay_on,
-            "#8b4513",
-        )
-        self._set_relay_indicator(
-            self.cooler_relay_indicator,
-            "Cooler",
-            cooler_relay_on,
-            "#007aff",
-        )
-        self._set_relay_indicator(
-            self.fan_relay_indicator,
-            "Fan",
-            fan_relay_on,
-            "#808080",
-        )
+        self._relay_state = {
+            "heater": bool(heater_relay_on),
+            "cooler": bool(cooler_relay_on),
+            "fan": bool(fan_relay_on),
+        }
+        self._hvac_sequence_state = sequence_state
+        self._hvac_pending_state = pending_state
+        self._hvac_transition_ends_at = transition_ends_at
+        self._refresh_relay_indicators()
 
         if is_resting:
             status_text = "System State: Rest period active"
-        elif sequence_state == "PREHEAT":
+        elif sequence_state in ("PREHEAT", "MANUAL_PREHEAT"):
             status_text = "System State: Fan preheat active"
-        elif sequence_state == "POSTRUN":
+        elif sequence_state in ("POSTRUN", "MANUAL_POSTRUN"):
             status_text = "System State: Fan post-run active"
         else:
             status_text = f"System State: Active ({current_state})"
@@ -640,6 +647,55 @@ class HvacConfigurationPage(QWidget):
             self.status_lbl.setStyleSheet("color: #007aff; font-weight: bold;")
         else:
             self.status_lbl.setStyleSheet("color: #777777;")
+
+    def _refresh_relay_indicators(self):
+        heater_status = "ON" if self._relay_state["heater"] else "OFF"
+        cooler_status = "ON" if self._relay_state["cooler"] else "OFF"
+        fan_status = "ON" if self._relay_state["fan"] else "OFF"
+        remaining_text = self._transition_remaining_text()
+        sequence_state = self._hvac_sequence_state
+
+        if sequence_state in ("PREHEAT", "MANUAL_PREHEAT"):
+            transition_name = (
+                "PreHeat"
+                if self._hvac_pending_state == "HEATING"
+                else "PreCool"
+            )
+            if self._hvac_pending_state == "HEATING":
+                heater_status = f"OFF-{transition_name}{remaining_text}"
+            elif self._hvac_pending_state == "COOLING":
+                cooler_status = f"OFF-{transition_name}{remaining_text}"
+            fan_status = f"ON-{transition_name}{remaining_text}"
+        elif sequence_state in ("POSTRUN", "MANUAL_POSTRUN"):
+            fan_status = f"ON-PostRun{remaining_text}"
+
+        self._set_relay_indicator(
+            self.heater_relay_indicator,
+            "Heater",
+            heater_status,
+            self._relay_state["heater"],
+            "#8b4513",
+        )
+        self._set_relay_indicator(
+            self.cooler_relay_indicator,
+            "Cooler",
+            cooler_status,
+            self._relay_state["cooler"],
+            "#007aff",
+        )
+        self._set_relay_indicator(
+            self.fan_relay_indicator,
+            "Fan",
+            fan_status,
+            self._relay_state["fan"],
+            "#808080",
+        )
+
+    def _transition_remaining_text(self):
+        if self._hvac_transition_ends_at is None:
+            return ""
+        seconds = max(0, math.ceil(self._hvac_transition_ends_at - time.time()))
+        return f"\n{seconds}s"
 
     def update_climate_telemetry(self, data: dict):
         self._latest_climate_telemetry = data

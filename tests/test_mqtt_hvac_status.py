@@ -9,6 +9,8 @@ def test_hvac_status_updates_individual_relay_states():
             "hvac_state": "COOLING",
             "hvac_in_rest": False,
             "hvac_sequence_state": "COOLING",
+            "hvac_pending_state": None,
+            "hvac_transition_ends_at": None,
             "heater_relay_on": False,
             "cooler_relay_on": True,
             "fan_relay_on": True,
@@ -19,6 +21,23 @@ def test_hvac_status_updates_individual_relay_states():
     assert listener.cached_data["heater_relay_on"] is False
     assert listener.cached_data["cooler_relay_on"] is True
     assert listener.cached_data["fan_relay_on"] is True
+    assert listener.cached_data["hvac_pending_state"] is None
+    assert listener.cached_data["hvac_transition_ends_at"] is None
+
+
+def test_hvac_status_retains_transition_target_and_deadline():
+    listener = MqttTelemetryListener()
+
+    listener._update_hvac_status(
+        {
+            "hvac_sequence_state": "MANUAL_PREHEAT",
+            "hvac_pending_state": "COOLING",
+            "hvac_transition_ends_at": 1234.5,
+        }
+    )
+
+    assert listener.cached_data["hvac_pending_state"] == "COOLING"
+    assert listener.cached_data["hvac_transition_ends_at"] == 1234.5
 
 
 def test_hvac_status_retains_the_daemon_indoor_average_temperature():

@@ -172,6 +172,8 @@ class MainWindow(QMainWindow):
                 data.get("heater_relay_on", False),
                 data.get("cooler_relay_on", False),
                 data.get("fan_relay_on", False),
+                data.get("hvac_pending_state"),
+                data.get("hvac_transition_ends_at"),
             )
             self.dashboard.hvac_config_tab.apply_settings(
                 data.get("hvac_settings", {})

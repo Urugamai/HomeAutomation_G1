@@ -1,3 +1,5 @@
+import time
+
 from PyQt6.QtWidgets import QApplication
 
 from ui.hvac_page import HvacConfigurationPage
@@ -29,5 +31,39 @@ def test_average_house_temperature_display_falls_back_to_indoor_sources():
     )
 
     assert page.average_house_temp_lbl.text() == "21.0 °C"
+    page.deleteLater()
+    app.processEvents()
+
+
+def test_relay_buttons_display_precool_and_postrun_countdowns():
+    app = QApplication.instance() or QApplication([])
+    page = HvacConfigurationPage()
+
+    page.update_status_from_mqtt(
+        "OFF",
+        False,
+        "MANUAL_PREHEAT",
+        False,
+        False,
+        True,
+        "COOLING",
+        time.time() + 30,
+    )
+
+    assert page.cooler_relay_indicator.text().startswith("Cooler\nOFF-PreCool\n")
+    assert page.fan_relay_indicator.text().startswith("Fan\nON-PreCool\n")
+
+    page.update_status_from_mqtt(
+        "OFF",
+        False,
+        "MANUAL_POSTRUN",
+        False,
+        False,
+        True,
+        None,
+        time.time() + 30,
+    )
+
+    assert page.fan_relay_indicator.text().startswith("Fan\nON-PostRun\n")
     page.deleteLater()
     app.processEvents()

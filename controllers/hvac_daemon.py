@@ -283,7 +283,18 @@ class HvacHardwareDaemon:
                 )
                 print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
             elif action == "FAN":
-                self.manual_fan_requested = not self.manual_fan_requested
+                if self.sequence_state in (
+                    "PREHEAT",
+                    "HEATING",
+                    "COOLING",
+                    "MANUAL_PREHEAT",
+                    "MANUAL_HEATING",
+                    "MANUAL_COOLING",
+                ):
+                    self.manual_fan_requested = False
+                    self._start_manual_postrun(time.time())
+                else:
+                    self.manual_fan_requested = not self.manual_fan_requested
             elif (
                 self.manual_target == action
                 and self.sequence_state in ("MANUAL_PREHEAT", f"MANUAL_{action}")
@@ -450,8 +461,9 @@ class HvacHardwareDaemon:
         if self.sequence_state == "MANUAL_POSTRUN":
             if now - self.sequence_started_at >= self.fan_postrun_seconds:
                 self.current_state = "OFF"
-                self.manual_target = None
-                self.sequence_state = "MANUAL_FAN" if self.manual_fan_requested else "OFF"
+                self.sequence_state = (
+                    "MANUAL_FAN" if self.manual_fan_requested else "MANUAL_OFF"
+                )
                 self._write_relays("FAN" if self.manual_fan_requested else "OFF")
             return
 
@@ -463,6 +475,9 @@ class HvacHardwareDaemon:
             self.sequence_state = "MANUAL_FAN"
             if not self.fan_relay_on:
                 self._write_relays("FAN")
+            return
+
+        if self.sequence_state == "MANUAL_OFF":
             return
 
         self.current_state = "OFF"
@@ -550,12 +565,28 @@ class HvacHardwareDaemon:
             "hvac_state": self.current_state,
             "hvac_in_rest": self.in_rest_period,
             "hvac_sequence_state": self.sequence_state,
+            "hvac_pending_state": self._pending_display_state(),
+            "hvac_transition_ends_at": self._transition_ends_at(),
             "heater_relay_on": self.heater_relay_on,
             "cooler_relay_on": self.cooler_relay_on,
             "fan_relay_on": self.fan_relay_on,
         }
         # Publish to separate sensor node trace targets to ensure clean modular consumption loops
         self.client.publish("home/environment/inside", json.dumps(telemetry_packet))
+
+    def _pending_display_state(self):
+        if self.sequence_state == "PREHEAT":
+            return self.pending_state
+        if self.sequence_state == "MANUAL_PREHEAT":
+            return self.manual_target
+        return None
+
+    def _transition_ends_at(self):
+        if self.sequence_state in ("PREHEAT", "MANUAL_PREHEAT"):
+            return self.sequence_started_at + self.fan_preheat_seconds
+        if self.sequence_state in ("POSTRUN", "MANUAL_POSTRUN"):
+            return self.sequence_started_at + self.fan_postrun_seconds
+        return None
 
 
 if __name__ == "__main__":

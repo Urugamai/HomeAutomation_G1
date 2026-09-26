@@ -246,8 +246,8 @@ def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     clock[0] += controller.fan_postrun_seconds
     controller._process_control_tick()
 
-    assert controller.manual_target is None
-    assert controller.sequence_state == "OFF"
+    assert controller.manual_target == "OFF"
+    assert controller.sequence_state == "MANUAL_OFF"
     assert commands[-1] == "OFF"
 
 
@@ -279,7 +279,21 @@ def test_manual_cooling_uses_preheat_without_temperature_telemetry(monkeypatch):
     assert commands == ["FAN", "COOLING"]
 
 
-def test_manual_fan_remains_on_after_heating_is_turned_off():
+def test_manual_preheat_status_includes_target_and_deadline(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: 100.0)
+    controller._write_relays = lambda mode: None
+
+    controller._handle_manual_command("COOLING")
+
+    _, payload = controller.client.messages[-1]
+    assert payload["hvac_sequence_state"] == "MANUAL_PREHEAT"
+    assert payload["hvac_pending_state"] == "COOLING"
+    assert payload["hvac_transition_ends_at"] == 160.0
+
+
+def test_manual_heating_restarts_preheat_when_requested_during_postrun():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
     commands = []
@@ -296,13 +310,13 @@ def test_manual_fan_remains_on_after_heating_is_turned_off():
     controller._handle_manual_command("FAN")
     controller._handle_manual_command("HEATING")
 
-    assert controller.manual_target == "OFF"
-    assert controller.manual_fan_requested is True
-    assert controller.sequence_state == "MANUAL_POSTRUN"
-    assert commands == ["FAN", "FAN"]
+    assert controller.manual_target == "HEATING"
+    assert controller.manual_fan_requested is False
+    assert controller.sequence_state == "MANUAL_PREHEAT"
+    assert commands == ["FAN", "FAN", "FAN"]
 
 
-def test_manual_fan_command_does_not_disable_manual_heating(monkeypatch):
+def test_manual_fan_command_cancels_manual_heating_with_postrun(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
     controller.latest_inside_temperature = 21.0
@@ -318,10 +332,11 @@ def test_manual_fan_command_does_not_disable_manual_heating(monkeypatch):
 
     controller._handle_manual_command("FAN")
 
-    assert controller.current_state == "HEATING"
-    assert controller.sequence_state == "MANUAL_HEATING"
-    assert controller.manual_fan_requested is True
-    assert commands == []
+    assert controller.current_state == "OFF"
+    assert controller.sequence_state == "MANUAL_POSTRUN"
+    assert controller.manual_target == "OFF"
+    assert controller.manual_fan_requested is False
+    assert commands == ["FAN"]
 
 
 def test_manual_fan_can_be_turned_on_and_off_without_heat_or_cooling(monkeypatch):

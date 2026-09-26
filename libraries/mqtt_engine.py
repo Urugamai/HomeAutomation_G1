@@ -55,6 +55,8 @@ class MqttTelemetryListener(QObject):
             "hvac_temperature": None,
             "hvac_in_rest": False,
             "hvac_sequence_state": "OFF",
+            "hvac_pending_state": None,
+            "hvac_transition_ends_at": None,
             "hvac_control_mode": "AUTO",
             "heater_relay_on": False,
             "cooler_relay_on": False,
@@ -207,6 +209,14 @@ class MqttTelemetryListener(QObject):
         self.cached_data["hvac_sequence_state"] = data.get(
             "hvac_sequence_state", self.cached_data["hvac_sequence_state"]
         )
+        self.cached_data["hvac_pending_state"] = data.get(
+            "hvac_pending_state", self.cached_data["hvac_pending_state"]
+        )
+        if "hvac_transition_ends_at" in data:
+            value = data["hvac_transition_ends_at"]
+            self.cached_data["hvac_transition_ends_at"] = (
+                float(value) if value is not None else None
+            )
         self.cached_data["hvac_control_mode"] = data.get(
             "hvac_control_mode", self.cached_data["hvac_control_mode"]
         )
