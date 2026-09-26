@@ -443,7 +443,8 @@ class HvacHardwareDaemon:
         self.sequence_state = "PREHEAT"
         self.sequence_started_at = now
         self._write_relays("FAN")
-        self._maybe_close_blinds_for_state(target_state)
+        if target_state == "COOLING":
+            self._maybe_close_blinds_for_state(target_state)
         if self.fan_preheat_seconds == 0:
             self._start_active_run(target_state, now)
 
@@ -468,9 +469,7 @@ class HvacHardwareDaemon:
             self.rest_start_time = now
 
     def _maybe_close_blinds(self, current_temp: float):
-        if current_temp <= self.t_min + 1.0:
-            self._maybe_close_blinds_for_state("HEATING")
-        elif current_temp >= self.t_max - 1.0:
+        if current_temp >= self.t_max - 1.0:
             self._maybe_close_blinds_for_state("COOLING")
 
     def _maybe_close_blinds_for_state(self, target_state: str):

@@ -179,6 +179,30 @@ def test_hvac_turns_outputs_off_when_no_indoor_temperature_is_available():
     assert commands == ["OFF"]
 
 
+def test_heating_does_not_request_blind_closure_for_solar_gain():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    controller.latest_inside_temperature = controller.t_min - 1.0
+    controller._write_relays = lambda mode: None
+
+    controller._process_control_tick()
+
+    assert all(topic != "home/blinds/command" for topic, _ in controller.client.messages)
+
+
+def test_cooling_requests_blind_closure():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    controller.latest_inside_temperature = controller.t_max + 1.0
+    controller._write_relays = lambda mode: None
+
+    controller._process_control_tick()
+
+    assert ("home/blinds/command", {"action": "CLOSE", "reason": "HVAC_PRECOOL"}) in (
+        controller.client.messages
+    )
+
+
 def test_manual_heat_toggles_the_heater_without_automatic_cycle_delays():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
