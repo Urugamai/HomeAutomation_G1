@@ -1,4 +1,6 @@
 import sys
+import asyncio
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -33,15 +35,37 @@ command_delay_ms = 200
     assert arguments[arguments.index("--command-delay-ms") + 1] == "200"
 
 
-def test_cbus_command_delay_waits_for_the_remaining_interval(monkeypatch):
-    client = cmqttd.MqttClient(command_delay_seconds=0.2)
-    client._last_cbus_command_at = 10.0
-    clock = iter((10.05, 10.25))
+def test_cbus_command_delay_dispatches_commands_in_order_without_blocking(monkeypatch):
+    command_loop = asyncio.new_event_loop()
+    client = cmqttd.MqttClient(
+        command_delay_seconds=0.2,
+        command_loop=command_loop,
+    )
+    client._pending_commands = deque(
+        [
+            ("first", 23, True, 255, 0),
+            ("second", 37, False, 0, 0),
+        ]
+    )
+    client._command_task = object()
+    dispatched = []
     delays = []
-    monkeypatch.setattr(cmqttd.time, "monotonic", lambda: next(clock))
-    monkeypatch.setattr(cmqttd.time, "sleep", delays.append)
 
-    client._wait_for_command_slot()
+    async def record_delay(seconds):
+        delays.append(seconds)
 
-    assert delays == [pytest.approx(0.15)]
-    assert client._last_cbus_command_at == 10.25
+    monkeypatch.setattr(
+        client,
+        "_send_cbus_command",
+        lambda *command: dispatched.append(command),
+    )
+    monkeypatch.setattr(cmqttd.asyncio, "sleep", record_delay)
+
+    asyncio.run(client._dispatch_cbus_commands())
+
+    assert dispatched == [
+        ("first", 23, True, 255, 0),
+        ("second", 37, False, 0, 0),
+    ]
+    assert delays == [pytest.approx(0.2)]
+    command_loop.close()
