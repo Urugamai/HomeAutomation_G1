@@ -1,3 +1,4 @@
+import configparser
 import json
 import queue
 import re
@@ -16,8 +17,25 @@ from libraries.paho_compat import create_client
 
 
 CONFIG_PATH = project_root / "config" / "home-controller-host-config.yml"
+BROKER_CONFIG_PATH = project_root / "config.ini"
 QUEUE_TOPIC = "home/cbus/queued-command"
 SET_TOPIC_PATTERN = re.compile(r"^homeassistant/light/cbus_(\d{1,3})/set$")
+
+
+def load_broker_settings(config_path=BROKER_CONFIG_PATH):
+    try:
+        config = configparser.ConfigParser()
+        if not config.read(config_path):
+            raise RuntimeError(f"Unable to read MQTT configuration: {config_path}")
+        broker = config.get("MQTT", "broker")
+        port = config.getint("MQTT", "port", fallback=1883)
+    except (configparser.Error, OSError, ValueError) as error:
+        raise RuntimeError(f"Invalid MQTT broker configuration: {error}") from error
+    if not broker:
+        raise RuntimeError("MQTT broker must not be empty")
+    if not 1 <= port <= 65_535:
+        raise RuntimeError("MQTT port must be between 1 and 65535")
+    return broker, port
 
 
 def load_command_delay_seconds(config_path=CONFIG_PATH, hostname=None):
@@ -37,8 +55,18 @@ def load_command_delay_seconds(config_path=CONFIG_PATH, hostname=None):
 class CbusCommandDispatcher:
     """Serializes local C-Bus commands before they reach the stock cmqttd bridge."""
 
-    def __init__(self, broker="localhost", delay_seconds=None):
-        self.broker = broker
+    def __init__(
+        self,
+        broker=None,
+        delay_seconds=None,
+        port=None,
+        broker_config_path=BROKER_CONFIG_PATH,
+    ):
+        configured_broker, configured_port = load_broker_settings(broker_config_path)
+        self.broker = broker or configured_broker
+        self.port = configured_port if port is None else port
+        if not 1 <= self.port <= 65_535:
+            raise ValueError("MQTT port must be between 1 and 65535")
         self.delay_seconds = (
             load_command_delay_seconds() if delay_seconds is None else delay_seconds
         )
@@ -49,10 +77,10 @@ class CbusCommandDispatcher:
         self.client = create_client()
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
-        self.client.connect(self.broker, 1883, keepalive=60)
+        self.client.connect(self.broker, self.port, keepalive=60)
         self.client.loop_start()
         print(
-            f"[CBUS DISPATCH] Connected to {self.broker}; "
+            f"[CBUS DISPATCH] Connected to {self.broker}:{self.port}; "
             f"spacing commands by {self.delay_seconds * 1000:.0f} ms."
         )
         self._dispatch_commands()

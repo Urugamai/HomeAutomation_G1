@@ -3,6 +3,7 @@ import json
 from controllers.cbus_command_dispatcher import (
     CbusCommandDispatcher,
     QUEUE_TOPIC,
+    load_broker_settings,
     load_command_delay_seconds,
 )
 
@@ -28,6 +29,24 @@ def test_command_delay_loads_from_the_current_host_configuration(tmp_path):
     )
 
     assert load_command_delay_seconds(config_path, hostname="controller") == 0.2
+
+
+def test_dispatcher_uses_shared_mqtt_broker_configuration(tmp_path):
+    config_path = tmp_path / "config.ini"
+    config_path.write_text(
+        "[MQTT]\nbroker = 192.168.2.2\nport = 1884\n",
+        encoding="utf-8",
+    )
+
+    assert load_broker_settings(config_path) == ("192.168.2.2", 1884)
+
+    dispatcher = CbusCommandDispatcher(
+        delay_seconds=0.2,
+        broker_config_path=config_path,
+    )
+
+    assert dispatcher.broker == "192.168.2.2"
+    assert dispatcher.port == 1884
 
 
 def test_dispatcher_validates_then_publishes_real_cbus_set_command():

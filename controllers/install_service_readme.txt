@@ -68,6 +68,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable blinds.service
 sudo systemctl start blinds.service
 
+# C-BUS COMMAND DELIVERY
+# On the host connected to the C-Bus interface:
+sudo cp /home/markw/HomeAutomation_G1/controllers/cbus.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cbus.service
+
+# On the home-controller host, which submits UI and automation commands:
+sudo cp /home/markw/HomeAutomation_G1/controllers/cbus_command_dispatcher.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cbus_command_dispatcher.service
+
 # HOME CONTROLLER DISPLAY
 sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller.service /etc/systemd/system/
 sudo systemctl daemon-reload
