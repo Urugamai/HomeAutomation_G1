@@ -207,9 +207,11 @@ def test_cooling_requests_blind_closure():
     )
 
 
-def test_manual_heat_toggles_the_heater_without_automatic_cycle_delays():
+def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
+    clock = [0.0]
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
     commands = []
 
     def write_relays(mode):
@@ -223,27 +225,37 @@ def test_manual_heat_toggles_the_heater_without_automatic_cycle_delays():
     controller._handle_manual_command("HEATING")
 
     assert controller.manual_target == "HEATING"
+    assert controller.current_state == "OFF"
+    assert controller.sequence_state == "MANUAL_PREHEAT"
+    assert commands == ["FAN"]
+
+    clock[0] = controller.fan_preheat_seconds
+    controller._process_control_tick()
+
     assert controller.current_state == "HEATING"
     assert controller.sequence_state == "MANUAL_HEATING"
-    assert commands == ["HEATING"]
+    assert commands == ["FAN", "HEATING"]
 
     controller._handle_manual_command("HEATING")
 
     assert controller.manual_target == "OFF"
     assert controller.current_state == "OFF"
+    assert controller.sequence_state == "MANUAL_POSTRUN"
+    assert commands[-1] == "FAN"
+
+    clock[0] += controller.fan_postrun_seconds
+    controller._process_control_tick()
+
+    assert controller.manual_target is None
     assert controller.sequence_state == "OFF"
     assert commands[-1] == "OFF"
 
 
-@pytest.mark.parametrize(
-    ("action", "sequence_state"),
-    (("COOLING", "MANUAL_COOLING"), ("FAN", "MANUAL_FAN")),
-)
-def test_manual_commands_toggle_relays_without_temperature_telemetry(
-    action, sequence_state
-):
+def test_manual_cooling_uses_preheat_without_temperature_telemetry(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
+    clock = [0.0]
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
     commands = []
 
     def write_relays(mode):
@@ -254,20 +266,17 @@ def test_manual_commands_toggle_relays_without_temperature_telemetry(
 
     controller._write_relays = write_relays
 
-    controller._handle_manual_command(action)
+    controller._handle_manual_command("COOLING")
 
-    expected_target = "OFF" if action == "FAN" else action
-    assert controller.manual_target == expected_target
-    if action == "FAN":
-        assert controller.manual_fan_requested is True
-    assert controller.sequence_state == sequence_state
+    assert controller.sequence_state == "MANUAL_PREHEAT"
+    assert commands == ["FAN"]
 
-    controller._handle_manual_command(action)
+    clock[0] = controller.fan_preheat_seconds
+    controller._process_control_tick()
 
-    assert commands[0] == action
-    assert commands[-1] == "OFF"
-    assert controller.manual_target == "OFF"
-    assert controller.sequence_state == "OFF"
+    assert controller.current_state == "COOLING"
+    assert controller.sequence_state == "MANUAL_COOLING"
+    assert commands == ["FAN", "COOLING"]
 
 
 def test_manual_fan_remains_on_after_heating_is_turned_off():
@@ -289,8 +298,8 @@ def test_manual_fan_remains_on_after_heating_is_turned_off():
 
     assert controller.manual_target == "OFF"
     assert controller.manual_fan_requested is True
-    assert controller.sequence_state == "MANUAL_FAN"
-    assert commands == ["HEATING", "FAN"]
+    assert controller.sequence_state == "MANUAL_POSTRUN"
+    assert commands == ["FAN", "FAN"]
 
 
 def test_manual_fan_command_does_not_disable_manual_heating(monkeypatch):
@@ -298,7 +307,7 @@ def test_manual_fan_command_does_not_disable_manual_heating(monkeypatch):
     controller.client = _MqttClient()
     controller.latest_inside_temperature = 21.0
     controller.current_state = "HEATING"
-    controller.sequence_state = "HEATING"
+    controller.sequence_state = "MANUAL_HEATING"
     controller.active_run_started_at = 0.0
     controller.manual_target = "HEATING"
     controller.heater_relay_on = True
@@ -332,7 +341,7 @@ def test_manual_fan_can_be_turned_on_and_off_without_heat_or_cooling(monkeypatch
     controller._handle_manual_command("FAN")
 
     assert commands == ["FAN", "OFF"]
-    assert controller.manual_target == "OFF"
+    assert controller.manual_target is None
     assert controller.sequence_state == "OFF"
 
 

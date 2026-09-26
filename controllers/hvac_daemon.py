@@ -283,15 +283,27 @@ class HvacHardwareDaemon:
                 )
                 print("[MANUAL CONTROL] Returned HVAC control to automatic mode.")
             elif action == "FAN":
-                self.manual_target = self.manual_target or "OFF"
                 self.manual_fan_requested = not self.manual_fan_requested
-            elif self.manual_target == action:
-                self.manual_target = "OFF"
+            elif (
+                self.manual_target == action
+                and self.sequence_state in ("MANUAL_PREHEAT", f"MANUAL_{action}")
+            ):
+                self._start_manual_postrun(time.time())
             else:
                 self.manual_target = action
+                self.current_state = "OFF"
+                self.active_run_started_at = None
+                self.sequence_state = "MANUAL_PREHEAT"
+                self.sequence_started_at = time.time()
+                self._write_relays("FAN")
+                if self.fan_preheat_seconds == 0:
+                    self._start_manual_active_run(action)
 
             self._process_control_tick_locked()
-            print(f"[MANUAL CONTROL] Requested {action}; relay mode is {self._manual_mode()}.")
+            print(
+                f"[MANUAL CONTROL] Requested {action}; "
+                f"sequence is {self.sequence_state}."
+            )
 
     def _record_environment_source(self, topic, payload):
         if topic == "home/environment/ecowitt":
@@ -352,17 +364,8 @@ class HvacHardwareDaemon:
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
         current_temp = self.latest_inside_temperature
         now = time.time()
-        if self.manual_target is not None or self.manual_fan_requested:
-            mode = self._manual_mode()
-            self.current_state = mode if mode in ("HEATING", "COOLING") else "OFF"
-            self.pending_state = None
-            self.sequence_state = "OFF" if mode == "OFF" else f"MANUAL_{mode}"
-            if (
-                self.heater_relay_on != (mode == "HEATING")
-                or self.cooler_relay_on != (mode == "COOLING")
-                or self.fan_relay_on != (mode in ("HEATING", "COOLING", "FAN"))
-            ):
-                self._write_relays(mode)
+        if self.sequence_state.startswith("MANUAL_") or self.manual_fan_requested:
+            self._process_manual_control_tick(now)
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -438,12 +441,48 @@ class HvacHardwareDaemon:
             return "COOLING"
         return "OFF"
 
-    def _manual_mode(self) -> str:
-        if self.manual_target in ("HEATING", "COOLING"):
-            return self.manual_target
+    def _process_manual_control_tick(self, now: float):
+        if self.sequence_state == "MANUAL_PREHEAT":
+            if now - self.sequence_started_at >= self.fan_preheat_seconds:
+                self._start_manual_active_run(self.manual_target)
+            return
+
+        if self.sequence_state == "MANUAL_POSTRUN":
+            if now - self.sequence_started_at >= self.fan_postrun_seconds:
+                self.current_state = "OFF"
+                self.manual_target = None
+                self.sequence_state = "MANUAL_FAN" if self.manual_fan_requested else "OFF"
+                self._write_relays("FAN" if self.manual_fan_requested else "OFF")
+            return
+
+        if self.sequence_state in ("MANUAL_HEATING", "MANUAL_COOLING"):
+            return
+
         if self.manual_fan_requested:
-            return "FAN"
-        return "OFF"
+            self.current_state = "OFF"
+            self.sequence_state = "MANUAL_FAN"
+            if not self.fan_relay_on:
+                self._write_relays("FAN")
+            return
+
+        self.current_state = "OFF"
+        self.sequence_state = "OFF"
+        self._write_relays("OFF")
+
+    def _start_manual_active_run(self, target_state: str):
+        self.current_state = target_state
+        self.sequence_state = f"MANUAL_{target_state}"
+        self._write_relays(target_state)
+
+    def _start_manual_postrun(self, now: float):
+        self.manual_target = "OFF"
+        self.current_state = "OFF"
+        self.active_run_started_at = None
+        self.sequence_state = "MANUAL_POSTRUN"
+        self.sequence_started_at = now
+        self._write_relays("FAN")
+        if self.fan_postrun_seconds == 0:
+            self._process_manual_control_tick(now)
 
     def _start_preheat(self, target_state: str, now: float):
         self.pending_state = target_state
