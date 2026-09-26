@@ -250,6 +250,7 @@ class MqttTelemetryListener(QObject):
                     "topic": f"homeassistant/light/cbus_{int(address)}/set",
                     "payload": payload,
                     "reason": "touchscreen control",
+                    "source": "home-controller",
                 }
             ),
             qos=1,

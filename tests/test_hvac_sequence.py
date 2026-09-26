@@ -14,9 +14,13 @@ class _MqttClient:
 class _RecordingMqttClient:
     def __init__(self):
         self.messages = []
+        self.subscriptions = []
 
     def publish(self, topic, payload):
         self.messages.append((topic, json.loads(payload)))
+
+    def subscribe(self, topic):
+        self.subscriptions.append(topic)
 
 
 class _Message:
@@ -350,6 +354,36 @@ def test_returning_hvac_to_auto_clears_blind_automation_holds():
         "action": "RESET_AUTOMATION_HOLDS",
         "reason": "HVAC_AUTO",
     }
+
+
+def test_hvac_connection_releases_stale_blind_locks():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+
+    controller._on_connect(controller.client, None, None, 0)
+
+    assert ("home/blinds/command", {"action": "RELEASE_HVAC_LOCKS"}) in (
+        controller.client.messages
+    )
+
+
+def test_hvac_postrun_releases_blind_locks(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    controller.latest_inside_temperature = 22.0
+    controller.sequence_state = "POSTRUN"
+    controller.sequence_started_at = 0.0
+    controller.fan_postrun_seconds = 120.0
+    controller.blind_pre_close_triggered = True
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: 120.0)
+    controller._write_relays = lambda mode: None
+
+    controller._process_control_tick()
+
+    assert ("home/blinds/command", {"action": "RELEASE_HVAC_LOCKS"}) in (
+        controller.client.messages
+    )
+    assert controller.blind_pre_close_triggered is False
 
 
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):

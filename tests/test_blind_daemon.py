@@ -86,6 +86,33 @@ def test_manual_hold_persists_and_blocks_automation_after_restart(tmp_path, monk
     assert restarted_daemon.client.messages == []
 
 
+def test_home_controller_command_uses_manual_hold(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    state_path = tmp_path / "blind-state.json"
+    write_settings(settings_path)
+    clock = [1_000.0]
+    monkeypatch.setattr("controllers.blind_daemon.time.time", lambda: clock[0])
+    daemon = BlindAutomationDaemon(settings_path, state_path)
+    daemon.client = RecordingMqttClient()
+    daemon._state_for(31)["automated_hold_until"] = 1_100.0
+
+    daemon._handle_queued_command(
+        {
+            "source": "home-controller",
+            "topic": "homeassistant/light/cbus_31/set",
+            "payload": {"state": "OFF"},
+        }
+    )
+
+    assert daemon.states["31"]["position"] == "CLOSED"
+    assert daemon.states["31"]["manual_hold_until"] == 4_600.0
+
+    clock[0] = 1_101.0
+    daemon._handle_environment({"outside_lux": 100})
+
+    assert daemon.client.messages == []
+
+
 def test_low_light_closes_even_while_manual_or_automated_hold_is_active(tmp_path):
     settings_path = tmp_path / "blind-settings.yml"
     state_path = tmp_path / "blind-state.json"
@@ -133,3 +160,24 @@ def test_hvac_close_lock_prevents_open_until_auto_resets_holds(tmp_path, monkeyp
 
     assert daemon.states["31"]["hvac_locked"] is False
     assert daemon.client.messages[-1][1]["payload"]["state"] == "ON"
+
+
+def test_releasing_hvac_locks_preserves_manual_hold(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    state_path = tmp_path / "blind-state.json"
+    write_settings(settings_path)
+    clock = [1_000.0]
+    monkeypatch.setattr("controllers.blind_daemon.time.time", lambda: clock[0])
+    daemon = BlindAutomationDaemon(settings_path, state_path)
+    daemon.client = RecordingMqttClient()
+    state = daemon._state_for(31)
+    state["position"] = "CLOSED"
+    state["hvac_locked"] = True
+    state["manual_hold_until"] = 4_600.0
+    daemon.latest_outside_lux = 100
+
+    daemon._handle_blind_command({"action": "RELEASE_HVAC_LOCKS"})
+
+    assert state["hvac_locked"] is False
+    assert state["manual_hold_until"] == 4_600.0
+    assert daemon.client.messages == []

@@ -199,6 +199,11 @@ class HvacHardwareDaemon:
         self.client.subscribe("home/hvac/settings")
         self.client.subscribe("home/hvac/command")
         self.client.subscribe("home/environment/#")
+        self.client.publish(
+            "home/blinds/command",
+            json.dumps({"action": "RELEASE_HVAC_LOCKS"}),
+        )
+        print("[AUTOMATION] Released any stale HVAC blind locks at startup.")
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -369,6 +374,7 @@ class HvacHardwareDaemon:
                 self.pending_state = None
                 self.active_run_started_at = None
                 self._write_relays("OFF")
+                self._release_hvac_blind_locks()
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -377,7 +383,7 @@ class HvacHardwareDaemon:
                 self.sequence_state = "OFF"
                 self.pending_state = None
                 self._write_relays("OFF")
-                self.blind_pre_close_triggered = False
+                self._release_hvac_blind_locks()
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -397,6 +403,7 @@ class HvacHardwareDaemon:
                     self.sequence_state = "OFF"
                     self.pending_state = None
                     self._write_relays("OFF")
+                    self._release_hvac_blind_locks()
                 else:
                     self.pending_state = target_state
                     self.sequence_started_at = now
@@ -471,6 +478,8 @@ class HvacHardwareDaemon:
     def _maybe_close_blinds(self, current_temp: float):
         if current_temp >= self.t_max - 1.0:
             self._maybe_close_blinds_for_state("COOLING")
+        else:
+            self._release_hvac_blind_locks()
 
     def _maybe_close_blinds_for_state(self, target_state: str):
         if not self.blind_pre_close_triggered:
@@ -478,6 +487,16 @@ class HvacHardwareDaemon:
             print("[AUTOMATION] Issuing anticipatory blind close command.")
             self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": reason}))
             self.blind_pre_close_triggered = True
+
+    def _release_hvac_blind_locks(self):
+        if not self.blind_pre_close_triggered:
+            return
+        print("[AUTOMATION] Releasing HVAC blind locks.")
+        self.client.publish(
+            "home/blinds/command",
+            json.dumps({"action": "RELEASE_HVAC_LOCKS"}),
+        )
+        self.blind_pre_close_triggered = False
 
     def _broadcast_status_telemetry(self, current_temp):
         """Pushes health data updates back out over the broker line to feed adaptive layouts."""

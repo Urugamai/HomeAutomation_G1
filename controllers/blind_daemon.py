@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,9 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+
+
+CBUS_SET_TOPIC_PATTERN = re.compile(r"^homeassistant/light/cbus_(\d{1,3})/set$")
 
 
 class BlindAutomationDaemon:
@@ -191,6 +195,7 @@ class BlindAutomationDaemon:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         print(f"[MQTT] Blind Daemon bound to broker ({self.broker_ip}).")
         self.client.subscribe("home/blinds/command")
+        self.client.subscribe("home/cbus/queued-command")
         self.client.subscribe("home/environment/ecowitt")
         self.client.subscribe("homeassistant/light/+/state")
 
@@ -199,6 +204,8 @@ class BlindAutomationDaemon:
             payload = json.loads(msg.payload.decode("utf-8"))
             if msg.topic == "home/blinds/command":
                 self._handle_blind_command(payload)
+            elif msg.topic == "home/cbus/queued-command":
+                self._handle_queued_command(payload)
             elif msg.topic == "home/environment/ecowitt":
                 self._handle_environment(payload)
             elif msg.topic.startswith("homeassistant/light/cbus_") and msg.topic.endswith(
@@ -234,8 +241,38 @@ class BlindAutomationDaemon:
             self._save_state()
             if self.latest_outside_lux is not None:
                 self._evaluate_lux(self.latest_outside_lux)
+        elif action == "RELEASE_HVAC_LOCKS":
+            print("[COMMAND] Releasing HVAC blind locks after the HVAC cycle.")
+            for address in self.devices:
+                self._state_for(address)["hvac_locked"] = False
+            self._save_state()
+            if self.latest_outside_lux is not None:
+                self._evaluate_lux(self.latest_outside_lux)
         else:
             raise ValueError(f"Unsupported blind command action: {action}")
+
+    def _handle_queued_command(self, payload):
+        if payload.get("source") != "home-controller":
+            return
+        topic = payload.get("topic")
+        command = payload.get("payload")
+        if not isinstance(topic, str) or not isinstance(command, dict):
+            raise ValueError("Invalid home-controller C-Bus command")
+        match = CBUS_SET_TOPIC_PATTERN.fullmatch(topic)
+        if match is None:
+            raise ValueError("Home-controller command must target a C-Bus light")
+        address = int(match.group(1))
+        if address not in self.devices:
+            return
+        target_state = str(command.get("state", "")).upper()
+        if target_state not in ("ON", "OFF"):
+            raise ValueError("Home-controller command must contain an ON or OFF state")
+        position = (
+            "CLOSED"
+            if target_state == self.devices[address]["closed_state"]
+            else "OPEN"
+        )
+        self._record_manual_change(address, position)
 
     def _handle_environment(self, payload):
         outside_lux = payload.get("outside_lux", payload.get("light_lux"))
@@ -259,15 +296,21 @@ class BlindAutomationDaemon:
             == self.devices[address]["closed_state"]
             else "OPEN"
         )
-        state = self._state_for(address)
-        state["position"] = position
         if payload.get("cbus_source_addr") is not None:
-            policy = self.devices[address]
-            state["manual_hold_until"] = time.time() + policy["manual_hold_minutes"] * 60
-            print(
-                f"[MANUAL] {policy['label']} moved to {position}; "
-                f"holding automation for {policy['manual_hold_minutes']:.0f} minutes."
-            )
+            self._record_manual_change(address, position)
+            return
+        self._state_for(address)["position"] = position
+        self._save_state()
+
+    def _record_manual_change(self, address, position):
+        state = self._state_for(address)
+        policy = self.devices[address]
+        state["position"] = position
+        state["manual_hold_until"] = time.time() + policy["manual_hold_minutes"] * 60
+        print(
+            f"[MANUAL] {policy['label']} moved to {position}; "
+            f"holding automation for {policy['manual_hold_minutes']:.0f} minutes."
+        )
         self._save_state()
 
     def _evaluate_lux(self, outside_lux):
