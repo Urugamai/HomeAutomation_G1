@@ -243,8 +243,18 @@ class MqttTelemetryListener(QObject):
             "brightness": max(0, min(255, level)),
             "transition": 0,
         }
-        topic = f"homeassistant/light/cbus_{int(address)}/set"
-        self.client.publish(topic, json.dumps(payload), qos=1, retain=False)
+        self.client.publish(
+            "home/cbus/queued-command",
+            json.dumps(
+                {
+                    "topic": f"homeassistant/light/cbus_{int(address)}/set",
+                    "payload": payload,
+                    "reason": "touchscreen control",
+                }
+            ),
+            qos=1,
+            retain=False,
+        )
 
     def set_hvac_settings(self, settings):
         if self.client is None:

@@ -10,6 +10,7 @@ services=(
     bom_weather.service
     sigen_power.service
     charger.service
+    cbus_command_dispatcher.service
     blinds.service
     hvac.service
     home_controller.service
@@ -19,7 +20,7 @@ services=(
 
 failed=0
 
-for service in living_zone.service hvac.service home_controller.service home_controller_watchdog.service; do
+for service in living_zone.service hvac.service home_controller.service home_controller_watchdog.service cbus_command_dispatcher.service; do
     source_file="$repo_root/controllers/$service"
     if [[ ! -f "$source_file" ]]; then
         echo "MISSING SERVICE FILE: $source_file"

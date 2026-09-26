@@ -26,16 +26,12 @@ def _load_arguments() -> list[str]:
     cbus_host = config.get("CBUS", "host")
     cbus_port = config.getint("CBUS", "port")
     timesync = config.getint("CBUS", "timesync", fallback=300)
-    command_delay_ms = config.getint("CBUS", "command_delay_ms", fallback=0)
-    if command_delay_ms < 0:
-        raise ValueError("CBUS command_delay_ms cannot be negative")
 
     arguments = [
         "--broker-address", broker,
         "--broker-port", str(broker_port),
         "--tcp", f"{cbus_host}:{cbus_port}",
         "--timesync", str(timesync),
-        "--command-delay-ms", str(command_delay_ms),
     ]
 
     if not broker_tls:

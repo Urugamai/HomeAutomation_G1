@@ -17,8 +17,6 @@
 
 from asyncio import get_event_loop, run
 from argparse import ArgumentParser, FileType
-from collections import deque
-import asyncio
 import json
 import logging
 from typing import Any, BinaryIO, Dict, Optional, Text, TextIO
@@ -134,52 +132,6 @@ class CBusHandler(PCIProtocol):
 
 class MqttClient(mqtt.Client):
 
-    def __init__(
-            self, *args, command_delay_seconds=0.0, command_loop=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.command_delay_seconds = command_delay_seconds
-        self.command_loop = command_loop or get_event_loop()
-        self._pending_commands = deque()
-        self._command_task = None
-
-    def _queue_cbus_command(
-            self, userdata: CBusHandler, group_addr: int, light_on: bool,
-            brightness: int, transition_time: int) -> None:
-        self._pending_commands.append(
-            (userdata, group_addr, light_on, brightness, transition_time)
-        )
-        if self._command_task is None:
-            self._command_task = self.command_loop.create_task(
-                self._dispatch_cbus_commands()
-            )
-
-    async def _dispatch_cbus_commands(self) -> None:
-        while self._pending_commands:
-            userdata, group_addr, light_on, brightness, transition_time = (
-                self._pending_commands.popleft()
-            )
-            self._send_cbus_command(
-                userdata, group_addr, light_on, brightness, transition_time
-            )
-            if self._pending_commands and self.command_delay_seconds:
-                await asyncio.sleep(self.command_delay_seconds)
-        self._command_task = None
-
-    def _send_cbus_command(
-            self, userdata: CBusHandler, group_addr: int, light_on: bool,
-            brightness: int, transition_time: int) -> None:
-        logger.info('Dispatching C-Bus command for group %d', group_addr)
-        if light_on:
-            if brightness == 255 and transition_time == 0:
-                userdata.lighting_group_on(group_addr)
-                self.lighting_group_on(None, group_addr)
-            else:
-                userdata.lighting_group_ramp(group_addr, transition_time, brightness)
-                self.lighting_group_ramp(None, group_addr, transition_time, brightness)
-        else:
-            userdata.lighting_group_off(group_addr)
-            self.lighting_group_off(None, group_addr)
-
     def on_connect(self, client, userdata: CBusHandler, flags, rc):
         logger.info('Connected to MQTT broker')
         userdata.mqtt_api = self
@@ -223,9 +175,20 @@ class MqttClient(mqtt.Client):
         if transition_time < 0:
             transition_time = 0
 
-        self._queue_cbus_command(
-            userdata, ga, light_on, brightness, transition_time
-        )
+        # push state to CBus and republish on MQTT
+        if light_on:
+            if brightness == 255 and transition_time == 0:
+                # lighting on
+                userdata.lighting_group_on(ga)
+                self.lighting_group_on(None, ga)
+            else:
+                # ramp
+                userdata.lighting_group_ramp(ga, transition_time, brightness)
+                self.lighting_group_ramp(None, ga, transition_time, brightness)
+        else:
+            # lighting off
+            userdata.lighting_group_off(ga)
+            self.lighting_group_off(None, ga)
 
     def publish(self, topic: Text, payload: Dict[Text, Any]):
         """Publishes a payload as JSON."""
@@ -478,14 +441,6 @@ async def _main():
              'time source, or you have another device on the CBus network '
              'providing time services. [default: %(default)s]')
 
-    group.add_argument(
-        '--command-delay-ms',
-        dest='command_delay_ms',
-        type=int,
-        default=0,
-        help='Minimum delay between C-Bus actuator commands. [default: %(default)s ms]',
-    )
-
     group = parser.add_argument_group('Label options')
 
     group.add_argument(
@@ -501,8 +456,6 @@ async def _main():
     if bool(option.broker_client_cert) != bool(option.broker_client_key):
         return parser.error(
             'To use client certificates, both -k and -K must be specified.')
-    if option.command_delay_ms < 0:
-        return parser.error('--command-delay-ms cannot be negative')
 
     global_logger = logging.getLogger('cbus')
     global_logger.setLevel(option.verbosity)
@@ -529,11 +482,7 @@ async def _main():
         _, protocol = await loop.create_connection(
             factory, addr[0], int(addr[1]))
 
-    mqtt_client = MqttClient(
-        userdata=protocol,
-        command_delay_seconds=option.command_delay_ms / 1000,
-        command_loop=loop,
-    )
+    mqtt_client = MqttClient(userdata=protocol)
     if option.broker_auth:
         read_auth(mqtt_client, option.broker_auth)
     if option.broker_disable_tls:

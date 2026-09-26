@@ -345,8 +345,14 @@ class BlindAutomationDaemon:
             "transition": 0,
         }
         self.client.publish(
-            f"homeassistant/light/cbus_{address}/set",
-            json.dumps(payload),
+            "home/cbus/queued-command",
+            json.dumps(
+                {
+                    "topic": f"homeassistant/light/cbus_{address}/set",
+                    "payload": payload,
+                    "reason": reason,
+                }
+            ),
             qos=1,
             retain=False,
         )

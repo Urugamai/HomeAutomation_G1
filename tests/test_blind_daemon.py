@@ -44,8 +44,15 @@ def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys):
 
     assert daemon.client.messages == [
         (
-            "homeassistant/light/cbus_31/set",
-            {"state": "OFF", "brightness": 0, "transition": 0},
+            "home/cbus/queued-command",
+            {
+                "topic": "homeassistant/light/cbus_31/set",
+                "payload": {"state": "OFF", "brightness": 0, "transition": 0},
+                "reason": (
+                    "outside_lux=49.0 below close_below_lux=50.0; "
+                    "dusk delay=0m elapsed"
+                ),
+            },
             1,
             False,
         )
@@ -92,7 +99,7 @@ def test_low_light_closes_even_while_manual_or_automated_hold_is_active(tmp_path
 
     daemon._handle_environment({"outside_lux": 0})
 
-    assert daemon.client.messages[-1][1]["state"] == "OFF"
+    assert daemon.client.messages[-1][1]["payload"]["state"] == "OFF"
     assert state["position"] == "CLOSED"
 
 
@@ -125,4 +132,4 @@ def test_hvac_close_lock_prevents_open_until_auto_resets_holds(tmp_path, monkeyp
     daemon._handle_blind_command({"action": "RESET_AUTOMATION_HOLDS"})
 
     assert daemon.states["31"]["hvac_locked"] is False
-    assert daemon.client.messages[-1][1]["state"] == "ON"
+    assert daemon.client.messages[-1][1]["payload"]["state"] == "ON"
