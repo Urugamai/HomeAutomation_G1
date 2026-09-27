@@ -1,8 +1,11 @@
 """Desktop controller entry point for the fixed 800x480 display."""
 
 import configparser
+import logging
 import os
+import shutil
 import socket
+import subprocess
 import sys
 from pathlib import Path
 
@@ -22,6 +25,8 @@ from main import _load_power_chart_grid_interval
 from ui.adaptive_ui import DesktopDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
 from ui.hvac_page import HvacConfigurationPage
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DeskControllerWindow(QMainWindow):
@@ -148,14 +153,52 @@ class DeskControllerWindow(QMainWindow):
 
     def _sleep_display(self):
         self._display_is_sleeping = True
+        self._idle_timer.stop()
         self._sleep_overlay.setGeometry(self.rect())
         self._sleep_overlay.raise_()
         self._sleep_overlay.show()
+        self._set_display_power(False)
 
     def _wake_display(self):
+        self._set_display_power(True)
         self._sleep_overlay.hide()
         self._display_is_sleeping = False
         self._reset_idle_timer()
+
+    @staticmethod
+    def _set_display_power(enabled):
+        if not sys.platform.startswith("linux"):
+            return
+
+        power = "1" if enabled else "0"
+        commands = (
+            ["vcgencmd", "display_power", power],
+            ["xset", "dpms", "force", "on" if enabled else "off"],
+        )
+        for command in commands:
+            executable = shutil.which(command[0])
+            if executable is None:
+                continue
+            try:
+                subprocess.run(
+                    [executable, *command[1:]],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                return
+            except (OSError, subprocess.SubprocessError) as error:
+                LOGGER.warning(
+                    "Display power command failed (%s): %s",
+                    " ".join(command),
+                    error,
+                )
+
+        LOGGER.warning(
+            "No working display power command was available; "
+            "using the software sleep overlay only"
+        )
 
     def closeEvent(self, event):
         QApplication.instance().removeEventFilter(self)

@@ -126,11 +126,18 @@ def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
     assert window.first_floor_page.compact
     assert window.climate_page.climate_chart is None
     assert window._idle_timer.interval() == 5 * 60 * 1000
+    display_power_calls = []
+    monkeypatch.setattr(
+        window,
+        "_set_display_power",
+        lambda enabled: display_power_calls.append(enabled),
+    )
     window._sleep_display()
     assert window._display_is_sleeping
     assert not window._sleep_overlay.isHidden()
     window._wake_display()
     assert not window._display_is_sleeping
     assert window._sleep_overlay.isHidden()
+    assert display_power_calls == [False, True]
     window.close()
     app.processEvents()
