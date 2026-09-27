@@ -1,3 +1,4 @@
+import datetime
 import sys
 import time
 import json
@@ -24,6 +25,7 @@ IS_RASPI = GPIO is not None or lgpio is not None
 RELAY_ON = 0
 RELAY_OFF = 1
 SETPOINT_HYSTERESIS_C = 0.5
+VACATION_EXERCISE_SECONDS = 300
 
 try:
     import paho.mqtt.client as mqtt
@@ -64,6 +66,10 @@ class HvacHardwareDaemon:
         self.min_run_seconds = 300.0
         self.max_run_seconds = 600.0
         self.rest_seconds = 300.0
+        self.vacation_start = None
+        self.vacation_end = None
+        self.vacation_last_exercise_date = None
+        self.vacation_exercise_target = None
         self.settings_store = HvacSettingsStore()
         self._load_persisted_settings()
 
@@ -211,31 +217,11 @@ class HvacHardwareDaemon:
         try:
             if msg.topic == "home/hvac/settings":
                 payload = json.loads(msg.payload.decode("utf-8"))
-                settings = {
-                    "t_min": float(payload.get("target_min", self.t_min)),
-                    "t_max": float(payload.get("target_max", self.t_max)),
-                    "fan_preheat_seconds": float(
-                        payload.get("fan_preheat_seconds", self.fan_preheat_seconds)
-                    ),
-                    "fan_postrun_seconds": float(
-                        payload.get("fan_postrun_seconds", self.fan_postrun_seconds)
-                    ),
-                    "min_run_seconds": float(
-                        payload.get("min_run_seconds", self.min_run_seconds)
-                    ),
-                    "max_run_seconds": float(
-                        payload.get("max_run_seconds", self.max_run_seconds)
-                    ),
-                    "rest_seconds": float(
-                        payload.get("rest_seconds", self.rest_seconds)
-                    ),
-                }
+                settings = self.settings_store.normalize(
+                    {**self._settings_payload(), **payload}
+                )
                 with self._settings_lock:
-                    if not self._settings_are_valid(settings):
-                        print("[SETTINGS REJECTED] HVAC timing or target thresholds are invalid.")
-                        return
-                    for name, value in settings.items():
-                        setattr(self, name, value)
+                    self._apply_settings(settings)
                     try:
                         self.settings_store.save(self._settings_payload())
                     except OSError as error:
@@ -350,6 +336,9 @@ class HvacHardwareDaemon:
         settings = self.settings_store.load()
         if not settings:
             return
+        self._apply_settings(settings)
+
+    def _apply_settings(self, settings):
         self.t_min = settings["target_min"]
         self.t_max = settings["target_max"]
         self.fan_preheat_seconds = settings["fan_preheat_seconds"]
@@ -357,6 +346,15 @@ class HvacHardwareDaemon:
         self.min_run_seconds = settings["min_run_seconds"]
         self.max_run_seconds = settings["max_run_seconds"]
         self.rest_seconds = settings["rest_seconds"]
+        self.vacation_start = self._date_from_settings(settings["vacation_start"])
+        self.vacation_end = self._date_from_settings(settings["vacation_end"])
+        self.vacation_last_exercise_date = self._date_from_settings(
+            settings["vacation_last_exercise_date"]
+        )
+
+    @staticmethod
+    def _date_from_settings(value):
+        return datetime.date.fromisoformat(value) if value else None
 
     def _settings_payload(self):
         return {
@@ -367,6 +365,15 @@ class HvacHardwareDaemon:
             "min_run_seconds": self.min_run_seconds,
             "max_run_seconds": self.max_run_seconds,
             "rest_seconds": self.rest_seconds,
+            "vacation_start": (
+                self.vacation_start.isoformat() if self.vacation_start else None
+            ),
+            "vacation_end": self.vacation_end.isoformat() if self.vacation_end else None,
+            "vacation_last_exercise_date": (
+                self.vacation_last_exercise_date.isoformat()
+                if self.vacation_last_exercise_date
+                else None
+            ),
         }
 
     def _process_control_tick(self):
@@ -377,6 +384,10 @@ class HvacHardwareDaemon:
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
         current_temp = self.latest_inside_temperature
         now = time.time()
+        if self._process_vacation_control(now, current_temp):
+            self._broadcast_status_telemetry(current_temp)
+            return
+
         if self.sequence_state.startswith("MANUAL_") or self.manual_fan_requested:
             self._process_manual_control_tick(now)
             self._broadcast_status_telemetry(current_temp)
@@ -444,6 +455,97 @@ class HvacHardwareDaemon:
         else:
             self._maybe_close_blinds(current_temp)
         self._broadcast_status_telemetry(current_temp)
+
+    def _process_vacation_control(self, now, current_temp):
+        current_datetime = datetime.datetime.fromtimestamp(now)
+        today = current_datetime.date()
+        if not self._is_vacation_active(current_datetime):
+            return False
+
+        if (
+            self.manual_target is not None
+            or self.manual_fan_requested
+            or self.sequence_state.startswith("MANUAL_")
+        ):
+            self.manual_target = None
+            self.manual_fan_requested = False
+            if self.current_state in ("HEATING", "COOLING") or self.sequence_state in (
+                "MANUAL_PREHEAT",
+                "MANUAL_HEATING",
+                "MANUAL_COOLING",
+            ):
+                self._end_active_run(now)
+            else:
+                self.current_state = "OFF"
+                self.pending_state = None
+                self.sequence_state = "OFF"
+                self._write_relays("OFF")
+            return True
+
+        if self.sequence_state == "POSTRUN":
+            if now - self.sequence_started_at >= self.fan_postrun_seconds:
+                self.sequence_state = "OFF"
+                self.pending_state = None
+                self._write_relays("OFF")
+                self._release_hvac_blind_locks()
+            return True
+
+        if self.vacation_exercise_target is not None:
+            if self.sequence_state == "PREHEAT":
+                if now - self.sequence_started_at >= self.fan_preheat_seconds:
+                    self._start_active_run(self.vacation_exercise_target, now)
+            elif self.current_state == self.vacation_exercise_target:
+                if now - self.active_run_started_at >= VACATION_EXERCISE_SECONDS:
+                    self._end_active_run(now)
+                    self.vacation_exercise_target = None
+            return True
+
+        if self.current_state in ("HEATING", "COOLING") or self.sequence_state == "PREHEAT":
+            self._end_active_run(now)
+            return True
+
+        if self._vacation_exercise_due(today):
+            self.vacation_exercise_target = self._vacation_exercise_mode(current_temp)
+            self.vacation_last_exercise_date = today
+            self._save_vacation_progress()
+            self._start_preheat(self.vacation_exercise_target, now)
+        else:
+            self.current_state = "OFF"
+            self.pending_state = None
+            if self.sequence_state != "OFF":
+                self.sequence_state = "OFF"
+            if self.heater_relay_on or self.cooler_relay_on or self.fan_relay_on:
+                self._write_relays("OFF")
+        return True
+
+    def _is_vacation_active(self, current_datetime):
+        if self.vacation_start is None or self.vacation_end is None:
+            return False
+        vacation_start = datetime.datetime.combine(
+            self.vacation_start,
+            datetime.time(hour=18),
+        )
+        vacation_end = datetime.datetime.combine(
+            self.vacation_end,
+            datetime.time(hour=9),
+        )
+        return vacation_start <= current_datetime < vacation_end
+
+    def _vacation_exercise_due(self, today):
+        return (
+            (today - self.vacation_start).days % 7 == 0
+            and self.vacation_last_exercise_date != today
+        )
+
+    def _vacation_exercise_mode(self, current_temp):
+        midpoint = (self.t_min + self.t_max) / 2
+        return "HEATING" if current_temp is None or current_temp <= midpoint else "COOLING"
+
+    def _save_vacation_progress(self):
+        try:
+            self.settings_store.save(self._settings_payload())
+        except OSError as error:
+            print(f"[SETTINGS ERROR] Unable to persist vacation exercise: {error}")
 
     def _requested_state(self, current_temp: float) -> str:
         if self.manual_target in ("HEATING", "COOLING", "OFF"):

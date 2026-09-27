@@ -1,4 +1,5 @@
 import time
+import datetime
 
 from PyQt6.QtWidgets import QApplication
 
@@ -65,5 +66,29 @@ def test_relay_buttons_display_precool_and_postrun_countdowns():
     )
 
     assert page.fan_relay_indicator.text().startswith("Fan\nON-PostRun\n")
+    page.deleteLater()
+    app.processEvents()
+
+
+def test_vacation_dates_follow_calendar_selection_rules():
+    app = QApplication.instance() or QApplication([])
+    page = HvacConfigurationPage()
+    page.vacation_start = None
+    page.vacation_end = None
+    today = datetime.date.today()
+
+    page._select_vacation_date(today)
+    assert page.vacation_start == today
+    assert page.vacation_end is None
+
+    page._select_vacation_date(today + datetime.timedelta(days=7))
+    assert page.vacation_end == today + datetime.timedelta(days=7)
+    assert "Vacation start" in page.vacation_status_lbl.text()
+
+    page._select_vacation_date(today + datetime.timedelta(days=3))
+    assert page.vacation_start == today + datetime.timedelta(days=3)
+
+    page._select_vacation_date(today + datetime.timedelta(days=10))
+    assert page.vacation_end == today + datetime.timedelta(days=10)
     page.deleteLater()
     app.processEvents()

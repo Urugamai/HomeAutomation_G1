@@ -1,5 +1,6 @@
 """Durable HVAC settings shared by the controller and its user interface."""
 
+import datetime
 import json
 import logging
 import math
@@ -20,6 +21,11 @@ class HvacSettingsStore:
         "max_run_seconds": 600.0,
         "rest_seconds": 300.0,
     }
+    VACATION_KEYS = (
+        "vacation_start",
+        "vacation_end",
+        "vacation_last_exercise_date",
+    )
 
     def __init__(self, storage_path=None):
         self.storage_path = Path(storage_path or self.STORAGE_PATH)
@@ -45,7 +51,29 @@ class HvacSettingsStore:
             )
         ):
             raise ValueError("HVAC settings are outside their safe ranges")
-        return values
+        vacation = {
+            key: cls._normalize_date(settings.get(key))
+            for key in cls.VACATION_KEYS
+        }
+        if (vacation["vacation_start"] is None) != (
+            vacation["vacation_end"] is None
+        ):
+            raise ValueError("Vacation start and end dates must be selected together")
+        if (
+            vacation["vacation_start"] is not None
+            and vacation["vacation_start"] >= vacation["vacation_end"]
+        ):
+            raise ValueError("Vacation end date must be after the start date")
+        return {**values, **vacation}
+
+    @staticmethod
+    def _normalize_date(value):
+        if value in (None, ""):
+            return None
+        try:
+            return datetime.date.fromisoformat(str(value)).isoformat()
+        except ValueError as exc:
+            raise ValueError(f"Invalid vacation date: {value}") from exc
 
     def load(self):
         if not self.storage_path.is_file():

@@ -7,24 +7,10 @@ Things to set:
 - Button to add a specification (added specifications will have a button to allow them to be deleted)
 	- An added specification will be: Day of week list (can be all, or any combination of days - probably list all days with a checkbox beside each), Starttime endtime heat-to and cool-to temperatures
 
-There are some HVAC rules that I would like a settings page available via a button on the climate Settings page (i.e. it is not a new tab).  The rules to be available to change are:
-- The maximum run time for heat, cool (2 settings)
-- The fan pre-start duration in minutes for heat, cool (2 settings)
-- The fan post-stop duration in minutes for heat, cool (2 settings)
-- how long before the next setting value do we start trying to get to that value (based on the settings from the finer controls section)
-
 I need a button on the climate setting page called 'Vacation'. This needs to pop up a calendar starting from today, where I can click a day which becomes the 'start of vacation' day. I then move forward on the calendar and click a second day, this becomes the 'End of vacation' date.  If I click a date before the current end date then that becomes the new start date.  If I click a date greater than the start date then that becomes the end date.  It is not to be possible to click any date that is in the past relative to today (though today can be selected as a start date).
 Having selected a vacation window (start and end date) these are to be displayed as text on a status line that will read something like Vacation start yyyy-mm-dd through yyyy-mm-dd.
 On the start date, at midnight, the hvac is to stop heating/cooling the house.  It is to run either heating or cooling for 5 minutes once each week to keep the system fresh.
 On the last day of the vacation, from midnight, the system is to start returning the house to the desired temperature using the standard rules in the hvac controller (not running more than 10 minutes before resting for 5, etc).
-
-HVAC Control is to:
-	- ensure we do not heat if any room is above the cool-to temperature or becomes higher than that temperature.
-	- Ensure we do not cool if any room is below the heat-to temperature or becomes lower than that temperature.
-	- Turn off once the average reaches the target temperature or one of the above rules is reached.
-	- If we need to heat but a room is above the cool-to temperature then we close the blinds/shutters in that room first and give it 5 minutes to have an effect.
-	- if we need to cool but a room is below the heat-to temperature then we open the blinds/shutters in that room first and give it 5 minutes to have an effect.
-	- blinds are not opened if it is dark outside (outside light <100) - this should probably be in the blind-controller daemon though hvac should also be aware so it doesnt keep trying when there is no point
 
 I need a button on the climate page for 'emtpy house' where a popup will allow me to indicate the start and end times for today where the house does not need heating/cooling.  The HVAC should stop working on maintaining temperature from 30 minutes after the start time until 1 hour before the end time at which time it will resume normal operation.
 
@@ -32,6 +18,7 @@ I need a settings yml file that the blind controller daemon uses to define the o
 
 It seems the cmqttd daemon is not able to keep up with a multi-device series of commands and so some blinds (for example) are not going up or down when a set of blinds are triggered for action.  Where should we put a delay between commands, how can we ensure this is the right fix, and can we make the delay a parameter in a configuration file somewhere logical please.
 
+I have a desktop unit with an 800x480 screen that I would like a lot of the home_controller features available on but due to the screen size, it would need to be split across more pages (but I do NOT want to change the home_controller screens as they are working very nicely).  I would like developments to improve the operation of one to also improve the same feature in the other.  To start, the desk_controller should have the tab buttons at the top.  The home screen should have the two charts we have on the home_controller, with the status chart on top and the climate chart below along with the power, forecast and outside weather details - the clock and date are not needed.  The environment tab should look the same, just scaled to fit.  The ground and first floor screens will need the cbus control and state buttons to be smaller and the dimmer control can be removed as it would be too small to use on this screen.  Eventually I am going to want to control the locations of the buttons so that I can make it look like the floor plan of the house with the buttons in the right place for the device they control.
 
 google:
 	wireless solar powered hvac vent control

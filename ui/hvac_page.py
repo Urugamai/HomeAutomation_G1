@@ -6,9 +6,10 @@ import os
 import time
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QSpinBox,
+    QCalendarWidget, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
+    QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QPointF, QRectF
+from PyQt6.QtCore import pyqtSignal, QDate, Qt, QTimer, QPointF, QRectF
 from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 
 from libraries.hvac_settings import HvacSettingsStore
@@ -307,6 +308,9 @@ class HvacConfigurationPage(QWidget):
         self.min_run_seconds = 300
         self.max_run_seconds = 600
         self.rest_seconds = 300
+        self.vacation_start = None
+        self.vacation_end = None
+        self.vacation_last_exercise_date = None
         self.settings_store = HvacSettingsStore()
         saved_settings = self.settings_store.load()
         if saved_settings:
@@ -377,6 +381,18 @@ class HvacConfigurationPage(QWidget):
         relay_layout.addWidget(self.cooler_relay_indicator)
         relay_layout.addWidget(self.fan_relay_indicator)
         self.main_layout.addLayout(relay_layout)
+
+        vacation_layout = QHBoxLayout()
+        self.vacation_button = QPushButton("Vacation")
+        self.vacation_button.setMinimumHeight(36)
+        self.vacation_button.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.vacation_button.clicked.connect(self._show_vacation_calendar)
+        vacation_layout.addWidget(self.vacation_button)
+        self.vacation_status_lbl = QLabel()
+        self.vacation_status_lbl.setFont(QFont("Arial", 10))
+        vacation_layout.addWidget(self.vacation_status_lbl, 1)
+        self.main_layout.addLayout(vacation_layout)
+        self._update_vacation_status()
 
         self.auto_control_button = QPushButton("Return to automatic control")
         self.auto_control_button.setMinimumHeight(36)
@@ -552,6 +568,97 @@ class HvacConfigurationPage(QWidget):
         setattr(self, target_var, new_value)
         self._emit_current_configuration()
 
+    def _show_vacation_calendar(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select vacation dates")
+        layout = QVBoxLayout(dialog)
+        instruction = QLabel()
+        instruction.setWordWrap(True)
+        layout.addWidget(instruction)
+
+        calendar = QCalendarWidget()
+        calendar.setMinimumDate(QDate.currentDate())
+        calendar.setGridVisible(True)
+        if self.vacation_end:
+            calendar.setSelectedDate(
+                QDate(
+                    self.vacation_end.year,
+                    self.vacation_end.month,
+                    self.vacation_end.day,
+                )
+            )
+        elif self.vacation_start:
+            calendar.setSelectedDate(
+                QDate(
+                    self.vacation_start.year,
+                    self.vacation_start.month,
+                    self.vacation_start.day,
+                )
+            )
+        else:
+            calendar.setSelectedDate(QDate.currentDate())
+        layout.addWidget(calendar)
+
+        def update_instruction():
+            if self.vacation_start and self.vacation_end:
+                instruction.setText(
+                    "Select a date before the end date to replace the start, "
+                    "or a later date to extend the end."
+                )
+            elif self.vacation_start:
+                instruction.setText("Select a later date as the end of vacation.")
+            else:
+                instruction.setText("Select the first day of vacation.")
+
+        def select_date(selected_date):
+            self._select_vacation_date(selected_date.toPyDate())
+            update_instruction()
+
+        calendar.clicked.connect(select_date)
+        update_instruction()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _select_vacation_date(self, selected_date):
+        if selected_date < datetime.date.today():
+            return
+        if self.vacation_start is None:
+            self.vacation_start = selected_date
+        elif self.vacation_end is None:
+            if selected_date < self.vacation_start:
+                self.vacation_start = selected_date
+            elif selected_date > self.vacation_start:
+                self.vacation_end = selected_date
+        elif selected_date < self.vacation_end:
+            self.vacation_start = selected_date
+        elif selected_date > self.vacation_start:
+            self.vacation_end = selected_date
+        else:
+            return
+
+        if self.vacation_end:
+            self.vacation_last_exercise_date = None
+        self._update_vacation_status()
+        if self.vacation_start and self.vacation_end:
+            self._emit_current_configuration()
+
+    def _update_vacation_status(self):
+        if self.vacation_start and self.vacation_end:
+            self.vacation_status_lbl.setText(
+                "Vacation start "
+                f"{self.vacation_start.isoformat()} through "
+                f"{self.vacation_end.isoformat()}"
+            )
+        elif self.vacation_start:
+            self.vacation_status_lbl.setText(
+                f"Vacation start {self.vacation_start.isoformat()} — select an end date"
+            )
+        else:
+            self.vacation_status_lbl.setText("Vacation: no dates selected")
+
     def apply_settings(self, settings: dict):
         if not settings:
             return
@@ -571,6 +678,7 @@ class HvacConfigurationPage(QWidget):
                 picker.setValue(int(getattr(self, target_var)))
                 picker.blockSignals(False)
             self.update_display_metrics()
+            self._update_vacation_status()
             if changed:
                 self.settings_store.save(normalized)
         except (TypeError, ValueError) as error:
@@ -589,6 +697,15 @@ class HvacConfigurationPage(QWidget):
         self.min_run_seconds = int(settings["min_run_seconds"])
         self.max_run_seconds = int(settings["max_run_seconds"])
         self.rest_seconds = int(settings["rest_seconds"])
+        self.vacation_start = self._parse_vacation_date(settings["vacation_start"])
+        self.vacation_end = self._parse_vacation_date(settings["vacation_end"])
+        self.vacation_last_exercise_date = self._parse_vacation_date(
+            settings["vacation_last_exercise_date"]
+        )
+
+    @staticmethod
+    def _parse_vacation_date(value):
+        return datetime.date.fromisoformat(value) if value else None
 
     def _settings_payload(self):
         return {
@@ -599,6 +716,15 @@ class HvacConfigurationPage(QWidget):
             "min_run_seconds": self.min_run_seconds,
             "max_run_seconds": self.max_run_seconds,
             "rest_seconds": self.rest_seconds,
+            "vacation_start": (
+                self.vacation_start.isoformat() if self.vacation_start else None
+            ),
+            "vacation_end": self.vacation_end.isoformat() if self.vacation_end else None,
+            "vacation_last_exercise_date": (
+                self.vacation_last_exercise_date.isoformat()
+                if self.vacation_last_exercise_date
+                else None
+            ),
         }
 
     def update_display_metrics(self):

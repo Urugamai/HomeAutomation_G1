@@ -1,3 +1,4 @@
+import datetime
 import json
 
 import pytest
@@ -232,6 +233,85 @@ def test_hvac_outdoor_midpoint_gate_blocks_inefficient_modes():
     assert controller._requested_state(controller.t_max + 1.0) == "OFF"
 
 
+def test_vacation_stops_normal_control_and_runs_weekly_exercise(tmp_path):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    controller.settings_store = HvacSettingsStore(tmp_path / "hvac-settings.json")
+    start = datetime.date(2030, 1, 1)
+    end = datetime.date(2030, 1, 3)
+    now = datetime.datetime.combine(start, datetime.time(hour=18)).timestamp()
+    commands = []
+    controller._write_relays = commands.append
+    controller.vacation_start = start
+    controller.vacation_end = end
+    controller.current_state = "HEATING"
+    controller.sequence_state = "HEATING"
+    controller.active_run_started_at = now - 60
+    controller.fan_preheat_seconds = 0
+    controller.fan_postrun_seconds = 120
+
+    assert controller._process_vacation_control(now, 20.0) is True
+    assert controller.sequence_state == "POSTRUN"
+    assert commands[-1] == "FAN"
+
+    controller.sequence_state = "OFF"
+    controller.fan_postrun_seconds = 0
+    assert controller._process_vacation_control(now + 5, 20.0) is True
+    assert controller.current_state == "HEATING"
+    assert controller.vacation_last_exercise_date == start
+    assert commands[-1] == "HEATING"
+
+    controller._process_vacation_control(
+        now + 5 + hvac_daemon.VACATION_EXERCISE_SECONDS,
+        20.0,
+    )
+    assert controller.sequence_state == "OFF"
+    assert commands[-1] == "OFF"
+
+    return_date = datetime.datetime.combine(end, datetime.time(hour=9)).timestamp()
+    assert controller._process_vacation_control(return_date, 20.0) is False
+
+
+def test_vacation_activates_at_1800_and_resumes_at_0900():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    start = datetime.date(2030, 1, 1)
+    end = start + datetime.timedelta(days=2)
+    controller.vacation_start = start
+    controller.vacation_end = end
+
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(start, datetime.time(hour=17, minute=59))
+    ) is False
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(start, datetime.time(hour=18))
+    ) is True
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(end, datetime.time(hour=8, minute=59))
+    ) is True
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(end, datetime.time(hour=9))
+    ) is False
+
+
+def test_vacation_clears_manual_hvac_override():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    start = datetime.date(2030, 1, 1)
+    now = datetime.datetime.combine(start, datetime.time(hour=18)).timestamp()
+    commands = []
+    controller._write_relays = commands.append
+    controller.vacation_start = start
+    controller.vacation_end = start + datetime.timedelta(days=2)
+    controller.manual_target = "HEATING"
+    controller.current_state = "HEATING"
+    controller.sequence_state = "MANUAL_HEATING"
+    controller.fan_postrun_seconds = 0
+
+    assert controller._process_vacation_control(now, 20.0) is True
+    assert controller.manual_target is None
+    assert controller.sequence_state == "OFF"
+    assert commands == ["OFF"]
+
+
 def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
@@ -450,6 +530,27 @@ def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):
     )
 
     assert HvacSettingsStore(storage_path).load() == saved
+
+
+def test_hvac_settings_validate_vacation_window(tmp_path):
+    store = HvacSettingsStore(tmp_path / "hvac_settings.json")
+    settings = store.save(
+        {
+            "vacation_start": "2030-01-01",
+            "vacation_end": "2030-01-08",
+        }
+    )
+
+    assert settings["vacation_start"] == "2030-01-01"
+    assert settings["vacation_end"] == "2030-01-08"
+
+    with pytest.raises(ValueError):
+        store.normalize(
+            {
+                "vacation_start": "2030-01-08",
+                "vacation_end": "2030-01-01",
+            }
+        )
 
 
 def test_hvac_fan_lead_minimum_run_and_postrun(monkeypatch):
