@@ -60,7 +60,9 @@ def test_desktop_dashboard_keeps_both_charts_without_clock():
     assert "Today" not in dashboard.today_forecast_lbl.text()
     assert "Tomorrow" not in dashboard.tomorrow_forecast_lbl.text()
     dashboard.refresh_telemetry_ui({"battery_soc": 76.4})
-    assert dashboard.battery_widget.meter.overlay_text == "SOC 76%"
+    assert dashboard.solar_widget.lbl.isHidden()
+    assert dashboard.battery_widget.meter.minimumHeight() == 28
+    assert "SOC 76%" in dashboard.battery_widget.meter.overlay_text
     dashboard.deleteLater()
     app.processEvents()
 

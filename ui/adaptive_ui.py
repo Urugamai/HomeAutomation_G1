@@ -362,6 +362,7 @@ class HighResZeroCenteredBar(QWidget):
         self.is_solar = is_solar
         self.current_value = 0.0
         self.overlay_text = ""
+        self.overlay_font_size = 8
         self.setMinimumHeight(24)
 
     def set_value(self, value: float):
@@ -373,6 +374,10 @@ class HighResZeroCenteredBar(QWidget):
 
     def set_overlay_text(self, text):
         self.overlay_text = str(text or "")
+        self.update()
+
+    def set_overlay_font_size(self, size):
+        self.overlay_font_size = int(size)
         self.update()
 
     def paintEvent(self, event):
@@ -414,7 +419,9 @@ class HighResZeroCenteredBar(QWidget):
 
         if self.overlay_text:
             painter.setPen(QColor("#202020"))
-            painter.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+            painter.setFont(
+                QFont("Arial", self.overlay_font_size, QFont.Weight.Bold)
+            )
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
@@ -478,6 +485,10 @@ class AdaptiveFlowWidget(QWidget):
         super().__init__()
         self.base_title = label_text
         self.is_solar = is_solar
+        self._display_title = label_text
+        self._current_value = 0.0
+        self._bar_annotation = ""
+        self._show_value_in_bar = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
@@ -491,12 +502,34 @@ class AdaptiveFlowWidget(QWidget):
         layout.addWidget(self.meter)
 
     def update_flow_value(self, value: float, override_title=None):
-        self.meter.set_value(value)
-        title = override_title if override_title else self.base_title
+        self._current_value = float(value)
+        self.meter.set_value(self._current_value)
+        self._display_title = override_title if override_title else self.base_title
+        title = self._display_title
         if self.is_solar:
-            self.lbl.setText(f"{title}: {value:.1f} kW")
+            self.lbl.setText(f"{title}: {self._current_value:.1f} kW")
         else:
-            self.lbl.setText(f"{title}: {value:.2f} kW")
+            self.lbl.setText(f"{title}: {self._current_value:.2f} kW")
+        self._update_bar_text()
+
+    def show_value_in_bar(self, enabled=True):
+        self._show_value_in_bar = bool(enabled)
+        self.lbl.setVisible(not self._show_value_in_bar)
+        self._update_bar_text()
+
+    def set_bar_annotation(self, text):
+        self._bar_annotation = str(text or "")
+        self._update_bar_text()
+
+    def _update_bar_text(self):
+        if not self._show_value_in_bar:
+            self.meter.set_overlay_text("")
+            return
+        precision = 1 if self.is_solar else 2
+        text = f"{self._display_title}: {self._current_value:.{precision}f} kW"
+        if self._bar_annotation:
+            text = f"{text} | {self._bar_annotation}"
+        self.meter.set_overlay_text(text)
 
 
 class EnvironmentSourcesPage(QWidget):
@@ -903,9 +936,11 @@ class DesktopDashboard(AdaptiveDashboard):
             self.battery_widget,
             self.grid_widget,
         ):
-            flow_widget.lbl.setFont(QFont("Arial", 8, QFont.Weight.Bold))
-            flow_widget.meter.setMinimumHeight(16)
-        self.power_chart.setMinimumHeight(110)
+            flow_widget.show_value_in_bar()
+            flow_widget.meter.setMinimumHeight(28)
+            flow_widget.meter.set_overlay_font_size(10)
+        self.power_chart.setMinimumHeight(125)
+        self.climate_chart.setMinimumHeight(190)
 
     def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
         self._apply_desktop_layout()
@@ -916,11 +951,11 @@ class DesktopDashboard(AdaptiveDashboard):
     def refresh_telemetry_ui(self, data):
         super().refresh_telemetry_ui(data)
         try:
-            self.battery_widget.meter.set_overlay_text(
+            self.battery_widget.set_bar_annotation(
                 f"SOC {float(data.get('battery_soc', 0.0)):.0f}%"
             )
         except (TypeError, ValueError):
-            self.battery_widget.meter.set_overlay_text("SOC --")
+            self.battery_widget.set_bar_annotation("SOC --")
 
     def _update_forecast_labels(self, forecast_list):
         today_data = next(
