@@ -68,6 +68,8 @@ class HvacHardwareDaemon:
         self.rest_seconds = 300.0
         self.vacation_start = None
         self.vacation_end = None
+        self.vacation_start_time = datetime.time(hour=18)
+        self.vacation_end_time = datetime.time(hour=9)
         self.vacation_last_exercise_date = None
         self.vacation_exercise_target = None
         self.settings_store = HvacSettingsStore()
@@ -348,6 +350,12 @@ class HvacHardwareDaemon:
         self.rest_seconds = settings["rest_seconds"]
         self.vacation_start = self._date_from_settings(settings["vacation_start"])
         self.vacation_end = self._date_from_settings(settings["vacation_end"])
+        self.vacation_start_time = self._time_from_settings(
+            settings["vacation_start_time"]
+        )
+        self.vacation_end_time = self._time_from_settings(
+            settings["vacation_end_time"]
+        )
         self.vacation_last_exercise_date = self._date_from_settings(
             settings["vacation_last_exercise_date"]
         )
@@ -355,6 +363,10 @@ class HvacHardwareDaemon:
     @staticmethod
     def _date_from_settings(value):
         return datetime.date.fromisoformat(value) if value else None
+
+    @staticmethod
+    def _time_from_settings(value):
+        return datetime.time.fromisoformat(value)
 
     def _settings_payload(self):
         return {
@@ -369,6 +381,8 @@ class HvacHardwareDaemon:
                 self.vacation_start.isoformat() if self.vacation_start else None
             ),
             "vacation_end": self.vacation_end.isoformat() if self.vacation_end else None,
+            "vacation_start_time": self.vacation_start_time.strftime("%H:%M"),
+            "vacation_end_time": self.vacation_end_time.strftime("%H:%M"),
             "vacation_last_exercise_date": (
                 self.vacation_last_exercise_date.isoformat()
                 if self.vacation_last_exercise_date
@@ -523,11 +537,11 @@ class HvacHardwareDaemon:
             return False
         vacation_start = datetime.datetime.combine(
             self.vacation_start,
-            datetime.time(hour=18),
+            self.vacation_start_time,
         )
         vacation_end = datetime.datetime.combine(
             self.vacation_end,
-            datetime.time(hour=9),
+            self.vacation_end_time,
         )
         return vacation_start <= current_datetime < vacation_end
 

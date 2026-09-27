@@ -293,6 +293,29 @@ def test_vacation_activates_at_1800_and_resumes_at_0900():
     ) is False
 
 
+def test_vacation_uses_configured_start_and_resume_times():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    start = datetime.date(2030, 1, 1)
+    end = start + datetime.timedelta(days=2)
+    controller.vacation_start = start
+    controller.vacation_end = end
+    controller.vacation_start_time = datetime.time(hour=16, minute=30)
+    controller.vacation_end_time = datetime.time(hour=10, minute=15)
+
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(start, datetime.time(hour=16, minute=29))
+    ) is False
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(start, datetime.time(hour=16, minute=30))
+    ) is True
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(end, datetime.time(hour=10, minute=14))
+    ) is True
+    assert controller._is_vacation_active(
+        datetime.datetime.combine(end, datetime.time(hour=10, minute=15))
+    ) is False
+
+
 def test_vacation_clears_manual_hvac_override():
     controller = hvac_daemon.HvacHardwareDaemon()
     start = datetime.date(2030, 1, 1)
@@ -543,6 +566,8 @@ def test_hvac_settings_validate_vacation_window(tmp_path):
 
     assert settings["vacation_start"] == "2030-01-01"
     assert settings["vacation_end"] == "2030-01-08"
+    assert settings["vacation_start_time"] == "18:00"
+    assert settings["vacation_end_time"] == "09:00"
 
     with pytest.raises(ValueError):
         store.normalize(

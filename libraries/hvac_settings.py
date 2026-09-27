@@ -26,6 +26,10 @@ class HvacSettingsStore:
         "vacation_end",
         "vacation_last_exercise_date",
     )
+    VACATION_TIME_DEFAULTS = {
+        "vacation_start_time": "18:00",
+        "vacation_end_time": "09:00",
+    }
 
     def __init__(self, storage_path=None):
         self.storage_path = Path(storage_path or self.STORAGE_PATH)
@@ -55,6 +59,10 @@ class HvacSettingsStore:
             key: cls._normalize_date(settings.get(key))
             for key in cls.VACATION_KEYS
         }
+        vacation_times = {
+            key: cls._normalize_time(settings.get(key, default))
+            for key, default in cls.VACATION_TIME_DEFAULTS.items()
+        }
         if (vacation["vacation_start"] is None) != (
             vacation["vacation_end"] is None
         ):
@@ -64,7 +72,7 @@ class HvacSettingsStore:
             and vacation["vacation_start"] >= vacation["vacation_end"]
         ):
             raise ValueError("Vacation end date must be after the start date")
-        return {**values, **vacation}
+        return {**values, **vacation, **vacation_times}
 
     @staticmethod
     def _normalize_date(value):
@@ -74,6 +82,16 @@ class HvacSettingsStore:
             return datetime.date.fromisoformat(str(value)).isoformat()
         except ValueError as exc:
             raise ValueError(f"Invalid vacation date: {value}") from exc
+
+    @staticmethod
+    def _normalize_time(value):
+        try:
+            parsed = datetime.time.fromisoformat(str(value))
+        except ValueError as exc:
+            raise ValueError(f"Invalid vacation time: {value}") from exc
+        if parsed.second or parsed.microsecond:
+            raise ValueError("Vacation times must be accurate to the minute")
+        return parsed.strftime("%H:%M")
 
     def load(self):
         if not self.storage_path.is_file():

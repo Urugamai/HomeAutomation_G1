@@ -90,5 +90,9 @@ def test_vacation_dates_follow_calendar_selection_rules():
 
     page._select_vacation_date(today + datetime.timedelta(days=10))
     assert page.vacation_end == today + datetime.timedelta(days=10)
+    page.vacation_start_time = datetime.time(hour=16, minute=30)
+    page.vacation_end_time = datetime.time(hour=10, minute=15)
+    assert page._settings_payload()["vacation_start_time"] == "16:30"
+    assert page._settings_payload()["vacation_end_time"] == "10:15"
     page.deleteLater()
     app.processEvents()
