@@ -1,5 +1,6 @@
 import datetime
 
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication
 
 from desk_controller import DeskControllerWindow
@@ -135,7 +136,7 @@ def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
     window._sleep_display()
     assert window._display_is_sleeping
     assert not window._sleep_overlay.isHidden()
-    window._wake_display()
+    assert window.eventFilter(None, QEvent(QEvent.Type.MouseButtonPress))
     assert not window._display_is_sleeping
     assert window._sleep_overlay.isHidden()
     assert display_power_calls == [False, True]

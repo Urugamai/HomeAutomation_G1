@@ -240,6 +240,7 @@ class MainWindow(QMainWindow):
         if event.type() in input_events:
             if self._display_is_sleeping:
                 self._wake_display()
+                return True
             else:
                 self._reset_idle_timer()
         return super().eventFilter(watched, event)
