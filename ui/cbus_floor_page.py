@@ -13,25 +13,41 @@ class CbusFloorPage(QWidget):
         self.floor = floor
         self.command_callback = command_callback
         self.compact = compact
-        self.columns = 5 if compact else 4
+        self.columns = 6 if compact else 4
         self._buttons = {}
         self._sliders = {}
 
         layout = QVBoxLayout(self)
+        if compact:
+            layout.setContentsMargins(3, 3, 3, 3)
+            layout.setSpacing(2)
         title = QLabel(f"{floor} Floor C-Bus")
         title.setStyleSheet(
-            f"font-size: {'14' if compact else '18'}pt; font-weight: bold;"
+            f"font-size: {'12' if compact else '18'}pt; font-weight: bold;"
         )
         layout.addWidget(title)
 
         self.status_label = QLabel("Waiting for C-Bus devices...")
+        if compact:
+            self.status_label.setStyleSheet("font-size: 8pt;")
         layout.addWidget(self.status_label)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        if compact:
+            self.scroll.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self.scroll.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
         self.device_widget = QWidget()
         self.grid = QGridLayout(self.device_widget)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+        if compact:
+            self.grid.setContentsMargins(1, 1, 1, 1)
+            self.grid.setHorizontalSpacing(2)
+            self.grid.setVerticalSpacing(2)
         self.scroll.setWidget(self.device_widget)
         layout.addWidget(self.scroll)
 
@@ -76,6 +92,14 @@ class CbusFloorPage(QWidget):
             address = device["address"]
             group = QGroupBox(self._display_name(device.get("name", "")))
             group_layout = QVBoxLayout(group)
+            if self.compact:
+                group.setFixedHeight(42)
+                group.setStyleSheet(
+                    "QGroupBox { font-size: 7pt; margin-top: 10px; "
+                    "padding: 0px; }"
+                )
+                group_layout.setContentsMargins(2, 1, 2, 1)
+                group_layout.setSpacing(0)
 
             button = QPushButton()
             button.setCheckable(True)
@@ -85,7 +109,8 @@ class CbusFloorPage(QWidget):
             )
             self._buttons[address] = button
             if self.compact:
-                button.setMinimumHeight(34)
+                button.setFixedHeight(22)
+                button.setStyleSheet("font-size: 8pt;")
             group_layout.addWidget(button)
 
             if not self.compact:
@@ -135,9 +160,10 @@ class CbusFloorPage(QWidget):
             slider.blockSignals(True)
             slider.setValue(brightness)
             slider.blockSignals(False)
+        font_style = "font-size: 8pt; " if self.compact else ""
         button.setStyleSheet(
             "QPushButton:checked { background: #28a745; color: white; "
-            "font-weight: bold; }"
+            f"font-weight: bold; {font_style}}}"
         )
 
     def update_device(self, device):
