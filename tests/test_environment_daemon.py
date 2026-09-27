@@ -36,6 +36,11 @@ class NoSensorSMBus:
         raise OSError("No VEML sensor attached")
 
 
+class DisabledI2CBus:
+    def __init__(self, bus_id):
+        raise FileNotFoundError(2, "No such file or directory", "/dev/i2c-1")
+
+
 class RecordingMqttClient:
     def __init__(self):
         self.messages = []
@@ -77,6 +82,19 @@ def test_real_host_without_i2c_sensors_reports_null_readings(monkeypatch):
     assert controller._read_sensors() == (None, None, None, None)
 
 
+def test_disabled_i2c_logs_raspi_config_remediation(monkeypatch, capsys):
+    monkeypatch.setattr(environment_daemon, "IS_RASPI", True)
+    monkeypatch.setattr(
+        environment_daemon,
+        "smbus2",
+        SimpleNamespace(SMBus=DisabledI2CBus),
+    )
+
+    environment_daemon.LivingAreaHardwareController()
+
+    assert "[I2C DISABLED]" in capsys.readouterr().out
+
+
 def test_non_simulated_host_without_i2c_bus_reports_null_readings(monkeypatch):
     controller = object.__new__(environment_daemon.LivingAreaHardwareController)
     controller.bus = None
@@ -84,6 +102,25 @@ def test_non_simulated_host_without_i2c_bus_reports_null_readings(monkeypatch):
     monkeypatch.setattr(environment_daemon, "IS_SIMULATION", False)
 
     assert controller._read_sensors() == (None, None, None, None)
+
+
+def test_missing_hardware_is_reprobed_after_the_retry_interval(monkeypatch):
+    controller = object.__new__(environment_daemon.LivingAreaHardwareController)
+    controller.hostname = "lounge-clock"
+    controller.discovered_bme_addr = None
+    controller.veml_is_online = False
+    controller._next_hardware_retry_at = 0.0
+    controller.HARDWARE_RETRY_SECONDS = 60
+    probes = []
+    controller._initialize_hardware = lambda: probes.append("probe")
+    monkeypatch.setattr(environment_daemon, "IS_RASPI", True)
+    monkeypatch.setattr(environment_daemon.time, "monotonic", lambda: 100.0)
+
+    controller._retry_missing_hardware()
+    controller._retry_missing_hardware()
+
+    assert probes == ["probe"]
+    assert controller._next_hardware_retry_at == 160.0
 
 
 def test_telemetry_serializes_missing_sensor_readings_as_null():

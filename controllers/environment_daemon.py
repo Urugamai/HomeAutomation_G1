@@ -3,6 +3,7 @@ import time
 import json
 import socket
 import configparser
+import errno
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -35,6 +36,7 @@ class LivingAreaHardwareController:
     ADDR_VEML6030 = 0x10
     ADDR_BME_ALT = 0x76
     ADDR_BME_MAIN = 0x77
+    HARDWARE_RETRY_SECONDS = 60
 
     def __init__(self):
         print("[INIT] Initializing Living Area Master Automation Subsystem...")
@@ -48,6 +50,9 @@ class LivingAreaHardwareController:
         self.bme680_sensor = None
         self.veml_is_online = False
         self._shared_null_published = False
+        self._next_hardware_retry_at = 0.0
+        self._temperature_sensor_online = None
+        self._i2c_disabled_reported = False
 
         self._initialize_hardware()
 
@@ -122,9 +127,51 @@ class LivingAreaHardwareController:
             except Exception as e:
                 print(f"[I2C WARN] VEML6030 failed handshake initialization: {e}")
                 self.veml_is_online = False
+            self._log_hardware_summary()
 
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENODEV):
+                if not self._i2c_disabled_reported:
+                    print(
+                        "[I2C DISABLED] I2C bus /dev/i2c-1 is unavailable. "
+                        "Enable I2C in raspi-config (Interface Options > I2C), "
+                        "then reboot."
+                    )
+                    self._i2c_disabled_reported = True
+            else:
+                print(
+                    "[HARDWARE CRITICAL] Failed initializing Pi interaction "
+                    f"lines: {error}"
+                )
         except Exception as e:
             print(f"[HARDWARE CRITICAL] Failed initializing Pi interaction lines: {e}")
+
+    def _log_hardware_summary(self):
+        bme_description = (
+            f"{self.bme_sensor_type} at {hex(self.discovered_bme_addr)}"
+            if self.discovered_bme_addr is not None
+            else "not detected"
+        )
+        veml_description = "online" if self.veml_is_online else "not detected"
+        print(
+            f"[I2C SUMMARY] host={self.hostname} bus={self.I2C_BUS_ID} | "
+            f"environment={bme_description} | light={veml_description}"
+        )
+
+    def _retry_missing_hardware(self):
+        if not IS_RASPI or (
+            self.discovered_bme_addr is not None and self.veml_is_online
+        ):
+            return
+        now = time.monotonic()
+        if now < self._next_hardware_retry_at:
+            return
+        self._next_hardware_retry_at = now + self.HARDWARE_RETRY_SECONDS
+        print(
+            "[I2C RETRY] Re-probing missing environment hardware "
+            f"on host={self.hostname}."
+        )
+        self._initialize_hardware()
 
     def start(self):
         """Launches the thread listener with an automated, self-healing network retry loop."""
@@ -240,39 +287,60 @@ class LivingAreaHardwareController:
                 return None, None, None, None
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0, 1013.0
+        self._retry_missing_hardware()
         if not self.bus:
             return None, None, None, None
 
         temp_c, humidity, lux, pressure = None, None, None, None
 
-        try:
-            if self.bme_sensor_type == "BME280_DIRECT":
+        if self.bme_sensor_type == "BME280_DIRECT":
+            try:
                 temp_c, humidity, pressure = self._read_bme280(
                     addr=self.discovered_bme_addr
                 )
-            elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
+            except Exception as error:
+                print(
+                    "[I2C ERROR] Lost BME280 sensor "
+                    f"at {hex(self.discovered_bme_addr)}: {error}. "
+                    "It will be re-probed."
+                )
+                self.discovered_bme_addr = None
+                self.bme_sensor_type = None
+                self.bme_calibration_params = None
+        elif self.bme_sensor_type == "BME680" and self.bme680_sensor:
+            try:
                 if self.bme680_sensor.get_sensor_data():
                     temp_c = round(self.bme680_sensor.data.temperature, 1)
                     humidity = round(self.bme680_sensor.data.humidity, 1)
                     pressure = round(self.bme680_sensor.data.pressure, 1)
+            except Exception as error:
+                print(
+                    f"[I2C ERROR] Lost BME680 sensor: {error}. "
+                    "It will be re-probed."
+                )
+                self.discovered_bme_addr = None
+                self.bme_sensor_type = None
+                self.bme680_sensor = None
 
-            if not self.veml_is_online:
-                try:
-                    self.bus.read_byte(self.ADDR_VEML6030)
-                    self.bus.write_word_data(self.ADDR_VEML6030, 0x00, 0x0000)
-                    self.veml_is_online = True
-                except Exception:
-                    pass
+        if not self.veml_is_online:
+            try:
+                self.bus.read_byte(self.ADDR_VEML6030)
+                self.bus.write_word_data(self.ADDR_VEML6030, 0x00, 0x0000)
+                self.veml_is_online = True
+                print("[I2C RECOVERED] VEML6030 light sensor is online.")
+            except Exception:
+                pass
 
-            if self.veml_is_online:
-                try:
-                    lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
-                    lux = float(lux_raw) * 0.0576
-                except Exception:
-                    self.veml_is_online = False
-
-        except Exception as e:
-            print(f"[I2C READ EXCEPTION] Telemetry extraction stalled: {e}")
+        if self.veml_is_online:
+            try:
+                lux_raw = self.bus.read_word_data(self.ADDR_VEML6030, 0x04)
+                lux = float(lux_raw) * 0.0576
+            except Exception as error:
+                print(
+                    f"[I2C ERROR] Lost VEML6030 light sensor: {error}. "
+                    "It will be re-probed."
+                )
+                self.veml_is_online = False
 
         if pressure is not None and not 800.0 <= pressure <= 1100.0:
             print(f"[SENSOR WARN] Ignoring invalid pressure reading: {pressure}")
@@ -281,6 +349,20 @@ class LivingAreaHardwareController:
 
     def _process_environment_tick(self):
         temp, humidity, lux, pressure = self._read_sensors()
+        temperature_sensor_online = temp is not None
+        if self._temperature_sensor_online != temperature_sensor_online:
+            if temperature_sensor_online:
+                print(
+                    f"[SENSOR RECOVERED] Environment readings resumed on "
+                    f"host={self.hostname}."
+                )
+            else:
+                print(
+                    f"[SENSOR OFFLINE] No temperature reading on "
+                    f"host={self.hostname}; publishing null telemetry. "
+                    "See I2C startup/retry messages for device details."
+                )
+            self._temperature_sensor_online = temperature_sensor_online
         self._publish_telemetry(temp, humidity, lux, pressure)
 
     @staticmethod
@@ -522,12 +604,6 @@ class LivingAreaHardwareController:
             f"home/environment/living/{self.hostname}",
             payload_json,
             retain=True,
-        )
-        print(
-            f"[TELEMETRY] {self.hostname}: "
-            f"{temp if temp is not None else '--'}°C, "
-            f"{humidity if humidity is not None else '--'}% RH, "
-            f"{f'{lux:.1f}' if lux is not None else '--'} lx"
         )
 
 
