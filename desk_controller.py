@@ -24,6 +24,7 @@ from libraries.mqtt_engine import MqttTelemetryListener
 from main import _load_power_chart_grid_interval
 from ui.adaptive_ui import DesktopDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
+from ui.charger_page import ChargerStatusPage
 from ui.hvac_page import HvacConfigurationPage
 
 LOGGER = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ class DeskControllerWindow(QMainWindow):
             "First", self._set_cbus_device, compact=True
         )
         self.tabs.addTab(self.first_floor_page, "First")
+        self.charger_page = ChargerStatusPage()
+        self.tabs.addTab(self.charger_page, "Charger")
         self.climate_page = HvacConfigurationPage(show_climate_chart=False)
         self.tabs.addTab(self.climate_page, "Climate")
         self.setCentralWidget(self.tabs)
@@ -118,6 +121,7 @@ class DeskControllerWindow(QMainWindow):
         cbus_devices = data.get("cbus_devices", {})
         self.ground_floor_page.refresh_devices(cbus_devices)
         self.first_floor_page.refresh_devices(cbus_devices)
+        self.charger_page.refresh_status(data.get("charger_status", {}))
         self.climate_page.update_status_from_mqtt(
             data.get("hvac_state", "OFF"),
             data.get("hvac_in_rest", False),

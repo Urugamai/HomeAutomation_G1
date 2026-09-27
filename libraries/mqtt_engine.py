@@ -65,6 +65,7 @@ class MqttTelemetryListener(QObject):
             "forecast_set": [],
             "environment_sources": {},
             "cbus_devices": {},
+            "charger_status": {},
         }
         self._forecast_by_date = {}
 
@@ -86,6 +87,7 @@ class MqttTelemetryListener(QObject):
         client.subscribe("home/environment/#")
         client.subscribe("home/hvac/settings")
         client.subscribe("home/power/sigen")
+        client.subscribe("home/charger/status")
         client.subscribe("homeassistant/light/+/config")
         client.subscribe("homeassistant/light/+/state")
 
@@ -155,6 +157,10 @@ class MqttTelemetryListener(QObject):
                 self.cached_data["grid_flow"] = float(data.get("grid_flow", 0.0))
                 self.cached_data["solar_power"] = float(data.get("solar_power", 0.0))
                 self.cached_data["solar_kwh_today"] = float(data.get("solar_kwh_today", 0.0))
+            elif topic == "home/charger/status":
+                if not isinstance(data, dict):
+                    raise ValueError("Charger status payload must be an object")
+                self.cached_data["charger_status"] = data
 
             self.telemetry_received.emit(self.cached_data.copy())
         except (TypeError, ValueError, json.JSONDecodeError) as error:

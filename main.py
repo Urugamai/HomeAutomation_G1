@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
+from ui.charger_page import ChargerStatusPage
 from libraries.mqtt_engine import MqttTelemetryListener
 
 HOME_CONTROLLER_CONFIG_PATH = (
@@ -102,6 +103,8 @@ class MainWindow(QMainWindow):
             "First", self._set_cbus_device
         )
         self.tabs.addTab(self.first_floor_page, "First Floor")
+        self.charger_page = ChargerStatusPage()
+        self.tabs.addTab(self.charger_page, "Charger")
         self.setCentralWidget(self.tabs)
 
         # ... Rest of your main.py constructor lines continue exactly as before ...
@@ -172,6 +175,7 @@ class MainWindow(QMainWindow):
         cbus_devices = data.get("cbus_devices", {})
         self.ground_floor_page.refresh_devices(cbus_devices)
         self.first_floor_page.refresh_devices(cbus_devices)
+        self.charger_page.refresh_status(data.get("charger_status", {}))
         if self.dashboard.hvac_config_tab:
             current_run_state = data.get("hvac_state", "OFF")
             is_resting = data.get("hvac_in_rest", False)

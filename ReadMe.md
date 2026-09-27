@@ -30,7 +30,8 @@ sudo systemctl enable --now homeautomation-clock.service
 <br>
 <code>
 systemctl status homeautomation-clock.service<br>
-journalctl -u homeautomation-clock.service #-f
+journalctl -u homeautomation-clock.service #-f<br>
+sudo journalctl -u desk_controller.service -n 50 --no-pager
 </code>
 <br>
 <br>

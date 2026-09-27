@@ -1,13 +1,14 @@
 
+Please add a Charger status page that shows the limits, where we are now, and the state of the charger (Charging/Off).  Add a chart that shows the state of the power components used to determine if charging can start or should stop. Put lines across the chart to indicate the point where it will turn on and the point where it will turn off.
+
+google:
+	wireless solar powered hvac vent control
+	outlook continuously asking to ok login details for my mail accounts even though they are all working normally. how can I stop this.
+	
+PROBABLY NOT WANTED
 On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
 Things to set:
 - General heat-to and cool-to temperatures (basically the current settings we have on the climate settings page)
 - Button to add a specification (added specifications will have a button to allow them to be deleted)
 	- An added specification will be: Day of week list (can be all, or any combination of days - probably list all days with a checkbox beside each), Starttime endtime heat-to and cool-to temperatures
 
-I have a desktop unit with an 800x480 screen that I would like a lot of the home_controller features available on but due to the screen size, it would need to be split across more pages (but I do NOT want to change the home_controller screens as they are working very nicely).  I would like developments to improve the operation of one to also improve the same feature in the other.  To start, the desk_controller should have the tab buttons at the top.  The home screen should have the two charts we have on the home_controller, with the status chart on top and the climate chart below along with the power, forecast and outside weather details - the clock and date are not needed.  The environment tab should look the same, just scaled to fit.  The ground and first floor screens will need the cbus control and state buttons to be smaller and the dimmer control can be removed as it would be too small to use on this screen.  Eventually I am going to want to control the locations of the buttons so that I can make it look like the floor plan of the house with the buttons in the right place for the device they control.
-
-google:
-	wireless solar powered hvac vent control
-	outlook continuously asking to ok login details for my mail accounts even though they are all working normally. how can I stop this.
-	

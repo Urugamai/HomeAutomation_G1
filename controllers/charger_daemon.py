@@ -30,6 +30,12 @@ class OcularChargerDaemon:
     Background supervisor for the Ocular EV Charger.
     Monitors Sigen power telemetry feeds and enforces off-peak/surplus charging rates.
     """
+    OFF_PEAK_AMPS = 16
+    SURPLUS_START_WATTS = -2000
+    SURPLUS_STOP_WATTS = -2000
+    MIN_SOLAR_AMPS = 6
+    MAX_SOLAR_AMPS = 32
+    BATTERY_RESERVE_SOC = 80
 
     def __init__(self):
         print("[INIT] Launching Ocular EV Charger Controller Daemon...")
@@ -40,6 +46,7 @@ class OcularChargerDaemon:
         self.battery_soc = 50
         self.grid_flow_watts = 0
         self.current_charge_rate_amps = 0
+        self.last_modbus_write_succeeded = False
 
         if MODBUS_AVAILABLE:
             self.modbus_client = ModbusTcpClient(self.charger_ip, port=self.charger_port)
@@ -96,26 +103,59 @@ class OcularChargerDaemon:
         target_amps = 0
 
         if is_off_peak:
-            target_amps = 16  # Active baseline single-phase profile
-        else:
-            if self.grid_flow_watts < -2000:  # Surplus solar available
-                calculated_amps = int(abs(self.grid_flow_watts) / 230)
-                target_amps = min(max(calculated_amps, 6), 32)
-            elif self.battery_soc <= 80:
-                target_amps = 0  # Conserve house reserves
+            target_amps = self.OFF_PEAK_AMPS
+        elif self.grid_flow_watts < self.SURPLUS_START_WATTS:
+            calculated_amps = int(abs(self.grid_flow_watts) / 230)
+            target_amps = min(
+                max(calculated_amps, self.MIN_SOLAR_AMPS),
+                self.MAX_SOLAR_AMPS,
+            )
 
         if target_amps != self.current_charge_rate_amps:
             self._write_modbus_rate(target_amps)
+        self._publish_status(now, is_off_peak, target_amps)
+
+    def _publish_status(self, now, is_off_peak, target_amps):
+        payload = {
+            "timestamp": now.timestamp(),
+            "state": "Charging" if target_amps > 0 else "Off",
+            "target_amps": target_amps,
+            "current_amps": self.current_charge_rate_amps,
+            "grid_flow_watts": self.grid_flow_watts,
+            "battery_soc": self.battery_soc,
+            "is_off_peak": is_off_peak,
+            "modbus_write_succeeded": self.last_modbus_write_succeeded,
+            "limits": {
+                "off_peak_amps": self.OFF_PEAK_AMPS,
+                "surplus_start_watts": self.SURPLUS_START_WATTS,
+                "surplus_stop_watts": self.SURPLUS_STOP_WATTS,
+                "minimum_solar_amps": self.MIN_SOLAR_AMPS,
+                "maximum_solar_amps": self.MAX_SOLAR_AMPS,
+                "battery_reserve_soc": self.BATTERY_RESERVE_SOC,
+            },
+        }
+        try:
+            self.mqtt_client.publish(
+                "home/charger/status",
+                json.dumps(payload),
+                qos=1,
+                retain=True,
+            )
+        except AttributeError:
+            pass
 
     def _write_modbus_rate(self, amps: int):
         self.current_charge_rate_amps = amps
         if not self.modbus_client:
+            self.last_modbus_write_succeeded = False
             return
         try:
             if not self.modbus_client.connected:
                 self.modbus_client.connect()
             self.modbus_client.write_register(address=200, value=amps, slave=1)
+            self.last_modbus_write_succeeded = True
         except Exception as e:
+            self.last_modbus_write_succeeded = False
             print(f"[MODBUS ERROR] Charger connection timed out: {e}")
 
 

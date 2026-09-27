@@ -1,3 +1,5 @@
+import json
+
 from libraries.mqtt_engine import MqttTelemetryListener
 
 
@@ -69,3 +71,27 @@ def test_local_environment_telemetry_preserves_hvac_sequence_status():
 
     assert listener.cached_data["hvac_state"] == "OFF"
     assert listener.cached_data["hvac_sequence_state"] == "PREHEAT"
+
+
+def test_charger_status_is_cached_for_controller_pages():
+    listener = MqttTelemetryListener()
+    message = type(
+        "Message",
+        (),
+        {
+            "topic": "home/charger/status",
+            "payload": json.dumps(
+                {
+                    "state": "Charging",
+                    "target_amps": 12,
+                    "grid_flow_watts": -2800,
+                    "battery_soc": 76,
+                }
+            ).encode(),
+        },
+    )()
+
+    listener._on_message(None, None, message)
+
+    assert listener.cached_data["charger_status"]["target_amps"] == 12
+    assert listener.cached_data["charger_status"]["grid_flow_watts"] == -2800

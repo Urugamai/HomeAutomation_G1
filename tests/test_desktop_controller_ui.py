@@ -109,7 +109,7 @@ def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
     assert window.tabs.tabPosition().name == "North"
     assert [
         window.tabs.tabText(index) for index in range(window.tabs.count())
-    ] == ["Home", "Environment", "Ground", "First", "Climate"]
+    ] == ["Home", "Environment", "Ground", "First", "Charger", "Climate"]
 
     window._handle_telemetry_routing(
         {
