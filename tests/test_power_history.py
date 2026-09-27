@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from ui.adaptive_ui import EnvironmentSourcesPage, PowerHistoryStore
+from ui.adaptive_ui import EnvironmentSourcesPage, PowerConsumptionChart, PowerHistoryStore
 from ui.battery_indicator import (
     CHARGING_COLOR,
     DRAINING_COLOR,
@@ -34,7 +34,7 @@ def test_load_keeps_only_rolling_24_hour_window(tmp_path):
 
     history = PowerHistoryStore(storage_path)
 
-    assert history.samples == [(now - datetime.timedelta(hours=23), 2.0, None)]
+    assert history.samples == [(now - datetime.timedelta(hours=23), 2.0, None, None)]
 
 
 def test_add_sample_discards_samples_older_than_24_hours(tmp_path):
@@ -48,8 +48,8 @@ def test_add_sample_discards_samples_older_than_24_hours(tmp_path):
     history.add_sample(now, 3.0, 1.5)
 
     assert history.samples == [
-        (now - datetime.timedelta(hours=23), 2.0, None),
-        (now, 3.0, 1.5),
+        (now - datetime.timedelta(hours=23), 2.0, None, None),
+        (now, 3.0, 1.5, None),
     ]
 
 
@@ -58,7 +58,7 @@ def test_add_sample_persists_solar_generation(tmp_path):
     history = PowerHistoryStore(storage_path)
     now = datetime.datetime.now().replace(microsecond=0)
 
-    history.add_sample(now, 2.0, 1.25)
+    history.add_sample(now, 2.0, 1.25, 0.5)
 
     assert json.loads(storage_path.read_text(encoding="utf-8")) == {
         "samples": [
@@ -66,10 +66,17 @@ def test_add_sample_persists_solar_generation(tmp_path):
                 "timestamp": now.isoformat(),
                 "power_kw": 2.0,
                 "solar_kw": 1.25,
+                "grid_kw": 0.5,
             }
         ]
     }
-    assert PowerHistoryStore(storage_path).samples == [(now, 2.0, 1.25)]
+    assert PowerHistoryStore(storage_path).samples == [(now, 2.0, 1.25, 0.5)]
+
+
+def test_consumption_line_color_escalates_rapidly_with_grid_import():
+    assert PowerConsumptionChart.grid_import_color(0.1, 2.0).name() == "#2ca02c"
+    assert PowerConsumptionChart.grid_import_color(0.5, 2.0).name() == "#ef8c82"
+    assert PowerConsumptionChart.grid_import_color(0.2, 0.2).name() == "#d62728"
 
 
 def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
