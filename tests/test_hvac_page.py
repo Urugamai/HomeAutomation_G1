@@ -39,6 +39,8 @@ def test_average_house_temperature_display_falls_back_to_indoor_sources():
 def test_relay_buttons_display_precool_and_postrun_countdowns():
     app = QApplication.instance() or QApplication([])
     page = HvacConfigurationPage()
+    statuses = []
+    page.status_changed.connect(statuses.append)
 
     page.update_status_from_mqtt(
         "OFF",
@@ -66,6 +68,7 @@ def test_relay_buttons_display_precool_and_postrun_countdowns():
     )
 
     assert page.fan_relay_indicator.text().startswith("Fan\nON-PostRun\n")
+    assert statuses[-1] == "System State: Fan post-run active"
     page.deleteLater()
     app.processEvents()
 

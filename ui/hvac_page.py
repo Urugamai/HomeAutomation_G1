@@ -296,6 +296,7 @@ class HvacConfigurationPage(QWidget):
     # Event custom emitter passing target payload structures back to the MQTT driver
     settings_changed = pyqtSignal(dict)
     command_requested = pyqtSignal(dict)
+    status_changed = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -389,6 +390,14 @@ class HvacConfigurationPage(QWidget):
 
         schedule_layout = QHBoxLayout()
         schedule_layout.setSpacing(10)
+        self.auto_control_button = QPushButton("Return Auto")
+        self.auto_control_button.setToolTip("Return to automatic control")
+        self.auto_control_button.setMinimumHeight(30)
+        self.auto_control_button.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+        self.auto_control_button.clicked.connect(
+            lambda: self.command_requested.emit({"action": "AUTO"})
+        )
+        schedule_layout.addWidget(self.auto_control_button)
         self.vacation_button = QPushButton("Vacation")
         self.vacation_button.setMinimumHeight(36)
         self.vacation_button.setFont(QFont("Arial", 10, QFont.Weight.Bold))
@@ -408,21 +417,6 @@ class HvacConfigurationPage(QWidget):
         self.main_layout.addLayout(schedule_layout)
         self._update_vacation_status()
         self._update_empty_house_status()
-
-        self.auto_control_button = QPushButton("Return to automatic control")
-        self.auto_control_button.setMinimumHeight(36)
-        self.auto_control_button.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        self.auto_control_button.clicked.connect(
-            lambda: self.command_requested.emit({"action": "AUTO"})
-        )
-        self.main_layout.addWidget(self.auto_control_button)
-
-        # Diagnostics / Status Bar Footer Readout
-        self.status_lbl = QLabel("System Status: Idle (OFF) | Interlocks Free")
-        self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_lbl.setFont(QFont("Arial", 11, QFont.Weight.Medium))
-        self.status_lbl.setStyleSheet("color: #777777;")
-        self.main_layout.addWidget(self.status_lbl)
 
         self.relay_status_timer = QTimer(self)
         self.relay_status_timer.timeout.connect(self._refresh_relay_indicators)
@@ -932,15 +926,7 @@ class HvacConfigurationPage(QWidget):
             status_text = "System State: Fan post-run active"
         else:
             status_text = f"System State: Active ({current_state})"
-        self.status_lbl.setText(status_text)
-
-        # Dynamic style accent injection based on current run profiles
-        if current_state == "HEATING":
-            self.status_lbl.setStyleSheet("color: #ff3b30; font-weight: bold;")
-        elif current_state == "COOLING":
-            self.status_lbl.setStyleSheet("color: #007aff; font-weight: bold;")
-        else:
-            self.status_lbl.setStyleSheet("color: #777777;")
+        self.status_changed.emit(status_text)
 
     def _refresh_relay_indicators(self):
         heater_status = "ON" if self._relay_state["heater"] else "OFF"

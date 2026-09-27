@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QStatusBar, QPushButton, QMessageBox,
-    QWidget)
+    QLabel, QWidget)
 
 # Cross-package import targets matching your project layout schema
 from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
@@ -109,7 +109,10 @@ class MainWindow(QMainWindow):
         # 2. Append the structural status bar elements
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Initializing system connection profile...")
+        self.hvac_status_label = QLabel("System State: Idle (OFF)")
+        self.status_bar.addWidget(self.hvac_status_label, 1)
+        self.connection_status_label = QLabel("Initializing system connection profile...")
+        self.status_bar.addPermanentWidget(self.connection_status_label)
         if sys.platform == "win32":
             self.exit_button = QPushButton("Exit")
             self.exit_button.setToolTip("Exit the testing display")
@@ -139,15 +142,23 @@ class MainWindow(QMainWindow):
         self.dashboard.hvac_command_requested.connect(
             self.mqtt_listener.set_hvac_command
         )
+        if self.dashboard.hvac_config_tab:
+            self.dashboard.hvac_config_tab.status_changed.connect(
+                self.hvac_status_label.setText
+            )
         self.mqtt_listener.start()
 
         # Query the operational mode flag state immediately to update the footer message
         if self.mqtt_listener.is_windows:
-            self.status_bar.showMessage("Simulated Data Mode (Offline Testing)")
-            self.status_bar.setStyleSheet("background-color: #fff3cd; color: #856404; font-weight: bold;")
+            self.connection_status_label.setText("Simulated Data Mode (Offline Testing)")
+            self.connection_status_label.setStyleSheet(
+                "background-color: #fff3cd; color: #856404; font-weight: bold;"
+            )
         else:
-            self.status_bar.showMessage("Live Data Mode (Connected to MQ)")
-            self.status_bar.setStyleSheet("background-color: #d4edda; color: #155724; font-weight: bold;")
+            self.connection_status_label.setText("Live Data Mode (Connected to MQ)")
+            self.connection_status_label.setStyleSheet(
+                "background-color: #d4edda; color: #155724; font-weight: bold;"
+            )
         self._reset_idle_timer()
 
     def showEvent(self, event):
