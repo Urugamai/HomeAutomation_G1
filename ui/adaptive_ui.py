@@ -908,8 +908,8 @@ class DesktopDashboard(AdaptiveDashboard):
 
     def __init__(self, power_chart_grid_interval_hours=1):
         super().__init__(power_chart_grid_interval_hours)
-        self.climate_chart = ClimateValidationChart()
-        self.climate_chart.setMinimumHeight(170)
+        self.climate_chart = ClimateValidationChart(show_title=False)
+        self.climate_chart.setMinimumHeight(175)
         self.main_layout.addWidget(self.climate_chart, 1)
         self._apply_desktop_layout()
 
@@ -939,8 +939,8 @@ class DesktopDashboard(AdaptiveDashboard):
             flow_widget.show_value_in_bar()
             flow_widget.meter.setMinimumHeight(28)
             flow_widget.meter.set_overlay_font_size(10)
-        self.power_chart.setMinimumHeight(125)
-        self.climate_chart.setMinimumHeight(190)
+        self.power_chart.setMinimumHeight(140)
+        self.climate_chart.setMinimumHeight(175)
 
     def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
         self._apply_desktop_layout()

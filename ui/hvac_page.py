@@ -126,9 +126,9 @@ class ClimateValidationChart(QWidget):
         QColor("#bcbd22"),
     )
 
-    def __init__(self, show_climate_chart=True):
+    def __init__(self, show_title=True):
         super().__init__()
-        self.show_climate_chart = show_climate_chart
+        self.show_title = show_title
         self.samples = []
         self.setMinimumHeight(250)
 
@@ -149,7 +149,7 @@ class ClimateValidationChart(QWidget):
             }
         )
 
-        left, right, top, bottom = 52, 24, 58, 30
+        left, right, top, bottom = 52, 24, 58 if self.show_title else 42, 30
         plot = QRectF(
             left,
             top,
@@ -160,9 +160,12 @@ class ClimateValidationChart(QWidget):
         window_start = window_end - ClimateHistoryStore.RETENTION_PERIOD
 
         painter.setPen(QPen(QColor("#202020"), 1))
-        painter.drawText(8, 16, "Climate validation (last 24 hours)")
+        header_y = 16
+        if self.show_title:
+            painter.drawText(8, header_y, "Climate validation (last 24 hours)")
+            header_y += 16
         indoor_label = "Indoor sensors:"
-        painter.drawText(8, 32, indoor_label)
+        painter.drawText(8, header_y, indoor_label)
         legend_x = 8 + painter.fontMetrics().horizontalAdvance(indoor_label) + 8
         for index, source in enumerate(source_names):
             painter.setPen(self.INDOOR_COLORS[index % len(self.INDOOR_COLORS)])
@@ -171,7 +174,7 @@ class ClimateValidationChart(QWidget):
         painter.setPen(QPen(QColor("#202020"), 1))
         painter.drawText(
             8,
-            48,
+            header_y + 16,
             "Outdoor: black | "
             "Cool: blue | Heat: brown | Fan: gray | Fault: red",
         )
