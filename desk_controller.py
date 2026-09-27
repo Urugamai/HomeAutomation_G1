@@ -6,7 +6,7 @@ import socket
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QStatusBar,
     QTabWidget,
+    QWidget,
 )
 
 from libraries.mqtt_engine import MqttTelemetryListener
@@ -26,10 +27,20 @@ from ui.hvac_page import HvacConfigurationPage
 class DeskControllerWindow(QMainWindow):
     """Controller window tailored to a fixed 800x480 desktop display."""
 
+    DISPLAY_IDLE_TIMEOUT_MS = 5 * 60 * 1000
+
     def __init__(self, broker_ip="localhost", power_chart_grid_interval_hours=1):
         super().__init__()
         self.setWindowTitle("Home Automation Desktop Controller")
         self.setMinimumSize(800, 480)
+        self._display_is_sleeping = False
+        self._sleep_overlay = QWidget(self)
+        self._sleep_overlay.setStyleSheet("background-color: black;")
+        self._sleep_overlay.hide()
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setSingleShot(True)
+        self._idle_timer.timeout.connect(self._sleep_display)
+        QApplication.instance().installEventFilter(self)
 
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -90,6 +101,7 @@ class DeskControllerWindow(QMainWindow):
             self.connection_status_label.setText("Simulated Data Mode (Offline Testing)")
         else:
             self.connection_status_label.setText("Live Data Mode (Connected to MQ)")
+        self._reset_idle_timer()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -117,7 +129,37 @@ class DeskControllerWindow(QMainWindow):
     def _set_cbus_device(self, address, is_on, brightness):
         self.mqtt_listener.set_cbus_device(address, is_on, brightness)
 
+    def eventFilter(self, watched, event):
+        input_events = {
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.TouchBegin,
+            QEvent.Type.KeyPress,
+        }
+        if event.type() in input_events:
+            if self._display_is_sleeping:
+                self._wake_display()
+            else:
+                self._reset_idle_timer()
+        return super().eventFilter(watched, event)
+
+    def _reset_idle_timer(self):
+        if not self._display_is_sleeping:
+            self._idle_timer.start(self.DISPLAY_IDLE_TIMEOUT_MS)
+
+    def _sleep_display(self):
+        self._display_is_sleeping = True
+        self._sleep_overlay.setGeometry(self.rect())
+        self._sleep_overlay.raise_()
+        self._sleep_overlay.show()
+
+    def _wake_display(self):
+        self._sleep_overlay.hide()
+        self._display_is_sleeping = False
+        self._reset_idle_timer()
+
     def closeEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        self._idle_timer.stop()
         self.mqtt_listener.stop()
         super().closeEvent(event)
 
