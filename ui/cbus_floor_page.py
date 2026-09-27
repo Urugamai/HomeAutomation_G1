@@ -8,16 +8,20 @@ from PyQt6.QtWidgets import (
 class CbusFloorPage(QWidget):
     """Touch-friendly C-Bus lighting controls for one floor."""
 
-    def __init__(self, floor, command_callback, parent=None):
+    def __init__(self, floor, command_callback, parent=None, compact=False):
         super().__init__(parent)
         self.floor = floor
         self.command_callback = command_callback
+        self.compact = compact
+        self.columns = 5 if compact else 4
         self._buttons = {}
         self._sliders = {}
 
         layout = QVBoxLayout(self)
         title = QLabel(f"{floor} Floor C-Bus")
-        title.setStyleSheet("font-size: 18pt; font-weight: bold;")
+        title.setStyleSheet(
+            f"font-size: {'14' if compact else '18'}pt; font-weight: bold;"
+        )
         layout.addWidget(title)
 
         self.status_label = QLabel("Waiting for C-Bus devices...")
@@ -80,19 +84,22 @@ class CbusFloorPage(QWidget):
                 self._set_state(group_address, checked)
             )
             self._buttons[address] = button
+            if self.compact:
+                button.setMinimumHeight(34)
             group_layout.addWidget(button)
 
-            slider = QSlider(Qt.Orientation.Horizontal)
-            slider.setRange(0, 255)
-            slider.valueChanged.connect(
-                lambda value, group_address=address:
-                self._set_brightness(group_address, value)
-            )
-            self._sliders[address] = slider
-            group_layout.addWidget(slider)
+            if not self.compact:
+                slider = QSlider(Qt.Orientation.Horizontal)
+                slider.setRange(0, 255)
+                slider.valueChanged.connect(
+                    lambda value, group_address=address:
+                    self._set_brightness(group_address, value)
+                )
+                self._sliders[address] = slider
+                group_layout.addWidget(slider)
             self._update_device(device)
 
-            row, column = divmod(index, 4)
+            row, column = divmod(index, self.columns)
             self.grid.addWidget(group, row, column)
 
         self.status_label.setText(
@@ -116,7 +123,7 @@ class CbusFloorPage(QWidget):
         address = device.get("address")
         button = self._buttons.get(address)
         slider = self._sliders.get(address)
-        if button is None or slider is None:
+        if button is None:
             return
         brightness = max(0, min(255, int(device.get("brightness", 0))))
         is_on = str(device.get("state", "OFF")).upper() == "ON" and brightness > 0
@@ -124,9 +131,10 @@ class CbusFloorPage(QWidget):
         button.setChecked(is_on)
         button.setText("ON" if is_on else "OFF")
         button.blockSignals(False)
-        slider.blockSignals(True)
-        slider.setValue(brightness)
-        slider.blockSignals(False)
+        if slider is not None:
+            slider.blockSignals(True)
+            slider.setValue(brightness)
+            slider.blockSignals(False)
         button.setStyleSheet(
             "QPushButton:checked { background: #28a745; color: white; "
             "font-weight: bold; }"

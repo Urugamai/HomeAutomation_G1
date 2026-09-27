@@ -13,7 +13,10 @@ from PyQt6.QtCore import QTimer, QTime, QDate, Qt, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen, QPolygonF
 from PyQt6.QtCore import QPointF
 
-from .hvac_page import HvacConfigurationPage
+from .hvac_page import (
+    ClimateValidationChart,
+    HvacConfigurationPage,
+)
 from .battery_indicator import (
     CHARGING_COLOR,
     battery_flow_color,
@@ -851,6 +854,50 @@ class AdaptiveDashboard(QWidget):
             return f"Rain: {float(probability):.0f}%"
         except (TypeError, ValueError):
             return "Rain: --%"
+
+
+class DesktopDashboard(AdaptiveDashboard):
+    """Compact 800x480 status page using the shared controller widgets."""
+
+    def __init__(self, power_chart_grid_interval_hours=1):
+        super().__init__(power_chart_grid_interval_hours)
+        self.climate_chart = ClimateValidationChart()
+        self.climate_chart.setMinimumHeight(130)
+        self.main_layout.addWidget(self.climate_chart, 1)
+        self._apply_desktop_layout()
+
+    def _apply_desktop_layout(self):
+        self.current_profile = "DESKTOP_CONTROLLER"
+        self.root_layout.setContentsMargins(4, 4, 4, 4)
+        self.root_layout.setSpacing(4)
+        self.main_layout.setSpacing(3)
+        self.time_lbl.hide()
+        self.soc_bar.hide()
+        self.temp_lbl.show()
+        self.forecast_container.show()
+        self.energy_container.show()
+        self.power_chart.show()
+        self.climate_chart.show()
+        self.temp_lbl.setFont(QFont("Arial", 9, QFont.Weight.Medium))
+        for forecast_label in (
+            self.today_forecast_lbl,
+            self.tomorrow_forecast_lbl,
+        ):
+            forecast_label.setFont(QFont("Arial", 8))
+        for flow_widget in (
+            self.solar_widget,
+            self.battery_widget,
+            self.grid_widget,
+        ):
+            flow_widget.lbl.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+            flow_widget.meter.setMinimumHeight(16)
+        self.power_chart.setMinimumHeight(120)
+
+    def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
+        self._apply_desktop_layout()
+
+    def set_climate_samples(self, samples):
+        self.climate_chart.set_samples(samples)
 
 
 AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value

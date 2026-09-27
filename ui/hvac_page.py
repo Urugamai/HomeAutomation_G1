@@ -297,6 +297,7 @@ class HvacConfigurationPage(QWidget):
     settings_changed = pyqtSignal(dict)
     command_requested = pyqtSignal(dict)
     status_changed = pyqtSignal(str)
+    climate_history_updated = pyqtSignal(list)
 
     def __init__(self):
         super().__init__()
@@ -1044,6 +1045,7 @@ class HvacConfigurationPage(QWidget):
             self._latest_climate_telemetry.get("fan_relay_on", False),
         )
         self.climate_chart.set_samples(self.climate_history.samples)
+        self.climate_history_updated.emit(self.climate_history.samples)
 
     def _emit_current_configuration(self):
         """Constructs the canonical JSON packet definition required by your background daemon."""

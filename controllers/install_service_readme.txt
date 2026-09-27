@@ -85,6 +85,15 @@ sudo systemctl daemon-reload
 sudo systemctl enable home_controller.service
 sudo systemctl start home_controller.service
 
+# DESKTOP CONTROLLER DISPLAY (800x480)
+# Install this on the desktop unit instead of home_controller.service.
+# It shares MQTT, C-Bus, HVAC, and chart components with the home controller.
+sudo cp /home/markw/HomeAutomation_G1/controllers/desk_controller.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now desk_controller.service
+# After source updates, reinstall and restart it with:
+# /home/markw/HomeAutomation_G1/scripts/restart_desk_controller.sh
+
 # HOME CONTROLLER WATCHDOG AND REBOOT CONTROL
 sudo cp /home/markw/HomeAutomation_G1/controllers/home_controller_watchdog.service /etc/systemd/system/
 sudo visudo -cf /home/markw/HomeAutomation_G1/controllers/home_controller_reboot.sudoers
