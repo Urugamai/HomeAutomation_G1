@@ -1,6 +1,4 @@
 
-Please add a Charger status page that shows the limits, where we are now, and the state of the charger (Charging/Off).  Add a chart that shows the state of the power components used to determine if charging can start or should stop. Put lines across the chart to indicate the point where it will turn on and the point where it will turn off.
-
 google:
 	wireless solar powered hvac vent control
 	outlook continuously asking to ok login details for my mail accounts even though they are all working normally. how can I stop this.

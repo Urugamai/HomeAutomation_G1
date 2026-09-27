@@ -37,6 +37,15 @@ class ChargerDecisionChart(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#ffffff"))
+        if not self.samples:
+            painter.setPen(QColor("#606060"))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Waiting for charger status",
+            )
+            return
 
         left, right, top, bottom = 58, 54, 38, 42
         plot = QRectF(
@@ -122,7 +131,7 @@ class ChargerDecisionChart(QWidget):
         if stop_watts == start_watts:
             painter.setPen(QColor("#505050"))
             painter.drawText(
-                plot.left() + 4,
+                int(plot.left() + 4),
                 int(point_for(window_start, stop_watts).y() + 22),
                 "Stop: same threshold",
             )
@@ -198,7 +207,11 @@ class ChargerDecisionChart(QWidget):
         painter.setPen(QPen(color, 1.5, Qt.PenStyle.DashLine))
         painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
         painter.setPen(color)
-        painter.drawText(plot.left() + 4, int(y - 4), f"{label}: {watts:.0f} W")
+        painter.drawText(
+            int(plot.left() + 4),
+            int(y - 4),
+            f"{label}: {watts:.0f} W",
+        )
 
 
 class ChargerStatusPage(QWidget):

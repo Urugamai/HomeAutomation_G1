@@ -30,5 +30,8 @@ def test_charger_page_displays_current_state_limits_and_chart_history():
     assert "Command: 12 A" in page.current_label.text()
     assert "Solar start -2000 W" in page.limits_label.text()
     assert page.chart.samples == [(status["timestamp"], -2800.0, 76.0, 12)]
+    page.resize(800, 480)
+    page.show()
+    app.processEvents()
     page.deleteLater()
     app.processEvents()
