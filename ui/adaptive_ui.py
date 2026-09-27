@@ -990,7 +990,7 @@ class DesktopDashboard(AdaptiveDashboard):
     @classmethod
     def _desktop_forecast_text(cls, label, forecast_data):
         if not forecast_data:
-            return f"<b>{label}</b><br>Loading..."
+            return f"<b>{label}:</b> Loading..."
         minimum = forecast_data.get("expected_min")
         maximum = forecast_data.get("expected_max")
         if minimum is None and maximum is None:
@@ -1005,7 +1005,7 @@ class DesktopDashboard(AdaptiveDashboard):
         details = f"{temperatures}, {cls._format_rain_probability(forecast_data)}"
         if summary:
             details = f"{details} — {summary}"
-        return f"<b>{label}</b><br>{details}"
+        return f"<b>{label}:</b> {details}"
 
 
 AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value

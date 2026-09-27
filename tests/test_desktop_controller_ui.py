@@ -56,8 +56,10 @@ def test_desktop_dashboard_keeps_both_charts_without_clock():
             },
         ]
     )
-    assert dashboard.today_forecast_lbl.text().count("<br>") == 1
-    assert dashboard.tomorrow_forecast_lbl.text().count("<br>") == 1
+    assert "<br>" not in dashboard.today_forecast_lbl.text()
+    assert "<br>" not in dashboard.tomorrow_forecast_lbl.text()
+    assert ":</b>" in dashboard.today_forecast_lbl.text()
+    assert ":</b>" in dashboard.tomorrow_forecast_lbl.text()
     assert "Today" not in dashboard.today_forecast_lbl.text()
     assert "Tomorrow" not in dashboard.tomorrow_forecast_lbl.text()
     dashboard.refresh_telemetry_ui({"battery_soc": 76.4})
