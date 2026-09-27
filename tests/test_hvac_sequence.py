@@ -335,6 +335,45 @@ def test_vacation_clears_manual_hvac_override():
     assert commands == ["OFF"]
 
 
+def test_empty_house_pauses_only_between_adjusted_times():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    day = datetime.date(2030, 1, 1)
+    controller.empty_house_date = day
+    controller.empty_house_start_time = datetime.time(hour=10)
+    controller.empty_house_end_time = datetime.time(hour=16)
+
+    assert controller._is_empty_house_active(
+        datetime.datetime.combine(day, datetime.time(hour=10, minute=29))
+    ) is False
+    assert controller._is_empty_house_active(
+        datetime.datetime.combine(day, datetime.time(hour=10, minute=30))
+    ) is True
+    assert controller._is_empty_house_active(
+        datetime.datetime.combine(day, datetime.time(hour=14, minute=59))
+    ) is True
+    assert controller._is_empty_house_active(
+        datetime.datetime.combine(day, datetime.time(hour=15))
+    ) is False
+
+
+def test_empty_house_stops_active_hvac():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    day = datetime.date(2030, 1, 1)
+    now = datetime.datetime.combine(day, datetime.time(hour=11)).timestamp()
+    controller.empty_house_date = day
+    controller.empty_house_start_time = datetime.time(hour=10)
+    controller.empty_house_end_time = datetime.time(hour=16)
+    controller.current_state = "HEATING"
+    controller.sequence_state = "HEATING"
+    controller.fan_postrun_seconds = 0
+    commands = []
+    controller._write_relays = commands.append
+
+    assert controller._process_empty_house_control(now) is True
+    assert controller.sequence_state == "OFF"
+    assert commands == ["OFF"]
+
+
 def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()

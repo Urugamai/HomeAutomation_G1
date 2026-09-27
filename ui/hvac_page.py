@@ -313,6 +313,9 @@ class HvacConfigurationPage(QWidget):
         self.vacation_start_time = datetime.time(hour=18)
         self.vacation_end_time = datetime.time(hour=9)
         self.vacation_last_exercise_date = None
+        self.empty_house_date = None
+        self.empty_house_start_time = datetime.time(hour=9)
+        self.empty_house_end_time = datetime.time(hour=17)
         self.settings_store = HvacSettingsStore()
         saved_settings = self.settings_store.load()
         if saved_settings:
@@ -395,6 +398,18 @@ class HvacConfigurationPage(QWidget):
         vacation_layout.addWidget(self.vacation_status_lbl, 1)
         self.main_layout.addLayout(vacation_layout)
         self._update_vacation_status()
+
+        empty_house_layout = QHBoxLayout()
+        self.empty_house_button = QPushButton("Empty house")
+        self.empty_house_button.setMinimumHeight(36)
+        self.empty_house_button.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.empty_house_button.clicked.connect(self._show_empty_house_dialog)
+        empty_house_layout.addWidget(self.empty_house_button)
+        self.empty_house_status_lbl = QLabel()
+        self.empty_house_status_lbl.setFont(QFont("Arial", 10))
+        empty_house_layout.addWidget(self.empty_house_status_lbl, 1)
+        self.main_layout.addLayout(empty_house_layout)
+        self._update_empty_house_status()
 
         self.auto_control_button = QPushButton("Return to automatic control")
         self.auto_control_button.setMinimumHeight(36)
@@ -678,6 +693,67 @@ class HvacConfigurationPage(QWidget):
         if self.vacation_start and self.vacation_end:
             self._emit_current_configuration()
 
+    def _show_empty_house_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Empty house today")
+        layout = QVBoxLayout(dialog)
+        instruction = QLabel(
+            "HVAC pauses 30 minutes after the start time and resumes one hour "
+            "before the end time."
+        )
+        instruction.setWordWrap(True)
+        layout.addWidget(instruction)
+        time_layout = QHBoxLayout()
+        time_layout.addWidget(QLabel("Start time"))
+        start_time = self.empty_house_start_time or datetime.time(hour=9)
+        start_picker = QTimeEdit(
+            QTime(
+                start_time.hour,
+                start_time.minute,
+            )
+        )
+        start_picker.setDisplayFormat("HH:mm")
+        time_layout.addWidget(start_picker)
+        time_layout.addWidget(QLabel("End time"))
+        end_time = self.empty_house_end_time or datetime.time(hour=17)
+        end_picker = QTimeEdit(
+            QTime(
+                end_time.hour,
+                end_time.minute,
+            )
+        )
+        end_picker.setDisplayFormat("HH:mm")
+        time_layout.addWidget(end_picker)
+        layout.addLayout(time_layout)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.rejected.connect(dialog.reject)
+
+        def apply_schedule():
+            start_time = start_picker.time().toPyTime()
+            end_time = end_picker.time().toPyTime()
+            if (
+                datetime.datetime.combine(datetime.date.min, end_time)
+                - datetime.datetime.combine(datetime.date.min, start_time)
+                < datetime.timedelta(minutes=90)
+            ):
+                instruction.setText("End time must be at least 90 minutes after start time.")
+                return
+            self._set_empty_house_schedule(start_time, end_time)
+            dialog.accept()
+
+        buttons.accepted.connect(apply_schedule)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _set_empty_house_schedule(self, start_time, end_time):
+        self.empty_house_date = datetime.date.today()
+        self.empty_house_start_time = start_time
+        self.empty_house_end_time = end_time
+        self._update_empty_house_status()
+        self._emit_current_configuration()
+
     def _update_vacation_status(self):
         if self.vacation_start and self.vacation_end:
             self.vacation_status_lbl.setText(
@@ -692,6 +768,29 @@ class HvacConfigurationPage(QWidget):
             )
         else:
             self.vacation_status_lbl.setText("Vacation: no dates selected")
+
+    def _update_empty_house_status(self):
+        if self.empty_house_date == datetime.date.today():
+            paused_start = (
+                datetime.datetime.combine(
+                    self.empty_house_date,
+                    self.empty_house_start_time,
+                )
+                + datetime.timedelta(minutes=30)
+            ).time()
+            resumed_at = (
+                datetime.datetime.combine(
+                    self.empty_house_date,
+                    self.empty_house_end_time,
+                )
+                - datetime.timedelta(hours=1)
+            ).time()
+            self.empty_house_status_lbl.setText(
+                "Empty house: HVAC paused "
+                f"{paused_start:%H:%M} through {resumed_at:%H:%M}"
+            )
+        else:
+            self.empty_house_status_lbl.setText("Empty house: not scheduled")
 
     def apply_settings(self, settings: dict):
         if not settings:
@@ -713,6 +812,7 @@ class HvacConfigurationPage(QWidget):
                 picker.blockSignals(False)
             self.update_display_metrics()
             self._update_vacation_status()
+            self._update_empty_house_status()
             if changed:
                 self.settings_store.save(normalized)
         except (TypeError, ValueError) as error:
@@ -742,6 +842,13 @@ class HvacConfigurationPage(QWidget):
         self.vacation_last_exercise_date = self._parse_vacation_date(
             settings["vacation_last_exercise_date"]
         )
+        self.empty_house_date = self._parse_vacation_date(settings["empty_house_date"])
+        self.empty_house_start_time = self._parse_optional_time(
+            settings["empty_house_start_time"]
+        )
+        self.empty_house_end_time = self._parse_optional_time(
+            settings["empty_house_end_time"]
+        )
 
     @staticmethod
     def _parse_vacation_date(value):
@@ -750,6 +857,10 @@ class HvacConfigurationPage(QWidget):
     @staticmethod
     def _parse_vacation_time(value):
         return datetime.time.fromisoformat(value)
+
+    @staticmethod
+    def _parse_optional_time(value):
+        return datetime.time.fromisoformat(value) if value else None
 
     def _settings_payload(self):
         return {
@@ -769,6 +880,19 @@ class HvacConfigurationPage(QWidget):
             "vacation_last_exercise_date": (
                 self.vacation_last_exercise_date.isoformat()
                 if self.vacation_last_exercise_date
+                else None
+            ),
+            "empty_house_date": (
+                self.empty_house_date.isoformat() if self.empty_house_date else None
+            ),
+            "empty_house_start_time": (
+                self.empty_house_start_time.strftime("%H:%M")
+                if self.empty_house_start_time
+                else None
+            ),
+            "empty_house_end_time": (
+                self.empty_house_end_time.strftime("%H:%M")
+                if self.empty_house_end_time
                 else None
             ),
         }

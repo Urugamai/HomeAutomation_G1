@@ -72,6 +72,9 @@ class HvacHardwareDaemon:
         self.vacation_end_time = datetime.time(hour=9)
         self.vacation_last_exercise_date = None
         self.vacation_exercise_target = None
+        self.empty_house_date = None
+        self.empty_house_start_time = None
+        self.empty_house_end_time = None
         self.settings_store = HvacSettingsStore()
         self._load_persisted_settings()
 
@@ -359,6 +362,13 @@ class HvacHardwareDaemon:
         self.vacation_last_exercise_date = self._date_from_settings(
             settings["vacation_last_exercise_date"]
         )
+        self.empty_house_date = self._date_from_settings(settings["empty_house_date"])
+        self.empty_house_start_time = self._optional_time_from_settings(
+            settings["empty_house_start_time"]
+        )
+        self.empty_house_end_time = self._optional_time_from_settings(
+            settings["empty_house_end_time"]
+        )
 
     @staticmethod
     def _date_from_settings(value):
@@ -367,6 +377,10 @@ class HvacHardwareDaemon:
     @staticmethod
     def _time_from_settings(value):
         return datetime.time.fromisoformat(value)
+
+    @staticmethod
+    def _optional_time_from_settings(value):
+        return datetime.time.fromisoformat(value) if value else None
 
     def _settings_payload(self):
         return {
@@ -388,6 +402,19 @@ class HvacHardwareDaemon:
                 if self.vacation_last_exercise_date
                 else None
             ),
+            "empty_house_date": (
+                self.empty_house_date.isoformat() if self.empty_house_date else None
+            ),
+            "empty_house_start_time": (
+                self.empty_house_start_time.strftime("%H:%M")
+                if self.empty_house_start_time
+                else None
+            ),
+            "empty_house_end_time": (
+                self.empty_house_end_time.strftime("%H:%M")
+                if self.empty_house_end_time
+                else None
+            ),
         }
 
     def _process_control_tick(self):
@@ -399,6 +426,9 @@ class HvacHardwareDaemon:
         current_temp = self.latest_inside_temperature
         now = time.time()
         if self._process_vacation_control(now, current_temp):
+            self._broadcast_status_telemetry(current_temp)
+            return
+        if self._process_empty_house_control(now):
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -469,6 +499,52 @@ class HvacHardwareDaemon:
         else:
             self._maybe_close_blinds(current_temp)
         self._broadcast_status_telemetry(current_temp)
+
+    def _process_empty_house_control(self, now):
+        if not self._is_empty_house_active(datetime.datetime.fromtimestamp(now)):
+            return False
+
+        if (
+            self.current_state in ("HEATING", "COOLING")
+            or self.sequence_state in ("PREHEAT", "MANUAL_PREHEAT", "MANUAL_HEATING", "MANUAL_COOLING")
+        ):
+            self.manual_target = None
+            self.manual_fan_requested = False
+            self._end_active_run(now)
+            return True
+
+        if self.sequence_state == "POSTRUN":
+            if now - self.sequence_started_at >= self.fan_postrun_seconds:
+                self.sequence_state = "OFF"
+                self.pending_state = None
+                self._write_relays("OFF")
+                self._release_hvac_blind_locks()
+            return True
+
+        self.manual_target = None
+        self.manual_fan_requested = False
+        self.pending_state = None
+        self.sequence_state = "OFF"
+        if self.heater_relay_on or self.cooler_relay_on or self.fan_relay_on:
+            self._write_relays("OFF")
+        return True
+
+    def _is_empty_house_active(self, current_datetime):
+        if (
+            self.empty_house_date != current_datetime.date()
+            or self.empty_house_start_time is None
+            or self.empty_house_end_time is None
+        ):
+            return False
+        start = datetime.datetime.combine(
+            self.empty_house_date,
+            self.empty_house_start_time,
+        ) + datetime.timedelta(minutes=30)
+        end = datetime.datetime.combine(
+            self.empty_house_date,
+            self.empty_house_end_time,
+        ) - datetime.timedelta(hours=1)
+        return start <= current_datetime < end
 
     def _process_vacation_control(self, now, current_temp):
         current_datetime = datetime.datetime.fromtimestamp(now)

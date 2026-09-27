@@ -96,3 +96,21 @@ def test_vacation_dates_follow_calendar_selection_rules():
     assert page._settings_payload()["vacation_end_time"] == "10:15"
     page.deleteLater()
     app.processEvents()
+
+
+def test_empty_house_schedule_displays_adjusted_pause_window():
+    app = QApplication.instance() or QApplication([])
+    page = HvacConfigurationPage()
+
+    page._set_empty_house_schedule(
+        datetime.time(hour=10),
+        datetime.time(hour=16),
+    )
+
+    payload = page._settings_payload()
+    assert payload["empty_house_date"] == datetime.date.today().isoformat()
+    assert payload["empty_house_start_time"] == "10:00"
+    assert payload["empty_house_end_time"] == "16:00"
+    assert "10:30 through 15:00" in page.empty_house_status_lbl.text()
+    page.deleteLater()
+    app.processEvents()
