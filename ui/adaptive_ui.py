@@ -361,6 +361,7 @@ class HighResZeroCenteredBar(QWidget):
         self.range_max = float(range_max_kw)
         self.is_solar = is_solar
         self.current_value = 0.0
+        self.overlay_text = ""
         self.setMinimumHeight(24)
 
     def set_value(self, value: float):
@@ -368,6 +369,10 @@ class HighResZeroCenteredBar(QWidget):
             self.current_value = max(0.0, min(self.range_max, float(value)))
         else:
             self.current_value = max(-self.range_max, min(self.range_max, float(value)))
+        self.update()
+
+    def set_overlay_text(self, text):
+        self.overlay_text = str(text or "")
         self.update()
 
     def paintEvent(self, event):
@@ -406,6 +411,15 @@ class HighResZeroCenteredBar(QWidget):
 
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.PenStyle.DashLine))
             painter.drawLine(center_x, 0, center_x, h)
+
+        if self.overlay_text:
+            painter.setPen(QColor("#202020"))
+            painter.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                self.overlay_text,
+            )
 
 
 class AdaptiveSocBar(QWidget):
@@ -899,6 +913,15 @@ class DesktopDashboard(AdaptiveDashboard):
     def set_climate_samples(self, samples):
         self.climate_chart.set_samples(samples)
 
+    def refresh_telemetry_ui(self, data):
+        super().refresh_telemetry_ui(data)
+        try:
+            self.battery_widget.meter.set_overlay_text(
+                f"SOC {float(data.get('battery_soc', 0.0)):.0f}%"
+            )
+        except (TypeError, ValueError):
+            self.battery_widget.meter.set_overlay_text("SOC --")
+
     def _update_forecast_labels(self, forecast_list):
         today_data = next(
             (item for item in forecast_list if item.get("day_index") == 0),
@@ -909,11 +932,25 @@ class DesktopDashboard(AdaptiveDashboard):
             None,
         )
         self.today_forecast_lbl.setText(
-            self._desktop_forecast_text("Today", today_data)
+            self._desktop_forecast_text(
+                self._desktop_forecast_date(today_data, 0),
+                today_data,
+            )
         )
         self.tomorrow_forecast_lbl.setText(
-            self._desktop_forecast_text("Tomorrow", tomorrow_data)
+            self._desktop_forecast_text(
+                self._desktop_forecast_date(tomorrow_data, 1),
+                tomorrow_data,
+            )
         )
+
+    @classmethod
+    def _desktop_forecast_date(cls, forecast_data, day_offset):
+        if forecast_data:
+            return cls._forecast_date(forecast_data)
+        return (
+            datetime.datetime.now() + datetime.timedelta(days=day_offset)
+        ).strftime("%Y-%m-%d")
 
     @classmethod
     def _desktop_forecast_text(cls, label, forecast_data):
