@@ -37,6 +37,26 @@ def test_desktop_dashboard_keeps_both_charts_without_clock():
     assert not dashboard.power_chart.isHidden()
     assert not dashboard.climate_chart.isHidden()
     assert len(dashboard.climate_chart.samples) == 1
+    dashboard._update_forecast_labels(
+        [
+            {
+                "day_index": 0,
+                "expected_min": 15.0,
+                "expected_max": 23.0,
+                "rain_probability": 20,
+                "summary": "Partly cloudy",
+            },
+            {
+                "day_index": 1,
+                "expected_min": 14.0,
+                "expected_max": 21.0,
+                "rain_probability": 10,
+                "summary": "Sunny",
+            },
+        ]
+    )
+    assert dashboard.today_forecast_lbl.text().count("<br>") == 1
+    assert dashboard.tomorrow_forecast_lbl.text().count("<br>") == 1
     dashboard.deleteLater()
     app.processEvents()
 
@@ -98,5 +118,6 @@ def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
 
     assert window.ground_floor_page.compact
     assert window.first_floor_page.compact
+    assert window.climate_page.climate_chart is None
     window.close()
     app.processEvents()

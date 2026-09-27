@@ -862,7 +862,7 @@ class DesktopDashboard(AdaptiveDashboard):
     def __init__(self, power_chart_grid_interval_hours=1):
         super().__init__(power_chart_grid_interval_hours)
         self.climate_chart = ClimateValidationChart()
-        self.climate_chart.setMinimumHeight(130)
+        self.climate_chart.setMinimumHeight(170)
         self.main_layout.addWidget(self.climate_chart, 1)
         self._apply_desktop_layout()
 
@@ -891,13 +891,49 @@ class DesktopDashboard(AdaptiveDashboard):
         ):
             flow_widget.lbl.setFont(QFont("Arial", 8, QFont.Weight.Bold))
             flow_widget.meter.setMinimumHeight(16)
-        self.power_chart.setMinimumHeight(120)
+        self.power_chart.setMinimumHeight(110)
 
     def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
         self._apply_desktop_layout()
 
     def set_climate_samples(self, samples):
         self.climate_chart.set_samples(samples)
+
+    def _update_forecast_labels(self, forecast_list):
+        today_data = next(
+            (item for item in forecast_list if item.get("day_index") == 0),
+            None,
+        )
+        tomorrow_data = next(
+            (item for item in forecast_list if item.get("day_index") == 1),
+            None,
+        )
+        self.today_forecast_lbl.setText(
+            self._desktop_forecast_text("Today", today_data)
+        )
+        self.tomorrow_forecast_lbl.setText(
+            self._desktop_forecast_text("Tomorrow", tomorrow_data)
+        )
+
+    @classmethod
+    def _desktop_forecast_text(cls, label, forecast_data):
+        if not forecast_data:
+            return f"<b>{label}</b><br>Loading..."
+        minimum = forecast_data.get("expected_min")
+        maximum = forecast_data.get("expected_max")
+        if minimum is None and maximum is None:
+            temperatures = "--°C"
+        elif minimum is None:
+            temperatures = f"{float(maximum):.1f}°C"
+        elif maximum is None:
+            temperatures = f"{float(minimum):.1f}°C"
+        else:
+            temperatures = f"{float(minimum):.1f}°C → {float(maximum):.1f}°C"
+        summary = str(forecast_data.get("summary", "")).strip()
+        details = f"{temperatures}, {cls._format_rain_probability(forecast_data)}"
+        if summary:
+            details = f"{details} — {summary}"
+        return f"<b>{label}</b><br>{details}"
 
 
 AdaptiveFlowWidget.update_widget_draw_palette = AdaptiveFlowWidget.update_flow_value

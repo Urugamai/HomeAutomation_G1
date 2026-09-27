@@ -57,7 +57,7 @@ class DeskControllerWindow(QMainWindow):
             "First", self._set_cbus_device, compact=True
         )
         self.tabs.addTab(self.first_floor_page, "First")
-        self.climate_page = HvacConfigurationPage()
+        self.climate_page = HvacConfigurationPage(show_climate_chart=False)
         self.tabs.addTab(self.climate_page, "Climate")
         self.setCentralWidget(self.tabs)
 

@@ -126,8 +126,9 @@ class ClimateValidationChart(QWidget):
         QColor("#bcbd22"),
     )
 
-    def __init__(self):
+    def __init__(self, show_climate_chart=True):
         super().__init__()
+        self.show_climate_chart = show_climate_chart
         self.samples = []
         self.setMinimumHeight(250)
 
@@ -299,8 +300,9 @@ class HvacConfigurationPage(QWidget):
     status_changed = pyqtSignal(str)
     climate_history_updated = pyqtSignal(list)
 
-    def __init__(self):
+    def __init__(self, show_climate_chart=True):
         super().__init__()
+        self.show_climate_chart = show_climate_chart
 
         # Internal configuration defaults
         self.t_min = 20.0
@@ -424,9 +426,11 @@ class HvacConfigurationPage(QWidget):
         self.relay_status_timer.start(1_000)
 
         self.climate_history = ClimateHistoryStore()
-        self.climate_chart = ClimateValidationChart()
-        self.climate_chart.set_samples(self.climate_history.samples)
-        self.main_layout.addWidget(self.climate_chart, 1)
+        self.climate_chart = None
+        if self.show_climate_chart:
+            self.climate_chart = ClimateValidationChart()
+            self.climate_chart.set_samples(self.climate_history.samples)
+            self.main_layout.addWidget(self.climate_chart, 1)
         self._latest_climate_telemetry = None
         self.climate_sample_timer = QTimer(self)
         self.climate_sample_timer.timeout.connect(self._record_climate_sample)
@@ -1044,7 +1048,8 @@ class HvacConfigurationPage(QWidget):
             self._latest_climate_telemetry.get("cooler_relay_on", False),
             self._latest_climate_telemetry.get("fan_relay_on", False),
         )
-        self.climate_chart.set_samples(self.climate_history.samples)
+        if self.climate_chart is not None:
+            self.climate_chart.set_samples(self.climate_history.samples)
         self.climate_history_updated.emit(self.climate_history.samples)
 
     def _emit_current_configuration(self):
