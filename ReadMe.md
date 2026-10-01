@@ -116,3 +116,5 @@ minutes.
 The Status Core power chart samples house consumption every 15 seconds and
 stores the current day's readings in
 `/mnt/WatsonHome/home_power_history.json` when the NAS mount is available.
+Its house-consumption line shows grid-supplied usage in red, battery discharge
+when no grid power is used in blue, and solar-supplied usage in green.

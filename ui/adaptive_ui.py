@@ -51,6 +51,9 @@ class PowerHistoryStore:
                     float(item["power_kw"]),
                     float(item["solar_kw"]) if item.get("solar_kw") is not None else None,
                     float(item["grid_kw"]) if item.get("grid_kw") is not None else None,
+                    float(item["battery_kw"])
+                    if item.get("battery_kw") is not None
+                    else None,
                 )
                 for item in payload.get("samples", [])
             ]
@@ -62,8 +65,8 @@ class PowerHistoryStore:
     def _prune(self, reference_time):
         cutoff = reference_time - self.RETENTION_PERIOD
         self.samples = [
-            (timestamp, power_kw, solar_kw, grid_kw)
-            for timestamp, power_kw, solar_kw, grid_kw in (
+            (timestamp, power_kw, solar_kw, grid_kw, battery_kw)
+            for timestamp, power_kw, solar_kw, grid_kw, battery_kw in (
                 self._normalize_sample(sample) for sample in self.samples
             )
             if cutoff <= timestamp <= reference_time
@@ -71,10 +74,14 @@ class PowerHistoryStore:
 
     @staticmethod
     def _normalize_sample(sample):
-        timestamp, power_kw, solar_kw, *grid = sample
-        return timestamp, power_kw, solar_kw, grid[0] if grid else None
+        timestamp, power_kw, solar_kw, *sources = sample
+        grid_kw = sources[0] if sources else None
+        battery_kw = sources[1] if len(sources) > 1 else None
+        return timestamp, power_kw, solar_kw, grid_kw, battery_kw
 
-    def add_sample(self, timestamp, power_kw, solar_kw=None, grid_kw=None):
+    def add_sample(
+        self, timestamp, power_kw, solar_kw=None, grid_kw=None, battery_kw=None
+    ):
         self._prune(timestamp)
         self.samples.append(
             (
@@ -82,6 +89,7 @@ class PowerHistoryStore:
                 float(power_kw),
                 float(solar_kw) if solar_kw is not None else None,
                 float(grid_kw) if grid_kw is not None else None,
+                float(battery_kw) if battery_kw is not None else None,
             )
         )
         self._write()
@@ -103,8 +111,9 @@ class PowerHistoryStore:
                     "power_kw": power_kw,
                     **({"solar_kw": solar_kw} if solar_kw is not None else {}),
                     **({"grid_kw": grid_kw} if grid_kw is not None else {}),
+                    **({"battery_kw": battery_kw} if battery_kw is not None else {}),
                 }
-                for timestamp, power_kw, solar_kw, grid_kw in self.samples
+                for timestamp, power_kw, solar_kw, grid_kw, battery_kw in self.samples
             ],
         }
         temporary_path = self.storage_path.with_suffix(".tmp")
@@ -146,34 +155,13 @@ class PowerConsumptionChart(QWidget):
         self.update()
 
     @staticmethod
-    def grid_import_color(grid_kw, consumption_kw):
-        """Return a rapidly escalating color for a consumption line segment."""
-        if grid_kw is None:
-            return QColor("#2ca02c")
-        grid_import_kw = max(0.0, float(grid_kw))
-        if grid_import_kw <= 0.1:
-            return QColor("#2ca02c")
-
-        absolute_import = min(1.0, (grid_import_kw - 0.1) / 0.9)
-        consumption = max(abs(float(consumption_kw)), 0.001)
-        grid_share = min(1.0, grid_import_kw / consumption)
-        intensity = max(absolute_import, grid_share)
-        green = QColor("#2ca02c")
-        light_red = QColor("#ef8c82")
-        red = QColor("#d62728")
-        if intensity <= 4 / 9:
-            ratio = intensity / (4 / 9)
-            return QColor(
-                round(green.red() + (light_red.red() - green.red()) * ratio),
-                round(green.green() + (light_red.green() - green.green()) * ratio),
-                round(green.blue() + (light_red.blue() - green.blue()) * ratio),
-            )
-        ratio = (intensity - 4 / 9) / (5 / 9)
-        return QColor(
-            round(light_red.red() + (red.red() - light_red.red()) * ratio),
-            round(light_red.green() + (red.green() - light_red.green()) * ratio),
-            round(light_red.blue() + (red.blue() - light_red.blue()) * ratio),
-        )
+    def consumption_source_color(grid_values, battery_values, solar_values):
+        """Return the source color, prioritizing grid over battery over solar."""
+        if any(value is not None and value > 0 for value in grid_values):
+            return QColor("#d62728")
+        if any(value is not None and value < 0 for value in battery_values):
+            return QColor("#1f5fbf")
+        return QColor("#2ca02c")
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -224,7 +212,7 @@ class PowerConsumptionChart(QWidget):
         if self.samples:
             values = [
                 value
-                for _, power_kw, solar_kw, _ in self.samples
+                for _, power_kw, solar_kw, _, _ in self.samples
                 for value in (power_kw, solar_kw)
                 if value is not None
             ]
@@ -310,18 +298,14 @@ class PowerConsumptionChart(QWidget):
         solar_pen = QPen(QColor("#ff9800"), 2)
 
         for i in range(len(self.samples) - 1):
-            t1, v1, _, grid1 = self.samples[i]
-            t2, v2, _, grid2 = self.samples[i + 1]
+            t1, v1, solar1, grid1, battery1 = self.samples[i]
+            t2, v2, solar2, grid2, battery2 = self.samples[i + 1]
             p1 = point_for(t1, v1)
             p2 = point_for(t2, v2)
-            grid_import = (
-                (grid1 + grid2) / 2
-                if grid1 is not None and grid2 is not None
-                else grid1 if grid2 is None else grid2
-            )
-            consumption_color = self.grid_import_color(
-                grid_import,
-                (v1 + v2) / 2,
+            consumption_color = self.consumption_source_color(
+                (grid1, grid2),
+                (battery1, battery2),
+                (solar1, solar2),
             )
             consumption_pen = QPen(consumption_color, 2)
 
@@ -343,7 +327,7 @@ class PowerConsumptionChart(QWidget):
                 else:
                     painter.setPen(red_pen)
                     painter.drawLine(p1, pz)
-                    painter.setPen(green_pen)
+                    painter.setPen(consumption_pen)
                     painter.drawLine(pz, p2)
 
         for i in range(len(self.samples) - 1):
@@ -703,6 +687,7 @@ class AdaptiveDashboard(QWidget):
         self._latest_power_sample = None
         self._latest_solar_sample = None
         self._latest_grid_sample = None
+        self._latest_battery_sample = None
         self.power_sample_timer = QTimer(self)
         self.power_sample_timer.timeout.connect(self._record_power_sample)
         self.power_sample_timer.start(15_000)
@@ -772,6 +757,7 @@ class AdaptiveDashboard(QWidget):
                 - float(data.get("grid_flow", 0.0))
             )
             self._latest_grid_sample = float(data.get("grid_flow", 0.0))
+            self._latest_battery_sample = float(data.get("battery_flow", 0.0))
             self.power_chart.set_latest_power(
                 self._latest_power_sample,
                 self._latest_solar_sample,
@@ -780,6 +766,7 @@ class AdaptiveDashboard(QWidget):
             self._latest_power_sample = None
             self._latest_solar_sample = None
             self._latest_grid_sample = None
+            self._latest_battery_sample = None
 
         if self.temp_lbl.isVisible():
             l_temp = data.get("living_temp", 0.0)
@@ -825,6 +812,7 @@ class AdaptiveDashboard(QWidget):
             self._latest_power_sample,
             self._latest_solar_sample,
             self._latest_grid_sample,
+            self._latest_battery_sample,
         )
         self.power_chart.set_samples(self.power_history.samples)
 
