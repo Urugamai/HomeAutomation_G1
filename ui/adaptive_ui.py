@@ -143,7 +143,9 @@ class PowerConsumptionChart(QWidget):
         self.setMinimumHeight(150)
 
     def set_samples(self, samples):
-        self.samples = list(samples)
+        self.samples = [
+            PowerHistoryStore._normalize_sample(sample) for sample in samples
+        ]
         if self.samples:
             self.latest_power_kw = self.samples[-1][1]
             self.latest_solar_kw = self.samples[-1][2]

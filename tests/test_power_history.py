@@ -1,6 +1,8 @@
 import datetime
 import json
 
+from PyQt6.QtWidgets import QApplication
+
 from ui.adaptive_ui import EnvironmentSourcesPage, PowerConsumptionChart, PowerHistoryStore
 from ui.battery_indicator import (
     CHARGING_COLOR,
@@ -97,6 +99,18 @@ def test_consumption_line_color_prioritizes_grid_then_battery_then_solar():
         ).name()
         == "#2ca02c"
     )
+
+
+def test_chart_normalizes_legacy_samples_without_battery_flow():
+    timestamp = datetime.datetime.now()
+    app = QApplication.instance() or QApplication([])
+    chart = PowerConsumptionChart()
+
+    chart.set_samples([(timestamp, 2.0, 1.5, 0.5)])
+
+    assert chart.samples == [(timestamp, 2.0, 1.5, 0.5, None)]
+    chart.deleteLater()
+    app.processEvents()
 
 
 def test_battery_soc_color_reflects_flow_and_preserves_deadband_color():
