@@ -333,8 +333,8 @@ class PowerConsumptionChart(QWidget):
                     painter.drawLine(pz, p2)
 
         for i in range(len(self.samples) - 1):
-            t1, _, solar1, _ = self.samples[i]
-            t2, _, solar2, _ = self.samples[i + 1]
+            t1, _, solar1, _, _ = self.samples[i]
+            t2, _, solar2, _, _ = self.samples[i + 1]
             if solar1 is not None and solar2 is not None:
                 painter.setPen(solar_pen)
                 painter.drawLine(point_for(t1, solar1), point_for(t2, solar2))
