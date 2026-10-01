@@ -83,7 +83,7 @@ def test_add_sample_persists_solar_generation(tmp_path):
 def test_consumption_line_color_prioritizes_grid_then_battery_then_solar():
     assert (
         PowerConsumptionChart.consumption_source_color(
-            (0.1, 0.0), (-1.0, -1.0), (2.0, 2.0)
+            (-0.1, 0.0), (-1.0, -1.0), (2.0, 2.0)
         ).name()
         == "#d62728"
     )

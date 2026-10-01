@@ -159,7 +159,8 @@ class PowerConsumptionChart(QWidget):
     @staticmethod
     def consumption_source_color(grid_values, battery_values, solar_values):
         """Return the source color, prioritizing grid over battery over solar."""
-        if any(value is not None and value > 0 for value in grid_values):
+        # Sigen's buy/sell flow is negative while importing from the grid.
+        if any(value is not None and value < 0 for value in grid_values):
             return QColor("#d62728")
         if any(value is not None and value < 0 for value in battery_values):
             return QColor("#1f5fbf")
