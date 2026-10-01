@@ -588,13 +588,17 @@ class HvacConfigurationPage(QWidget):
     def _show_vacation_calendar(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Select vacation dates")
+        dialog.setMinimumSize(760, 440)
         layout = QVBoxLayout(dialog)
         instruction = QLabel()
         instruction.setWordWrap(True)
+        instruction.setFont(QFont("Arial", 14))
         layout.addWidget(instruction)
 
         time_layout = QHBoxLayout()
-        time_layout.addWidget(QLabel("Start time"))
+        start_time_label = QLabel("Start time")
+        start_time_label.setFont(QFont("Arial", 16))
+        time_layout.addWidget(start_time_label)
         start_time_picker = QTimeEdit(
             QTime(
                 self.vacation_start_time.hour,
@@ -602,8 +606,11 @@ class HvacConfigurationPage(QWidget):
             )
         )
         start_time_picker.setDisplayFormat("HH:mm")
+        self._configure_touch_time_picker(start_time_picker)
         time_layout.addWidget(start_time_picker)
-        time_layout.addWidget(QLabel("Resume time"))
+        end_time_label = QLabel("Resume time")
+        end_time_label.setFont(QFont("Arial", 16))
+        time_layout.addWidget(end_time_label)
         end_time_picker = QTimeEdit(
             QTime(
                 self.vacation_end_time.hour,
@@ -611,26 +618,36 @@ class HvacConfigurationPage(QWidget):
             )
         )
         end_time_picker.setDisplayFormat("HH:mm")
+        self._configure_touch_time_picker(end_time_picker)
         time_layout.addWidget(end_time_picker)
         layout.addLayout(time_layout)
 
         calendar = QCalendarWidget()
         calendar.setMinimumDate(QDate.currentDate())
         calendar.setGridVisible(True)
-        if self.vacation_end:
+        calendar.setMinimumHeight(280)
+        calendar.setStyleSheet(
+            "QCalendarWidget QWidget { font-size: 16px; }"
+            "QCalendarWidget QToolButton { min-height: 42px; min-width: 42px; }"
+        )
+        selection = {
+            "start": self.vacation_start,
+            "end": self.vacation_end,
+        }
+        if selection["end"]:
             calendar.setSelectedDate(
                 QDate(
-                    self.vacation_end.year,
-                    self.vacation_end.month,
-                    self.vacation_end.day,
+                    selection["end"].year,
+                    selection["end"].month,
+                    selection["end"].day,
                 )
             )
-        elif self.vacation_start:
+        elif selection["start"]:
             calendar.setSelectedDate(
                 QDate(
-                    self.vacation_start.year,
-                    self.vacation_start.month,
-                    self.vacation_start.day,
+                    selection["start"].year,
+                    selection["start"].month,
+                    selection["start"].day,
                 )
             )
         else:
@@ -638,37 +655,71 @@ class HvacConfigurationPage(QWidget):
         layout.addWidget(calendar)
 
         def update_instruction():
-            if self.vacation_start and self.vacation_end:
+            if selection["start"] and selection["end"]:
                 instruction.setText(
-                    "Select a date before the end date to replace the start, "
-                    "or a later date to extend the end."
+                    f"Vacation: {selection['start'].isoformat()} through "
+                    f"{selection['end'].isoformat()}. Select a date to start "
+                    "a new range."
                 )
-            elif self.vacation_start:
+            elif selection["start"]:
                 instruction.setText("Select a later date as the end of vacation.")
             else:
                 instruction.setText("Select the first day of vacation.")
 
         def select_date(selected_date):
-            self._select_vacation_date(selected_date.toPyDate())
+            selected_date = selected_date.toPyDate()
+            if selection["start"] is None or selection["end"] is not None:
+                selection["start"] = selected_date
+                selection["end"] = None
+            elif selected_date > selection["start"]:
+                selection["end"] = selected_date
             update_instruction()
 
-        def update_times():
+        def apply_vacation():
+            if selection["start"] is None or selection["end"] is None:
+                instruction.setText("Select both a start date and a later end date.")
+                return
+            self.vacation_start = selection["start"]
+            self.vacation_end = selection["end"]
             self.vacation_start_time = start_time_picker.time().toPyTime()
             self.vacation_end_time = end_time_picker.time().toPyTime()
             self.vacation_last_exercise_date = None
             self._update_vacation_status()
-            if self.vacation_start and self.vacation_end:
-                self._emit_current_configuration()
+            self._emit_current_configuration()
+            dialog.accept()
 
         calendar.clicked.connect(select_date)
-        start_time_picker.timeChanged.connect(update_times)
-        end_time_picker.timeChanged.connect(update_times)
         update_instruction()
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dialog.reject)
-        buttons.accepted.connect(dialog.accept)
+        buttons = QDialogButtonBox()
+        apply_button = buttons.addButton("Set vacation", QDialogButtonBox.ButtonRole.AcceptRole)
+        clear_button = buttons.addButton("Clear", QDialogButtonBox.ButtonRole.DestructiveRole)
+        cancel_button = buttons.addButton(
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        for button in (apply_button, clear_button, cancel_button):
+            button.setMinimumHeight(64)
+            button.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        apply_button.clicked.connect(apply_vacation)
+        clear_button.clicked.connect(self._clear_vacation)
+        clear_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
         layout.addWidget(buttons)
         dialog.exec()
+
+    @staticmethod
+    def _configure_touch_time_picker(time_picker):
+        time_picker.setMinimumSize(210, 72)
+        time_picker.setFont(QFont("Arial", 28))
+        time_picker.setStyleSheet(
+            "QTimeEdit::up-button, QTimeEdit::down-button { width: 56px; }"
+        )
+
+    def _clear_vacation(self):
+        self.vacation_start = None
+        self.vacation_end = None
+        self.vacation_last_exercise_date = None
+        self._update_vacation_status()
+        self._emit_current_configuration()
 
     def _select_vacation_date(self, selected_date):
         if selected_date < datetime.date.today():
@@ -696,15 +747,19 @@ class HvacConfigurationPage(QWidget):
     def _show_empty_house_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Empty house today")
+        dialog.setMinimumSize(700, 300)
         layout = QVBoxLayout(dialog)
         instruction = QLabel(
             "HVAC pauses 30 minutes after the start time and resumes one hour "
             "before the end time."
         )
         instruction.setWordWrap(True)
+        instruction.setFont(QFont("Arial", 16))
         layout.addWidget(instruction)
         time_layout = QHBoxLayout()
-        time_layout.addWidget(QLabel("Start time"))
+        start_time_label = QLabel("Start time")
+        start_time_label.setFont(QFont("Arial", 18))
+        time_layout.addWidget(start_time_label)
         start_time = self.empty_house_start_time or datetime.time(hour=9)
         start_picker = QTimeEdit(
             QTime(
@@ -713,8 +768,11 @@ class HvacConfigurationPage(QWidget):
             )
         )
         start_picker.setDisplayFormat("HH:mm")
+        self._configure_touch_time_picker(start_picker)
         time_layout.addWidget(start_picker)
-        time_layout.addWidget(QLabel("End time"))
+        end_time_label = QLabel("End time")
+        end_time_label.setFont(QFont("Arial", 18))
+        time_layout.addWidget(end_time_label)
         end_time = self.empty_house_end_time or datetime.time(hour=17)
         end_picker = QTimeEdit(
             QTime(
@@ -723,11 +781,15 @@ class HvacConfigurationPage(QWidget):
             )
         )
         end_picker.setDisplayFormat("HH:mm")
+        self._configure_touch_time_picker(end_picker)
         time_layout.addWidget(end_picker)
         layout.addLayout(time_layout)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        for button in buttons.buttons():
+            button.setMinimumHeight(64)
+            button.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         buttons.rejected.connect(dialog.reject)
 
         def apply_schedule():

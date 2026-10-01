@@ -101,6 +101,26 @@ def test_vacation_dates_follow_calendar_selection_rules():
     app.processEvents()
 
 
+def test_clearing_vacation_removes_dates_and_emits_settings():
+    app = QApplication.instance() or QApplication([])
+    page = HvacConfigurationPage()
+    emitted_settings = []
+    page.settings_changed.connect(emitted_settings.append)
+    page.vacation_start = datetime.date.today()
+    page.vacation_end = page.vacation_start + datetime.timedelta(days=7)
+    page.vacation_last_exercise_date = page.vacation_start
+
+    page._clear_vacation()
+
+    assert page.vacation_start is None
+    assert page.vacation_end is None
+    assert page.vacation_last_exercise_date is None
+    assert emitted_settings[-1]["vacation_start"] is None
+    assert emitted_settings[-1]["vacation_end"] is None
+    page.deleteLater()
+    app.processEvents()
+
+
 def test_empty_house_schedule_displays_adjusted_pause_window():
     app = QApplication.instance() or QApplication([])
     page = HvacConfigurationPage()
