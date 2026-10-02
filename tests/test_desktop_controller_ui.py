@@ -107,6 +107,29 @@ def test_compact_floor_controls_omit_dimmers_and_use_smaller_buttons():
     app.processEvents()
 
 
+def test_full_controller_ground_floor_uses_five_narrow_columns():
+    app = _application()
+    page = CbusFloorPage("Ground", lambda *_: None)
+
+    assert page.columns == 5
+    assert page.grid.horizontalSpacing() == 4
+
+    page.refresh_devices(
+        {
+            "56/1/1": {
+                "address": "56/1/1",
+                "name": "G_KITCHEN",
+                "state": "ON",
+                "brightness": 255,
+            }
+        }
+    )
+
+    assert page._buttons["56/1/1"].minimumWidth() == 0
+    page.deleteLater()
+    app.processEvents()
+
+
 def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
     app = _application()
     monkeypatch.setattr(MqttTelemetryListener, "start", lambda listener: None)

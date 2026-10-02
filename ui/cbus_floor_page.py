@@ -13,7 +13,7 @@ class CbusFloorPage(QWidget):
         self.floor = floor
         self.command_callback = command_callback
         self.compact = compact
-        self.columns = 6 if compact else 4
+        self.columns = 6 if compact else 5 if floor == "Ground" else 4
         self._buttons = {}
         self._sliders = {}
 
@@ -48,6 +48,10 @@ class CbusFloorPage(QWidget):
             self.grid.setContentsMargins(1, 1, 1, 1)
             self.grid.setHorizontalSpacing(2)
             self.grid.setVerticalSpacing(2)
+        else:
+            self.grid.setContentsMargins(4, 4, 4, 4)
+            self.grid.setHorizontalSpacing(4)
+            self.grid.setVerticalSpacing(4)
         self.scroll.setWidget(self.device_widget)
         layout.addWidget(self.scroll)
 
@@ -100,6 +104,10 @@ class CbusFloorPage(QWidget):
                 )
                 group_layout.setContentsMargins(2, 1, 2, 1)
                 group_layout.setSpacing(0)
+            else:
+                group.setMinimumWidth(0)
+                group_layout.setContentsMargins(4, 4, 4, 4)
+                group_layout.setSpacing(2)
 
             button = QPushButton()
             button.setCheckable(True)
@@ -111,6 +119,8 @@ class CbusFloorPage(QWidget):
             if self.compact:
                 button.setFixedHeight(22)
                 button.setStyleSheet("font-size: 8pt;")
+            else:
+                button.setMinimumWidth(0)
             group_layout.addWidget(button)
 
             if not self.compact:
