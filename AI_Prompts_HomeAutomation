@@ -1,9 +1,5 @@
 
-Set light level to 10 w/m2 instead of lux as blinds opening too soon.
-
-Make the buttons a little less wide on the home controller ground and first floor pages so that you can fit  them all on one page without scrollbars. I think you only need one more column on the ground floor page.
-
-TODO or Prompt? Mount google drive to each raspi and then store data and configuration on the gdrive.
+Prompt? Mount google drive to each raspi and then store data and configuration on the gdrive.
 
 google:
 	wireless solar powered hvac vent control
@@ -16,4 +12,4 @@ Things to set:
 - Button to add a specification (added specifications will have a button to allow them to be deleted)
 	- An added specification will be: Day of week list (can be all, or any combination of days - probably list all days with a checkbox beside each), Starttime endtime heat-to and cool-to temperatures
 
-TODO: Add a power button to top of device for when things go wrong (perhaps a power supply cable with the power button inline and then move it outside case on top?)
+Hardware: Add a power button to top of device for when things go wrong (perhaps a power supply cable with the power button inline and then move it outside case on top?)
