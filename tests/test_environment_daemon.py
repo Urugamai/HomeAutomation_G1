@@ -136,7 +136,7 @@ def test_telemetry_serializes_missing_sensor_readings_as_null():
     assert shared_payload["temperature"] is None
     assert shared_payload["humidity"] is None
     assert shared_payload["pressure"] is None
-    assert shared_payload["light_lux"] is None
+    assert shared_payload["light_w_m2"] is None
 
     topic, payload, retained = controller.mqtt_client.messages[1]
     assert topic == "home/environment/living/sensorless-host"

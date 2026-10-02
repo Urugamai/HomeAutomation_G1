@@ -65,7 +65,7 @@ def test_local_environment_telemetry_preserves_hvac_sequence_status():
             "hostname": "living",
             "temperature": 20.0,
             "humidity": 50.0,
-            "light_lux": 100.0,
+            "light_w_m2": 100.0,
         }
     )
 

@@ -588,7 +588,7 @@ class LivingAreaHardwareController:
             "temperature": temp,
             "humidity": humidity,
             "pressure": pressure,
-            "light_lux": round(lux, 1) if lux is not None else None,
+            "light_w_m2": round(lux, 1) if lux is not None else None,
             "timestamp": time.time()
         }
         payload_json = json.dumps(payload)

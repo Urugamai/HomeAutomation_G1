@@ -14,7 +14,7 @@ from libraries.paho_compat import create_client
 
 
 class MqttTelemetryListener(QObject):
-    """Unified cross-platform telemetry processor capturing lux channels."""
+    """Unified cross-platform telemetry processor capturing irradiance channels."""
     telemetry_received = pyqtSignal(dict)
 
     def __init__(self, broker="localhost", port=1883, location="rumpus"):
@@ -27,13 +27,13 @@ class MqttTelemetryListener(QObject):
 
         self.cached_data = {
             "living_temp": 0.0,
-            "living_lux": 0.0,  # FIXED: Added ambient room tracking cache
+            "living_light_w_m2": 0.0,
             "room_temp": 0.0,
             "room_humidity": 0.0,
             "room_pressure": 0.0,
             "room_source": "",
             "outside_temp": 0.0,
-            "outside_lux": 0.0,  # FIXED: Added outdoor tracking cache
+            "outside_light_w_m2": 0.0,
             "outside_humidity": 0.0,
             "solar_radiation": 0.0,
             "rain_rate": 0.0,
@@ -112,7 +112,15 @@ class MqttTelemetryListener(QObject):
                     "outside_temp", data, "outside_temp", "outdoor_temperature",
                     "outdoor_temp", "temperature")
                 self._update_cached_float(
-                    "outside_lux", data, "outside_lux", "outdoor_lux", "light_lux")
+                    "outside_light_w_m2",
+                    data,
+                    "solar_radiation",
+                    "outside_light_w_m2",
+                    "light_w_m2",
+                    "outside_lux",
+                    "outdoor_lux",
+                    "light_lux",
+                )
                 self._update_cached_float(
                     "outside_humidity", data, "outside_humidity",
                     "outdoor_humidity", "humidity")
@@ -186,7 +194,14 @@ class MqttTelemetryListener(QObject):
         )
         self.cached_data["room_temp"] = self.cached_data["living_temp"]
         self._update_cached_float(
-            "living_lux", data, "light_lux", "living_lux", "outside_lux"
+            "living_light_w_m2",
+            data,
+            "light_w_m2",
+            "living_light_w_m2",
+            "solar_radiation",
+            "light_lux",
+            "living_lux",
+            "outside_lux",
         )
         self.cached_data["room_source"] = data.get(
             "hostname", data.get("device_name", self.location or "")

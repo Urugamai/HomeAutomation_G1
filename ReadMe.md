@@ -118,3 +118,7 @@ stores the current day's readings in
 `/mnt/WatsonHome/home_power_history.json` when the NAS mount is available.
 Its house-consumption line shows grid-supplied usage in red, battery discharge
 when no grid power is used in blue, and solar-supplied usage in green.
+
+Environment light readings are displayed and published as irradiance in W/m².
+Blind automation opens blinds at 100 W/m², with per-blind dusk thresholds in
+`config/blind-settings.yml`.

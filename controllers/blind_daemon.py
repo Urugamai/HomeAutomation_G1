@@ -42,7 +42,7 @@ class BlindAutomationDaemon:
         self.state_path = Path(state_path or self.STATE_PATH)
         self.devices = self._load_settings()
         self.states, self.dark_since = self._load_state()
-        self.latest_outside_lux = None
+        self.latest_outside_w_m2 = None
         self.client = None
 
     def _load_broker_config(self) -> str:
@@ -81,6 +81,12 @@ class BlindAutomationDaemon:
             if not isinstance(label, str) or not isinstance(configured_policy, dict):
                 raise RuntimeError("Each blind settings entry must be a label and mapping")
             policy = {**defaults, **configured_policy}
+            for legacy_name, irradiance_name in (
+                ("close_below_lux", "close_below_w_m2"),
+                ("open_above_lux", "open_above_w_m2"),
+            ):
+                if irradiance_name not in policy and legacy_name in policy:
+                    policy[irradiance_name] = policy[legacy_name]
             parts = label.upper().split("_")
             if len(parts) < 3 or parts[2] not in ("B", "S"):
                 raise RuntimeError(
@@ -90,8 +96,8 @@ class BlindAutomationDaemon:
                 address = int(policy["address"])
                 open_after = datetime.time.fromisoformat(str(policy["open_after"]))
                 for setting in (
-                    "close_below_lux",
-                    "open_above_lux",
+                    "close_below_w_m2",
+                    "open_above_w_m2",
                     "sunset_delay_minutes",
                     "manual_hold_minutes",
                     "automated_hold_minutes",
@@ -103,7 +109,9 @@ class BlindAutomationDaemon:
             if not 0 <= address <= 255:
                 raise RuntimeError(f"{label} has an invalid C-Bus group address: {address}")
             if any(value < 0 for value in policy.values() if isinstance(value, float)):
-                raise RuntimeError(f"{label} has a negative automation duration or lux value")
+                raise RuntimeError(
+                    f"{label} has a negative automation duration or irradiance value"
+                )
             if policy["closed_state"] not in ("ON", "OFF"):
                 raise RuntimeError(f"{label} closed_state must be ON or OFF")
             if address in devices:
@@ -239,15 +247,15 @@ class BlindAutomationDaemon:
                 state["automated_hold_until"] = 0.0
                 state["hvac_locked"] = False
             self._save_state()
-            if self.latest_outside_lux is not None:
-                self._evaluate_lux(self.latest_outside_lux)
+            if self.latest_outside_w_m2 is not None:
+                self._evaluate_irradiance(self.latest_outside_w_m2)
         elif action == "RELEASE_HVAC_LOCKS":
             print("[COMMAND] Releasing HVAC blind locks after the HVAC cycle.")
             for address in self.devices:
                 self._state_for(address)["hvac_locked"] = False
             self._save_state()
-            if self.latest_outside_lux is not None:
-                self._evaluate_lux(self.latest_outside_lux)
+            if self.latest_outside_w_m2 is not None:
+                self._evaluate_irradiance(self.latest_outside_w_m2)
         else:
             raise ValueError(f"Unsupported blind command action: {action}")
 
@@ -275,11 +283,19 @@ class BlindAutomationDaemon:
         self._record_manual_change(address, position)
 
     def _handle_environment(self, payload):
-        outside_lux = payload.get("outside_lux", payload.get("light_lux"))
-        if outside_lux is None:
+        outside_w_m2 = payload.get(
+            "solar_radiation",
+            payload.get(
+                "outside_light_w_m2",
+                payload.get(
+                    "light_w_m2", payload.get("outside_lux", payload.get("light_lux"))
+                ),
+            ),
+        )
+        if outside_w_m2 is None:
             return
-        self.latest_outside_lux = float(outside_lux)
-        self._evaluate_lux(self.latest_outside_lux)
+        self.latest_outside_w_m2 = float(outside_w_m2)
+        self._evaluate_irradiance(self.latest_outside_w_m2)
 
     def _handle_cbus_state(self, topic, payload):
         address_text = topic.removeprefix("homeassistant/light/cbus_").removesuffix(
@@ -313,10 +329,10 @@ class BlindAutomationDaemon:
         )
         self._save_state()
 
-    def _evaluate_lux(self, outside_lux):
+    def _evaluate_irradiance(self, outside_w_m2):
         now = time.time()
         is_dark_for_any_device = any(
-            outside_lux < policy["close_below_lux"]
+            outside_w_m2 < policy["close_below_w_m2"]
             for policy in self.devices.values()
         )
         if is_dark_for_any_device and self.dark_since is None:
@@ -326,7 +342,7 @@ class BlindAutomationDaemon:
 
         for address, policy in self.devices.items():
             state = self._state_for(address)
-            if outside_lux < policy["close_below_lux"]:
+            if outside_w_m2 < policy["close_below_w_m2"]:
                 delay_seconds = policy["sunset_delay_minutes"] * 60
                 if now - self.dark_since >= delay_seconds:
                     self._move(
@@ -334,8 +350,8 @@ class BlindAutomationDaemon:
                         "CLOSED",
                         automated=True,
                         reason=(
-                            f"outside_lux={outside_lux:.1f} below "
-                            f"close_below_lux={policy['close_below_lux']:.1f}; "
+                            f"outside_w_m2={outside_w_m2:.1f} below "
+                            f"close_below_w_m2={policy['close_below_w_m2']:.1f}; "
                             f"dusk delay={policy['sunset_delay_minutes']:.0f}m elapsed"
                         ),
                     )
@@ -349,7 +365,7 @@ class BlindAutomationDaemon:
                 continue
 
             if (
-                outside_lux > policy["open_above_lux"]
+                outside_w_m2 >= policy["open_above_w_m2"]
                 and datetime.datetime.now().time() >= policy["open_after"]
             ):
                 self._move(
@@ -357,8 +373,8 @@ class BlindAutomationDaemon:
                     "OPEN",
                     automated=True,
                     reason=(
-                        f"outside_lux={outside_lux:.1f} above "
-                        f"open_above_lux={policy['open_above_lux']:.1f}; "
+                        f"outside_w_m2={outside_w_m2:.1f} above "
+                        f"open_above_w_m2={policy['open_above_w_m2']:.1f}; "
                         f"opening allowed after {policy['open_after'].isoformat(timespec='minutes')}"
                     ),
                 )

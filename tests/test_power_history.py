@@ -135,10 +135,10 @@ def test_environment_timestamp_is_formatted_as_local_datetime():
     assert row[4] == "--"
 
 
-def test_environment_light_lux_is_displayed_without_conversion():
-    row = EnvironmentSourcesPage._source_row("living", {"light_lux": 320})
+def test_environment_light_irradiance_is_displayed_without_conversion():
+    row = EnvironmentSourcesPage._source_row("living", {"light_w_m2": 320})
 
-    assert row[5] == "320.0 lx"
+    assert row[5] == "320.0 W/m²"
 
 
 def test_environment_indoor_average_excludes_ecowitt_outdoor_source():

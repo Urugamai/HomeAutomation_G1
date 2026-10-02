@@ -272,10 +272,7 @@ class EcowittLanIngestionDaemon:
         cls._set_if_number(result, "outside_temp", temperature)
         cls._set_if_number(result, "humidity", humidity)
         cls._set_if_number(result, "solar_radiation", solar)
-        # Ecowitt reports solar radiation in W/m². This is an estimated lux
-        # equivalent, retained separately so consumers can choose either unit.
-        if solar is not None:
-            result["outside_lux"] = round(solar * 126.7, 1)
+        cls._set_if_number(result, "outside_light_w_m2", solar)
         cls._set_if_number(result, "rain_rate", rain_rate)
         cls._set_if_number(result, "rain_today", rain_daily)
         cls._set_if_number(result, "rain_event", rain_event)
@@ -374,7 +371,7 @@ class EcowittLanIngestionDaemon:
             "temperature": simulated_outdoor_temp,
             "outside_temp": simulated_outdoor_temp,
             "humidity": random.randint(62, 70),
-            "outside_lux": round(random.uniform(1500, 25000), 1),
+            "outside_light_w_m2": round(random.uniform(12, 200), 1),
             "solar_radiation": round(random.uniform(12, 200), 1),
             "rain_rate": 0.0,
             "rain_today": round(random.uniform(0, 4), 1),

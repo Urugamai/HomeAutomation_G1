@@ -524,7 +524,7 @@ class EnvironmentSourcesPage(QWidget):
 
     COLUMNS = (
         "Source", "Hostname", "Temperature", "Humidity", "Pressure",
-        "Light", "Updated",
+        "Irradiance (W/m²)", "Updated",
     )
 
     def __init__(self):
@@ -581,7 +581,14 @@ class EnvironmentSourcesPage(QWidget):
     def _light_reading(cls, source, is_ecowitt):
         if is_ecowitt:
             return cls._number(source, "solar_radiation", suffix=" W/m²")
-        return cls._number(source, "light_lux", "outside_lux", suffix=" lx")
+        return cls._number(
+            source,
+            "light_w_m2",
+            "outside_light_w_m2",
+            "light_lux",
+            "outside_lux",
+            suffix=" W/m²",
+        )
 
     @classmethod
     def _source_row(cls, source_key, source):
@@ -773,7 +780,7 @@ class AdaptiveDashboard(QWidget):
 
         if self.temp_lbl.isVisible():
             l_temp = data.get("living_temp", 0.0)
-            l_lux = data.get("living_lux", 0.0)
+            living_light_w_m2 = data.get("living_light_w_m2", 0.0)
             o_temp = data.get("outside_temp", 0.0)
             o_solar = data.get("solar_radiation", 0.0)
             o_humidity = data.get("outside_humidity", 0.0)
@@ -783,7 +790,7 @@ class AdaptiveDashboard(QWidget):
             rain_today = data.get("rain_today", 0.0)
             rain_rate = data.get("rain_rate", 0.0)
             self.temp_lbl.setText(
-                f"Living: {l_temp:.1f}°C ({l_lux:.1f} lx)  |  "
+                f"Living: {l_temp:.1f}°C ({living_light_w_m2:.1f} W/m²)  |  "
                 f"Outside: {o_temp:.1f}°C, {o_humidity:.0f}% RH "
                 f"({o_solar:.1f} W/m²)<br>"
                 f"Wind: {wind_speed:.1f} km/h (gust {wind_gust:.1f}) "
