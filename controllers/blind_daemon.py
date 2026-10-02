@@ -342,6 +342,13 @@ class BlindAutomationDaemon:
 
         for address, policy in self.devices.items():
             state = self._state_for(address)
+            if (
+                state["hvac_locked"]
+                or now < state["manual_hold_until"]
+                or now < state["automated_hold_until"]
+            ):
+                continue
+
             if outside_w_m2 < policy["close_below_w_m2"]:
                 delay_seconds = policy["sunset_delay_minutes"] * 60
                 if now - self.dark_since >= delay_seconds:
@@ -355,13 +362,6 @@ class BlindAutomationDaemon:
                             f"dusk delay={policy['sunset_delay_minutes']:.0f}m elapsed"
                         ),
                     )
-                continue
-
-            if (
-                state["hvac_locked"]
-                or now < state["manual_hold_until"]
-                or now < state["automated_hold_until"]
-            ):
                 continue
 
             if (

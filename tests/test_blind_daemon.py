@@ -113,7 +113,7 @@ def test_home_controller_command_uses_manual_hold(tmp_path, monkeypatch):
     assert daemon.client.messages == []
 
 
-def test_low_light_closes_even_while_manual_or_automated_hold_is_active(tmp_path):
+def test_low_light_respects_manual_or_automated_hold(tmp_path):
     settings_path = tmp_path / "blind-settings.yml"
     state_path = tmp_path / "blind-state.json"
     write_settings(settings_path)
@@ -126,8 +126,8 @@ def test_low_light_closes_even_while_manual_or_automated_hold_is_active(tmp_path
 
     daemon._handle_environment({"light_w_m2": 0})
 
-    assert daemon.client.messages[-1][1]["payload"]["state"] == "OFF"
-    assert state["position"] == "CLOSED"
+    assert daemon.client.messages == []
+    assert state["position"] == "OPEN"
 
 
 def test_cbus_off_state_is_treated_as_closed_for_configured_relay_polarity(tmp_path):
