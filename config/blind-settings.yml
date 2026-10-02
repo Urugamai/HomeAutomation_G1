@@ -2,7 +2,7 @@ devices:
   G_STDY_B_W:
     address: 31
     close_below_w_m2: 50
-    open_above_w_m2: 10
+    open_above_w_m2: 25
     open_after: "09:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
