@@ -120,5 +120,5 @@ Its house-consumption line shows grid-supplied usage in red, battery discharge
 when no grid power is used in blue, and solar-supplied usage in green.
 
 Environment light readings are displayed and published as irradiance in W/m².
-Blind automation opens blinds at 100 W/m², with per-blind dusk thresholds in
+Blind automation opens blinds at 10 W/m², with per-blind dusk thresholds in
 `config/blind-settings.yml`.
