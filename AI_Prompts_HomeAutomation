@@ -1,4 +1,6 @@
 
+Set light level to 10 w/m2 instead of lux as blinds opening too soon.
+
 Make the buttons a little less wide on the home controller ground and first floor pages so that you can fit  them all on one page without scrollbars. I think you only need one more column on the ground floor page.
 
 TODO or Prompt? Mount google drive to each raspi and then store data and configuration on the gdrive.
