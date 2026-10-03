@@ -100,7 +100,7 @@ devices:
     closed_state: "OFF"
   1_SIT_B_W:
     address: 33
-    close_below_w_m2: 50
+    close_below_w_m2: 20
     open_above_w_m2: 10
     open_after: "00:00"
     sunset_delay_minutes: 0
