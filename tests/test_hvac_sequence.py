@@ -17,7 +17,7 @@ class _RecordingMqttClient:
         self.messages = []
         self.subscriptions = []
 
-    def publish(self, topic, payload):
+    def publish(self, topic, payload, **kwargs):
         self.messages.append((topic, json.loads(payload)))
 
     def subscribe(self, topic):
@@ -77,6 +77,26 @@ class _FakeLgpio:
 
     def gpiochip_close(self, chip):
         raise AssertionError(f"Unexpected close for GPIO chip {chip}")
+
+
+def test_matter_actuator_publishes_mode_without_using_gpio(monkeypatch):
+    monkeypatch.setattr(
+        hvac_daemon.HvacHardwareDaemon,
+        "_load_actuator_config",
+        lambda self: ("matter", "home/hvac/matter/command"),
+    )
+    monkeypatch.setattr(hvac_daemon, "IS_RASPI", True)
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+
+    controller._write_relays("COOLING")
+
+    assert controller.gpio_ready is False
+    assert controller.client.messages == [
+        ("home/hvac/matter/command", {"mode": "COOLING"})
+    ]
+    assert controller.cooler_relay_on is True
+    assert controller.fan_relay_on is True
 
 
 def test_waveshare_relay_mapping_uses_active_low_gpio(monkeypatch):

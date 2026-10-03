@@ -1,0 +1,8 @@
+# Configure after commissioning the thermostat in the local Matter Server.
+enabled: false
+matter-server-url: ws://127.0.0.1:5580/ws
+node-id: null
+endpoint-id: 1
+fan-control-enabled: true
+active-heating-setpoint-c: 28.0
+active-cooling-setpoint-c: 16.0

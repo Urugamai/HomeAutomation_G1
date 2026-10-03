@@ -54,8 +54,21 @@ sudo systemctl daemon-reload
 sudo systemctl enable living_zone.service
 sudo systemctl start living_zone.service
 
-# HVAC RELAY CONTROLLER
+# LOCAL MATTER SERVER AND THERMOSTAT BRIDGE
+# Requires Node.js 22.13+ (Node 24 recommended). This server must run before
+# commissioning the Meross thermostat. Keep backend: relay in
+# config/hvac-actuator.yml until thermostat commissioning and wiring are complete.
+cd /home/markw/HomeAutomation_G1/matter-server
+npm install --omit=dev
+sudo cp /home/markw/HomeAutomation_G1/controllers/matter-server.service /etc/systemd/system/
+sudo cp /home/markw/HomeAutomation_G1/controllers/matter-thermostat.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now matter-server.service matter-thermostat.service
+
+# HVAC CONTROLLER
 # Runs alongside living_zone.service, which publishes sensor telemetry.
+# After commissioning, set config/matter-thermostat.yml enabled and node-id,
+# then set config/hvac-actuator.yml backend to matter and restart these services.
 sudo cp /home/markw/HomeAutomation_G1/controllers/hvac.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable hvac.service

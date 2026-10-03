@@ -6,6 +6,7 @@ import math
 import threading
 from pathlib import Path
 import configparser
+import yaml
 
 project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
@@ -98,8 +99,11 @@ class HvacHardwareDaemon:
         self.gpio_ready = False
         self._gpio_backend = None
         self._lgpio_chip = None
+        self.actuator_backend, self.matter_command_topic = self._load_actuator_config()
 
-        if IS_RASPI:
+        if self.actuator_backend == "matter":
+            print("[HVAC] Matter thermostat actuator selected; GPIO relay outputs are disabled.")
+        elif IS_RASPI:
             if GPIO is not None:
                 try:
                     GPIO.setmode(GPIO.BCM)
@@ -133,6 +137,23 @@ class HvacHardwareDaemon:
         else:
             print("[GPIO ERROR] No supported GPIO library is available; relay outputs are disabled.")
 
+    def _load_actuator_config(self):
+        config_path = project_root / "config" / "hvac-actuator.yml"
+        try:
+            with config_path.open(encoding="utf-8") as config_file:
+                config = yaml.safe_load(config_file) or {}
+            backend = str(config.get("backend", "relay")).lower()
+            if backend not in ("relay", "matter"):
+                raise ValueError("backend must be relay or matter")
+            matter = config.get("matter", {})
+            if not isinstance(matter, dict):
+                raise ValueError("matter must be a mapping")
+            return backend, str(
+                matter.get("command-topic", "home/hvac/matter/command")
+            )
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+            raise RuntimeError(f"Invalid HVAC actuator configuration: {error}") from error
+
     def _write_relays(self, mode: str):
         """
         Commands the active-low Waveshare RPi Relay Board while enforcing
@@ -141,6 +162,16 @@ class HvacHardwareDaemon:
         self.heater_relay_on = mode == "HEATING"
         self.cooler_relay_on = mode == "COOLING"
         self.fan_relay_on = mode in ("HEATING", "COOLING", "FAN")
+
+        if self.actuator_backend == "matter":
+            if self.client is not None:
+                self.client.publish(
+                    self.matter_command_topic,
+                    json.dumps({"mode": mode}),
+                    qos=1,
+                    retain=False,
+                )
+            return
 
         if not self.gpio_ready:
             return

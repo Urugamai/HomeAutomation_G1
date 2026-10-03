@@ -1,0 +1,18 @@
+[Unit]
+Description=Local Matter Controller Server
+Wants=network-online.target
+After=network-online.target homeautomation-update.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/markw/HomeAutomation_G1/matter-server
+ExecStart=/usr/bin/npx --no-install matter-server --storage-path /var/lib/homeautomation-matter
+Restart=always
+RestartSec=10
+User=markw
+StateDirectory=homeautomation-matter
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+# Keep relay selected until the Meross thermostat is commissioned and wired.
+backend: relay
+
+matter:
+  command-topic: home/hvac/matter/command
