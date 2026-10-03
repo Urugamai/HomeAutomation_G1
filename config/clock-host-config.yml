@@ -4,3 +4,23 @@ bathroom-clock:
   turn-on: "0400"
   turn-off: "1000"
   touch-on-duration: 60
+
+Clock-Study:
+  turn-on: "0600"
+  turn-off: "2300"
+  touch-on-duration: 60
+
+Clock-Rumpus:
+  turn-on: "0800"
+  turn-off: "2300"
+  touch-on-duration: 60
+
+Clock-TV-Cabinet:
+  turn-on: "1800"
+  turn-off: "0100"
+  touch-on-duration: 60
+
+Clock-Lounge:
+  turn-on: "0600"
+  turn-off: "0100"
+  touch-on-duration: 60
