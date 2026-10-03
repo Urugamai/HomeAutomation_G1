@@ -58,8 +58,14 @@ sudo systemctl start living_zone.service
 # Requires Node.js 22.13+ (Node 24 recommended). This server must run before
 # commissioning the Meross thermostat. Keep backend: relay in
 # config/hvac-actuator.yml until thermostat commissioning and wiring are complete.
+# Install Node.js 24 from the NodeSource repository; Debian's bundled Node.js
+# release may be too old for matter-server.
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
+node --version
+npm --version
 cd /home/markw/HomeAutomation_G1/matter-server
-npm install --omit=dev
+npm ci --omit=dev
 sudo cp /home/markw/HomeAutomation_G1/controllers/matter-server.service /etc/systemd/system/
 sudo cp /home/markw/HomeAutomation_G1/controllers/matter-thermostat.service /etc/systemd/system/
 sudo systemctl daemon-reload
