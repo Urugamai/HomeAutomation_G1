@@ -11,7 +11,7 @@ Clock-Study:
   touch-on-duration: 60
 
 Clock-Rumpus:
-  turn-on: "0800"
+  turn-on: "0600"
   turn-off: "2300"
   touch-on-duration: 60
 
