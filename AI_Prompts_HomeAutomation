@@ -1,4 +1,7 @@
 
+If the predicted high for the day is higher than the lower set point (when to start heating), do NOT heat. (add tolerance amount)
+If the predicted high for the day is lower than the higher set point (when to start cooling), do NOT cool. (add tolerance amount)
+
 Prompt? Mount google drive to each raspi and then store data and configuration on the gdrive.
 
 google:

@@ -594,11 +594,6 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         except (TypeError, ValueError):
             day_index = default_day_index
 
-        if day_index == 0:
-            return "Today"
-        if day_index == 1:
-            return "Tomorrow"
-
         timestamp = item.get("utc_timestamp")
         if timestamp:
             try:
@@ -607,11 +602,13 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
                 )
                 if parsed.tzinfo is not None:
                     parsed = parsed.astimezone()
-                return parsed.strftime("%a")
+                return parsed.strftime("%Y-%m-%d")
             except ValueError:
                 pass
 
-        return (datetime.datetime.now() + datetime.timedelta(days=day_index)).strftime("%a")
+        return (
+            datetime.datetime.now() + datetime.timedelta(days=day_index)
+        ).strftime("%Y-%m-%d")
 
     @staticmethod
     def _temperature_range(item):
