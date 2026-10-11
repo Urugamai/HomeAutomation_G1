@@ -1,8 +1,8 @@
 devices:
   G_STDY_B_W:
     address: 31
-    close_below_w_m2: 50
-    open_above_w_m2: 25
+    close_below_w_m2: 20
+    open_above_w_m2: 30
     open_after: "09:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
@@ -10,54 +10,54 @@ devices:
     closed_state: "OFF"
   G_RMPS_S_EL:
     address: 23
-    close_below_w_m2: 5
-    open_above_w_m2: 10
-    open_after: "00:00"
+    close_below_w_m2: 1
+    open_above_w_m2: 5
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   G_RMPS_S_ER:
     address: 37
-    close_below_w_m2: 5
-    open_above_w_m2: 10
-    open_after: "00:00"
+    close_below_w_m2: 1
+    open_above_w_m2: 5
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   G_RMPS_S_NL:
     address: 39
-    close_below_w_m2: 5
-    open_above_w_m2: 10
-    open_after: "00:00"
+    close_below_w_m2: 1
+    open_above_w_m2: 5
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   G_RMPS_S_NR:
     address: 40
-    close_below_w_m2: 5
-    open_above_w_m2: 10
-    open_after: "00:00"
+    close_below_w_m2: 1
+    open_above_w_m2: 5
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   1_LNG_B_WL:
     address: 29
-    close_below_w_m2: 5
+    close_below_w_m2: 1
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 30
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   1_LNG_B_WC:
     address: 11
-    close_below_w_m2: 5
+    close_below_w_m2: 1
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 30
     manual_hold_minutes: 60
     automated_hold_minutes: 60
@@ -66,16 +66,16 @@ devices:
     address: 20
     close_below_w_m2: 5
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 30
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   1_LNG_B_SR:
     address: 19
-    close_below_w_m2: 5
+    close_below_w_m2: 1
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 30
     manual_hold_minutes: 60
     automated_hold_minutes: 60
@@ -84,16 +84,16 @@ devices:
     address: 13
     close_below_w_m2: 5
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
     closed_state: "OFF"
   1_SIT_B_S:
     address: 17
-    close_below_w_m2: 5
+    close_below_w_m2: 1
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 30
     manual_hold_minutes: 60
     automated_hold_minutes: 60
@@ -102,7 +102,7 @@ devices:
     address: 33
     close_below_w_m2: 20
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "05:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
@@ -111,7 +111,7 @@ devices:
     address: 15
     close_below_w_m2: 5
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
@@ -120,7 +120,7 @@ devices:
     address: 27
     close_below_w_m2: 5
     open_above_w_m2: 10
-    open_after: "00:00"
+    open_after: "04:00"
     sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 60
