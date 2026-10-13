@@ -17,7 +17,7 @@ class ChargerDecisionChart(QWidget):
         super().__init__()
         self.samples = []
         self.limits = {}
-        self.setMinimumHeight(260)
+        self.setMinimumHeight(180)
 
     def add_status(self, status):
         try:
@@ -255,7 +255,11 @@ class ChargerStatusPage(QWidget):
         if is_override:
             mode = "Manual override"
         elif solar_charging_active:
-            mode = "Solar-following"
+            mode = (
+                "Solar-following"
+                if target_amps > 0
+                else "Waiting for sufficient solar export"
+            )
         else:
             mode = "Waiting for battery to reach full threshold"
         self.current_label.setText(
@@ -280,6 +284,7 @@ class ChargerStatusPage(QWidget):
             f"Start at {limits.get('battery_full_soc', '--')}% battery | "
             f"Stop below {limits.get('battery_stop_soc', '--')}% battery | "
             f"Override {limits.get('override_amps', '--')} A | "
+            f"Start export {limits.get('minimum_start_export_watts', '--')} W | "
             f"Change interval {limits.get('rate_change_interval_seconds', '--')} s"
         )
         self.chart.add_status(status)

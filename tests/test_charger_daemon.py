@@ -55,6 +55,13 @@ def test_solar_charging_latches_at_full_battery_until_low_soc():
 def test_solar_target_uses_grid_export_feedback_and_three_phase_power():
     daemon = OcularChargerDaemon()
     daemon.solar_charging_active = True
+    daemon.grid_flow_watts = -2_000
+
+    assert daemon._target_amps() == 0
+
+    daemon.grid_flow_watts = -4_320
+    assert daemon._target_amps() == 6
+
     daemon.current_charge_rate_amps = 6
     daemon.grid_flow_watts = -2_000
 
@@ -88,7 +95,8 @@ def test_retained_override_forces_configured_charging_rate():
     daemon._set_override({"enabled": True})
 
     assert daemon.override_enabled is True
-    assert writes == [daemon.OVERRIDE_AMPS]
+    assert daemon.OVERRIDE_AMPS == daemon.MAX_SOLAR_AMPS
+    assert writes == [32]
 
     daemon._set_override({"enabled": False})
     assert writes == [daemon.OVERRIDE_AMPS, 0]

@@ -35,11 +35,11 @@ class OcularChargerDaemon:
     """
     MIN_SOLAR_AMPS = 6
     MAX_SOLAR_AMPS = 32
-    OVERRIDE_AMPS = 16
     BATTERY_FULL_SOC = 99
     BATTERY_STOP_SOC = 60
     PHASE_VOLTAGE = 240
     PHASE_COUNT = 3
+    OVERRIDE_AMPS = MAX_SOLAR_AMPS
     AMPS_CHANGE_INTERVAL_SECONDS = 10 * 60
     CHARGER_CURRENT_LIMIT_REGISTER = 200
     CHARGER_MODBUS_SLAVE = 1
@@ -157,6 +157,11 @@ class OcularChargerDaemon:
 
         watts_per_amp = self.PHASE_VOLTAGE * self.PHASE_COUNT
         exported_watts = -self.grid_flow_watts
+        if (
+            self.current_charge_rate_amps == 0
+            and exported_watts < self.MIN_SOLAR_AMPS * watts_per_amp
+        ):
+            return 0
         export_adjustment_amps = math.floor(exported_watts / watts_per_amp)
         return min(
             self.MAX_SOLAR_AMPS,
@@ -199,6 +204,9 @@ class OcularChargerDaemon:
                 "battery_full_soc": self.BATTERY_FULL_SOC,
                 "battery_stop_soc": self.BATTERY_STOP_SOC,
                 "watts_per_amp": self.PHASE_VOLTAGE * self.PHASE_COUNT,
+                "minimum_start_export_watts": (
+                    self.MIN_SOLAR_AMPS * self.PHASE_VOLTAGE * self.PHASE_COUNT
+                ),
                 "rate_change_interval_seconds": self.AMPS_CHANGE_INTERVAL_SECONDS,
             },
         }
