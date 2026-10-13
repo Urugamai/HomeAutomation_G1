@@ -139,6 +139,9 @@ class MainWindow(QMainWindow):
             location=socket.gethostname(),
         )
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
+        self.charger_page.override_changed.connect(
+            self.mqtt_listener.set_charger_override
+        )
         self.dashboard.hvac_settings_changed.connect(
             self.mqtt_listener.set_hvac_settings
         )

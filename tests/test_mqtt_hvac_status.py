@@ -3,6 +3,14 @@ import json
 from libraries.mqtt_engine import MqttTelemetryListener
 
 
+class FakeMqttClient:
+    def __init__(self):
+        self.published = []
+
+    def publish(self, topic, payload, qos, retain):
+        self.published.append((topic, json.loads(payload), qos, retain))
+
+
 def test_hvac_status_updates_individual_relay_states():
     listener = MqttTelemetryListener()
 
@@ -95,3 +103,14 @@ def test_charger_status_is_cached_for_controller_pages():
 
     assert listener.cached_data["charger_status"]["target_amps"] == 12
     assert listener.cached_data["charger_status"]["grid_flow_watts"] == -2800
+
+
+def test_charger_override_is_published_as_retained_command():
+    listener = MqttTelemetryListener()
+    listener.client = FakeMqttClient()
+
+    listener.set_charger_override(True)
+
+    assert listener.client.published == [
+        ("home/charger/override", {"enabled": True}, 1, True)
+    ]

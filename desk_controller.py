@@ -96,6 +96,9 @@ class DeskControllerWindow(QMainWindow):
             location=socket.gethostname(),
         )
         self.mqtt_listener.telemetry_received.connect(self._handle_telemetry_routing)
+        self.charger_page.override_changed.connect(
+            self.mqtt_listener.set_charger_override
+        )
         self.climate_page.settings_changed.connect(self.mqtt_listener.set_hvac_settings)
         self.climate_page.command_requested.connect(self.mqtt_listener.set_hvac_command)
         self.climate_page.status_changed.connect(self.hvac_status_label.setText)

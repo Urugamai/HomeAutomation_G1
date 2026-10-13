@@ -3,9 +3,9 @@
 import datetime
 import time
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
 class ChargerDecisionChart(QWidget):
@@ -66,17 +66,15 @@ class ChargerDecisionChart(QWidget):
             8,
             31,
             "Grid flow: blue (negative = export) | Battery SOC: purple | "
-            "Charging state: green strip",
+            "Charging: green strip | Target grid flow: zero",
         )
         painter.setPen(QPen(QColor("#202020"), 1))
         painter.drawRect(plot)
 
-        start_watts = self._number("surplus_start_watts", -2000.0)
-        stop_watts = self._number("surplus_stop_watts", -2000.0)
+        target_grid_watts = 0.0
         grid_values = [sample[1] for sample in self.samples] + [
             0.0,
-            start_watts,
-            stop_watts,
+            target_grid_watts,
         ]
         grid_min = min(grid_values)
         grid_max = max(grid_values)
@@ -124,26 +122,10 @@ class ChargerDecisionChart(QWidget):
             painter,
             plot,
             point_for,
-            start_watts,
+            target_grid_watts,
             QColor("#28a745"),
-            "Start",
+            "Grid target",
         )
-        if stop_watts == start_watts:
-            painter.setPen(QColor("#505050"))
-            painter.drawText(
-                int(plot.left() + 4),
-                int(point_for(window_start, stop_watts).y() + 22),
-                "Stop: same threshold",
-            )
-        else:
-            self._draw_threshold(
-                painter,
-                plot,
-                point_for,
-                stop_watts,
-                QColor("#d62728"),
-                "Stop",
-            )
 
         painter.setPen(QColor("#9467bd"))
         painter.drawText(
@@ -217,6 +199,8 @@ class ChargerDecisionChart(QWidget):
 class ChargerStatusPage(QWidget):
     """Shows EV charger limits, its current command, and decision history."""
 
+    override_changed = pyqtSignal(bool)
+
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
@@ -232,6 +216,16 @@ class ChargerStatusPage(QWidget):
         self.current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.current_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         layout.addWidget(self.current_label)
+
+        self.override_button = QPushButton("Enable Charge Override")
+        self.override_button.setCheckable(True)
+        self.override_button.setMinimumHeight(42)
+        self.override_button.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.override_button.setToolTip(
+            "Charge at the configured override current regardless of solar supply"
+        )
+        self.override_button.clicked.connect(self.override_changed.emit)
+        layout.addWidget(self.override_button)
 
         self.limits_label = QLabel()
         self.limits_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -252,24 +246,40 @@ class ChargerStatusPage(QWidget):
             self.state_label.setText("Charger: Invalid status received")
             return
 
+        is_override = bool(status.get("is_override", False))
+        solar_charging_active = bool(status.get("solar_charging_active", False))
         state = "Charging" if target_amps > 0 else "Off"
         color = "#28a745" if target_amps > 0 else "#606060"
         self.state_label.setText(f"Charger: {state}")
         self.state_label.setStyleSheet(f"color: {color};")
-        mode = "Off-peak" if status.get("is_off_peak") else "Solar surplus"
+        if is_override:
+            mode = "Manual override"
+        elif solar_charging_active:
+            mode = "Solar-following"
+        else:
+            mode = "Waiting for battery to reach full threshold"
         self.current_label.setText(
             f"Command: {target_amps} A ({mode})  |  "
             f"Grid: {grid_flow:.0f} W  |  Battery: {battery_soc:.0f}%"
+        )
+        self.override_button.setChecked(is_override)
+        self.override_button.setText(
+            "Disable Charge Override" if is_override else "Enable Charge Override"
+        )
+        self.override_button.setStyleSheet(
+            "background-color: #b00020; color: white;"
+            if is_override
+            else "background-color: #1f5fbf; color: white;"
         )
 
         limits = status.get("limits") or {}
         self.limits_label.setText(
             "Limits: "
-            f"Off-peak {limits.get('off_peak_amps', '--')} A | "
-            f"Solar start {limits.get('surplus_start_watts', '--')} W | "
-            f"Solar stop {limits.get('surplus_stop_watts', '--')} W | "
             f"Solar current {limits.get('minimum_solar_amps', '--')}–"
             f"{limits.get('maximum_solar_amps', '--')} A | "
-            f"Battery reserve {limits.get('battery_reserve_soc', '--')}%"
+            f"Start at {limits.get('battery_full_soc', '--')}% battery | "
+            f"Stop below {limits.get('battery_stop_soc', '--')}% battery | "
+            f"Override {limits.get('override_amps', '--')} A | "
+            f"Change interval {limits.get('rate_change_interval_seconds', '--')} s"
         )
         self.chart.add_status(status)

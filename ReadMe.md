@@ -122,3 +122,23 @@ when no grid power is used in blue, and solar-supplied usage in green.
 Environment light readings are displayed and published as irradiance in W/m².
 Blind automation opens blinds at 10 W/m², with per-blind dusk thresholds in
 `config/blind-settings.yml`.
+
+## EV charger solar following
+
+`charger.service` retains its status at `home/charger/status` and accepts a
+retained manual-override command at `home/charger/override`. Publish either
+payload from an MQTT client or the Android controller:
+
+```json
+{"enabled": true}
+```
+
+```json
+{"enabled": false}
+```
+
+Automatic charging starts when battery state of charge reaches 99% and remains
+enabled until it falls below 60%. It uses the measured grid export to adjust
+the Ocular's three-phase current limit between 6 A and 32 A, at most once per
+10 minutes. Manual override charges at 16 A and can be enabled or disabled
+immediately from either controller's Charger page or MQTT.

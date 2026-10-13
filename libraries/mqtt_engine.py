@@ -310,6 +310,17 @@ class MqttTelemetryListener(QObject):
             retain=False,
         )
 
+    def set_charger_override(self, enabled):
+        if self.client is None:
+            print("[CHARGER ERROR] Cannot set override before MQTT connection is ready")
+            return
+        self.client.publish(
+            "home/charger/override",
+            json.dumps({"enabled": bool(enabled)}),
+            qos=1,
+            retain=True,
+        )
+
     @staticmethod
     def _get_float(data, *keys) -> float:
         for key in keys:
