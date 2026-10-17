@@ -24,6 +24,8 @@ SYSTEM_MODE_ATTRIBUTE = 0x001C
 HEATING_SETPOINT_ATTRIBUTE = 0x0012
 COOLING_SETPOINT_ATTRIBUTE = 0x0011
 FAN_MODE_ATTRIBUTE = 0x0000
+FAN_MODE_OFF = 0
+FAN_MODE_ON = 1
 SYSTEM_MODES = {"OFF": 0, "HEATING": 4, "COOLING": 3}
 
 
@@ -67,7 +69,10 @@ class MatterThermostatDaemon:
                 raise RuntimeError("Matter thermostat integration is disabled")
             asyncio.run(self._apply_mode(mode))
             self._publish_status("commanded", mode=mode)
-        except (KeyError, TypeError, ValueError, RuntimeError, aiohttp.ClientError) as error:
+        except (
+            KeyError, TypeError, ValueError, RuntimeError, OSError,
+            asyncio.TimeoutError, aiohttp.ClientError,
+        ) as error:
             self._publish_status("error", error=str(error))
 
     async def _apply_mode(self, mode):
@@ -78,17 +83,23 @@ class MatterThermostatDaemon:
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(self.config["matter-server-url"]) as websocket:
                 await websocket.receive_json()
+                fan_control = bool(self.config.get("fan-control-enabled"))
                 if mode == "FAN":
-                    if not self.config.get("fan-control-enabled"):
+                    if not fan_control:
                         raise RuntimeError("Thermostat fan control is not enabled")
                     await self._write_attribute(
-                        websocket, node_id, endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, 1
+                        websocket, node_id, endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_ON
                     )
                     return
                 await self._write_attribute(
                     websocket, node_id, endpoint_id, THERMOSTAT_CLUSTER,
                     SYSTEM_MODE_ATTRIBUTE, SYSTEM_MODES[mode],
                 )
+                if mode == "OFF" and fan_control:
+                    # A manual FAN request leaves the fan running until it is explicitly turned off.
+                    await self._write_attribute(
+                        websocket, node_id, endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_OFF
+                    )
                 if mode == "HEATING":
                     await self._write_attribute(
                         websocket, node_id, endpoint_id, THERMOSTAT_CLUSTER,

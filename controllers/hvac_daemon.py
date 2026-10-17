@@ -97,6 +97,7 @@ class HvacHardwareDaemon:
         self.cooler_relay_on = False
         self.fan_relay_on = False
         self.gpio_ready = False
+        self.client = None
         self._gpio_backend = None
         self._lgpio_chip = None
         self.actuator_backend, self.matter_command_topic = self._load_actuator_config()
