@@ -144,15 +144,20 @@ class HvacSettingsStore:
             )
         temporary_path = self.storage_path.with_suffix(".tmp")
         try:
-            with temporary_path.open("w", encoding="utf-8") as settings_file:
-                json.dump(normalized, settings_file, separators=(",", ":"))
-                settings_file.flush()
-                os.fsync(settings_file.fileno())
+            self._write_json(temporary_path, normalized)
             os.replace(temporary_path, self.storage_path)
         except OSError:
             try:
                 temporary_path.unlink()
             except OSError:
                 pass
-            raise
+            # SMB shares can reject the rename; a direct write still persists the settings.
+            self._write_json(self.storage_path, normalized)
         return normalized
+
+    @staticmethod
+    def _write_json(path, settings):
+        with path.open("w", encoding="utf-8") as settings_file:
+            json.dump(settings, settings_file, separators=(",", ":"))
+            settings_file.flush()
+            os.fsync(settings_file.fileno())

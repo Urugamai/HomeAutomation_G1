@@ -133,6 +133,7 @@ class MatterThermostatDaemon:
                 return
 
     def _publish_status(self, state, **details):
+        print(f"[MATTER] {state} {details}", flush=True)
         self.client.publish(STATUS_TOPIC, json.dumps({"state": state, **details}), retain=True)
 
 
