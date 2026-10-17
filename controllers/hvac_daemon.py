@@ -27,6 +27,7 @@ RELAY_ON = 0
 RELAY_OFF = 1
 SETPOINT_HYSTERESIS_C = 0.5
 VACATION_EXERCISE_SECONDS = 300
+SETTINGS_SAVE_DELAY_SECONDS = 10
 
 try:
     import paho.mqtt.client as mqtt
@@ -60,6 +61,7 @@ class HvacHardwareDaemon:
 
         # Operational Boundaries (Synchronised via UI / Retained Broker Messages)
         self._settings_lock = threading.RLock()
+        self._settings_dirty_since = None
         self.t_min = 20.0
         self.t_max = 24.0
         self.fan_preheat_seconds = 60.0
@@ -232,11 +234,28 @@ class HvacHardwareDaemon:
         try:
             while True:
                 self._process_control_tick()
+                self._persist_settings_if_stable()
                 time.sleep(5.0)  # Evaluate state transformations every 5 seconds
         except KeyboardInterrupt:
             print("[SHUTDOWN] Terminating background daemons. Isolating contactors.")
+            self._persist_settings_if_stable(force=True)
             self._write_relays("OFF")
             self.client.loop_stop()
+
+    def _persist_settings_if_stable(self, force=False):
+        """Writes settings once they have not changed for SETTINGS_SAVE_DELAY_SECONDS."""
+        with self._settings_lock:
+            if self._settings_dirty_since is None:
+                return
+            if not force and time.time() - self._settings_dirty_since < SETTINGS_SAVE_DELAY_SECONDS:
+                return
+            try:
+                self.settings_store.save(self._settings_payload())
+                self._settings_dirty_since = None
+            except OSError as error:
+                # Keep the pending save and retry after another stable interval.
+                self._settings_dirty_since = time.time()
+                print(f"[SETTINGS ERROR] Unable to persist HVAC settings: {error}")
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         print(f"[MQTT] Connected successfully to broker ({self.broker_ip}). Listening for adjustments...")
@@ -259,10 +278,7 @@ class HvacHardwareDaemon:
                 )
                 with self._settings_lock:
                     self._apply_settings(settings)
-                    try:
-                        self.settings_store.save(self._settings_payload())
-                    except OSError as error:
-                        print(f"[SETTINGS ERROR] Unable to persist HVAC settings: {error}")
+                    self._settings_dirty_since = time.time()
                 print(
                     f"[SETTINGS UPDATED] Min: {self.t_min}°C | Max: {self.t_max}°C | "
                     f"Preheat: {self.fan_preheat_seconds}s | Postrun: {self.fan_postrun_seconds}s"
@@ -666,6 +682,7 @@ class HvacHardwareDaemon:
     def _save_vacation_progress(self):
         try:
             self.settings_store.save(self._settings_payload())
+            self._settings_dirty_since = None
         except OSError as error:
             print(f"[SETTINGS ERROR] Unable to persist vacation exercise: {error}")
 

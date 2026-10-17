@@ -459,13 +459,13 @@ class HvacConfigurationPage(QWidget):
         # Button Grid Wrapper
         btn_layout = QHBoxLayout()
         btn_down = QPushButton("- 0.5")
-        btn_down.setMinimumHeight(45)  # Large target matching fat-finger touch profiles
-        btn_down.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        btn_down.setMinimumHeight(68)  # Large target matching fat-finger touch profiles
+        btn_down.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         btn_down.clicked.connect(lambda: self._adjust_value(target_var, -0.5))
 
         btn_up = QPushButton("+ 0.5")
-        btn_up.setMinimumHeight(45)
-        btn_up.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        btn_up.setMinimumHeight(68)
+        btn_up.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         btn_up.clicked.connect(lambda: self._adjust_value(target_var, 0.5))
 
         btn_layout.addWidget(btn_down)
@@ -515,8 +515,11 @@ class HvacConfigurationPage(QWidget):
         picker.setSingleStep(step)
         picker.setSuffix(" s")
         picker.setValue(getattr(self, target_var))
-        picker.setMinimumHeight(45)
-        picker.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        picker.setMinimumHeight(68)
+        picker.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        picker.setStyleSheet(
+            "QSpinBox::up-button, QSpinBox::down-button { width: 48px; }"
+        )
         picker.valueChanged.connect(
             lambda value: self._set_duration(target_var, value)
         )
