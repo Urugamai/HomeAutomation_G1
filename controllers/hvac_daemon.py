@@ -503,9 +503,11 @@ class HvacHardwareDaemon:
         current_temp = self.latest_inside_temperature
         now = time.time()
         if self._process_vacation_control(now, current_temp):
+            self._blinds_for_overheat_while_away(current_temp)
             self._broadcast_status_telemetry(current_temp)
             return
         if self._process_empty_house_control(now):
+            self._blinds_for_overheat_while_away(current_temp)
             self._broadcast_status_telemetry(current_temp)
             return
 
@@ -852,6 +854,14 @@ class HvacHardwareDaemon:
         if start_rest:
             self.in_rest_period = True
             self.rest_start_time = now
+
+    def _blinds_for_overheat_while_away(self, current_temp):
+        # Vacation and empty-house modes pause HVAC but blinds must still close when hot.
+        if current_temp is None or self.current_state in ("HEATING", "COOLING"):
+            return
+        if self.sequence_state != "OFF":
+            return
+        self._maybe_close_blinds(current_temp)
 
     def _maybe_close_blinds(self, current_temp: float):
         if current_temp >= self.t_max - 1.0:

@@ -23,6 +23,7 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+from libraries.solar import sun_on_facing
 
 
 CBUS_SET_TOPIC_PATTERN = re.compile(r"^homeassistant/light/cbus_(\d{1,3})/set$")
@@ -114,6 +115,12 @@ class BlindAutomationDaemon:
                 )
             if policy["closed_state"] not in ("ON", "OFF"):
                 raise RuntimeError(f"{label} closed_state must be ON or OFF")
+            try:
+                policy["hvac_sun_window"] = self._parse_sun_window(
+                    policy.get("hvac_sun_window", "DEFAULT"), parts
+                )
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(f"Invalid hvac_sun_window for {label}: {error}") from error
             if address in devices:
                 raise RuntimeError(f"Duplicate C-Bus group address in blind settings: {address}")
             policy["label"] = label
@@ -121,7 +128,51 @@ class BlindAutomationDaemon:
             devices[address] = policy
         if not devices:
             raise RuntimeError("blind-settings.yml does not configure any blind or shutter")
+        location = settings.get("location") or {}
+        try:
+            self.location = {
+                "latitude": float(location["latitude"]),
+                "longitude": float(location["longitude"]),
+            }
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(
+                "blind-settings.yml requires location latitude and longitude"
+            ) from error
         return devices
+
+    COMPASS_DEGREES = {"N": 0.0, "E": 90.0, "S": 180.0, "W": 270.0}
+
+    @classmethod
+    def _parse_sun_window(cls, value, label_parts):
+        """Return "AUTO" (compute from sun position), None (never) or a local time window."""
+        if isinstance(value, str) and value.upper() == "DEFAULT":
+            return "AUTO"
+        if value is None:
+            return None
+        start, end = value
+        return (
+            datetime.time.fromisoformat(str(start)),
+            datetime.time.fromisoformat(str(end)),
+        )
+
+    @staticmethod
+    def _now():
+        return datetime.datetime.now().astimezone()
+
+    def _sun_on_window(self, policy):
+        window = policy["hvac_sun_window"]
+        if window is None:
+            return False
+        now = self._now()
+        if window != "AUTO":
+            return window[0] <= now.time() < window[1]
+        label_parts = policy["label"].upper().split("_")
+        facing = self.COMPASS_DEGREES.get(label_parts[3][:1]) if len(label_parts) > 3 else None
+        if facing is None:
+            return False
+        return sun_on_facing(
+            self.location["latitude"], self.location["longitude"], facing, now
+        )
 
     def _load_state(self):
         if not self.state_path.is_file():
@@ -228,7 +279,12 @@ class BlindAutomationDaemon:
         if action == "CLOSE":
             reason = str(payload.get("reason", "UNKNOWN"))
             print(f"[COMMAND] HVAC requested blind close: {reason}")
-            for address in self.devices:
+            for address, policy in self.devices.items():
+                # Shutters sit under verandahs and get no direct sun, so HVAC never closes them.
+                if policy["label"].upper().split("_")[2] == "S":
+                    continue
+                if not self._sun_on_window(policy):
+                    continue
                 state = self._state_for(address)
                 state["hvac_locked"] = True
                 self._move(

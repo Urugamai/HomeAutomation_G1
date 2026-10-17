@@ -1,3 +1,8 @@
+# Altona, Victoria, Australia. Used to work out which windows the sun is shining on.
+location:
+  latitude: -37.868
+  longitude: 144.832
+
 devices:
   G_STDY_B_W:
     address: 31

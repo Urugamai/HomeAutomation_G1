@@ -228,6 +228,34 @@ def test_cooling_requests_blind_closure():
     )
 
 
+def test_blinds_close_when_hot_during_vacation_and_empty_house():
+    for mode in ("vacation", "empty"):
+        controller = hvac_daemon.HvacHardwareDaemon()
+        controller.client = _RecordingMqttClient()
+        controller.latest_inside_temperature = controller.t_max + 1.0
+        controller._write_relays = lambda mode: None
+        controller._broadcast_status_telemetry = lambda temp: None
+        today = datetime.date.today()
+        if mode == "vacation":
+            controller.vacation_start = today - datetime.timedelta(days=1)
+            controller.vacation_end = today + datetime.timedelta(days=2)
+            controller.vacation_last_exercise_date = today
+            controller.vacation_start_time = datetime.time(0, 0)
+            controller.vacation_end_time = datetime.time(23, 59)
+        else:
+            controller.empty_house_date = today
+            controller.empty_house_start_time = datetime.time(0, 0)
+            controller.empty_house_end_time = datetime.time(23, 59)
+            controller._is_empty_house_active = lambda now: True
+
+        controller._process_control_tick()
+
+        assert controller._is_vacation_active(datetime.datetime.now()) or mode == "empty"
+        assert ("home/blinds/command", {"action": "CLOSE", "reason": "HVAC_PRECOOL"}) in (
+            controller.client.messages
+        ), mode
+
+
 def test_hvac_continues_heat_and_cooling_half_degree_beyond_setpoints():
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.environment_sources["Ecowitt"] = {"temperature": 20.0}

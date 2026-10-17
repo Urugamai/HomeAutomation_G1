@@ -1,11 +1,13 @@
-On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
+On the HVAC Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
+(probably on the same row as the vacation, empty house, etc buttons)
 Things to set:
-- General heat-to and cool-to temperatures (basically the current settings we have on the climate settings page),
-    minimum separation temperature (how many degrees must be between the heat to and cool to temperatures) - defaults to 2 degrees.
+- Show the current settings we have on the HVAC page
+- Minimum separation temperature (how many degrees must be between the heat to and cool to temperatures) - defaults to 2 degrees.
 - Button to add a specification (added specifications will have a button to allow them to be deleted)
 	- An added specification will be: Day of week list (list all days with a checkbox beside each),
 	 Start time, end time, heat-to, and cool-to temperatures
-- As the heat to or cool to temperature setting is changed, the other changes if the separation is not sufficient based on the setting
+- As the heat to or cool to temperature setting is changed, the other one changes if the separation is not sufficient
+- List of current specifications (with remove buttons on each one or a tick box and a single remove button?)
 
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
