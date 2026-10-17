@@ -1,13 +1,16 @@
 
-If the predicted high for the day is higher than the lower set point (when to start heating), do NOT heat. (add tolerance amount)
-If the predicted high for the day is lower than the higher set point (when to start cooling), do NOT cool. (add tolerance amount)
+on the home controller, rename 'Status Core' tab to 'Power'.  Rename 'Climate Setting' tab to 'HVAC'.
 
-Prompt? Mount google drive to each raspi and then store data and configuration on the gdrive.
+If the predicted high for the day is higher than the lower set point (when to start heating),
+do NOT heat until we are more than 2 degrees below that set point.
+
+If the predicted high for the day is lower than the higher set point (when to start cooling),
+do NOT cool until we are 2 degrees above that set point.
 
 google:
+    Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control
-	outlook continuously asking to ok login details for my mail accounts even though they are all working normally. how can I stop this.
-	
+
 PROBABLY NOT WANTED
 On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
 Things to set:

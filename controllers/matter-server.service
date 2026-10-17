@@ -6,7 +6,7 @@ After=network-online.target homeautomation-update.service
 [Service]
 Type=simple
 WorkingDirectory=/home/markw/HomeAutomation_G1/matter-server
-ExecStart=/usr/bin/npx --no-install matter-server --storage-path /var/lib/homeautomation-matter
+ExecStart=/usr/bin/node --enable-source-maps node_modules/matter-server/dist/esm/MatterServer.js --storage-path /var/lib/homeautomation-matter
 Restart=always
 RestartSec=10
 User=markw
