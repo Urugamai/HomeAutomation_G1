@@ -253,6 +253,29 @@ def test_hvac_outdoor_midpoint_gate_blocks_inefficient_modes():
     assert controller._requested_state(controller.t_max + 1.0) == "OFF"
 
 
+def test_forecast_delays_heating_and_cooling_start():
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller._record_forecast(
+        {"forecast_set": [
+            {"day_index": 1, "expected_max": 5.0, "expected_min": 5.0},
+            {"day_index": 0, "expected_max": controller.t_max + 3.0,
+             "expected_min": controller.t_min - 3.0},
+        ]}
+    )
+
+    assert controller._requested_state(controller.t_min - 1.9) == "OFF"
+    assert controller._requested_state(controller.t_min - 2.1) == "HEATING"
+    assert controller._requested_state(controller.t_max + 1.9) == "OFF"
+    assert controller._requested_state(controller.t_max + 2.1) == "COOLING"
+
+    controller._record_forecast(
+        {"forecast_set": [{"day_index": 0, "expected_max": controller.t_max - 1.0,
+                           "expected_min": controller.t_min + 1.0}]}
+    )
+    assert controller._requested_state(controller.t_min - 0.1) == "HEATING"
+    assert controller._requested_state(controller.t_max + 0.1) == "COOLING"
+
+
 def test_vacation_stops_normal_control_and_runs_weekly_exercise(tmp_path):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _MqttClient()
@@ -436,6 +459,35 @@ def test_manual_heat_uses_preheat_and_postrun_delays(monkeypatch):
     assert controller.manual_target == "OFF"
     assert controller.sequence_state == "MANUAL_OFF"
     assert commands[-1] == "OFF"
+
+
+def test_manual_heat_honours_max_run_and_rest(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _MqttClient()
+    clock = [1000.0]
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
+    controller._write_relays = lambda mode: None
+    controller.fan_preheat_seconds = 0
+    controller.max_run_seconds = 600.0
+    controller.rest_seconds = 300.0
+
+    controller._handle_manual_command("HEATING")
+    assert controller.sequence_state == "MANUAL_HEATING"
+
+    clock[0] += controller.max_run_seconds
+    controller._process_control_tick()
+    assert controller.sequence_state == "MANUAL_POSTRUN"
+    assert controller.in_rest_period is True
+
+    controller._handle_manual_command("COOLING")
+    assert controller.sequence_state == "MANUAL_POSTRUN"
+    assert controller.manual_target == "OFF"
+
+    clock[0] += controller.rest_seconds
+    controller._process_control_tick()
+    controller._handle_manual_command("COOLING")
+    assert controller.in_rest_period is False
+    assert controller.manual_target == "COOLING"
 
 
 def test_manual_cooling_uses_preheat_without_temperature_telemetry(monkeypatch):

@@ -1,21 +1,16 @@
-
-on the home controller, rename 'Status Core' tab to 'Power'.  Rename 'Climate Setting' tab to 'HVAC'.
-
-If the predicted high for the day is higher than the lower set point (when to start heating),
-do NOT heat until we are more than 2 degrees below that set point.
-
-If the predicted high for the day is lower than the higher set point (when to start cooling),
-do NOT cool until we are 2 degrees above that set point.
+On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
+Things to set:
+- General heat-to and cool-to temperatures (basically the current settings we have on the climate settings page),
+    minimum separation temperature (how many degrees must be between the heat to and cool to temperatures) - defaults to 2 degrees.
+- Button to add a specification (added specifications will have a button to allow them to be deleted)
+	- An added specification will be: Day of week list (list all days with a checkbox beside each),
+	 Start time, end time, heat-to, and cool-to temperatures
+- As the heat to or cool to temperature setting is changed, the other changes if the separation is not sufficient based on the setting
 
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control
 
-PROBABLY NOT WANTED
-On the Climate Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
-Things to set:
-- General heat-to and cool-to temperatures (basically the current settings we have on the climate settings page)
-- Button to add a specification (added specifications will have a button to allow them to be deleted)
-	- An added specification will be: Day of week list (can be all, or any combination of days - probably list all days with a checkbox beside each), Starttime endtime heat-to and cool-to temperatures
-
-Hardware: Add a power button to top of device for when things go wrong (perhaps a power supply cable with the power button inline and then move it outside case on top?)
+Hardware:
+    Add a power button to top of device for when things go wrong.  Will not normally have access to power cord so will have to be
+    a button on the case, possibly behind a hole so you need a pin or screwdriver to press it.

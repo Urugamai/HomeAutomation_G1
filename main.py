@@ -92,7 +92,7 @@ class MainWindow(QMainWindow):
             """)
 
         self.dashboard = AdaptiveDashboard(power_chart_grid_interval_hours)
-        self.tabs.addTab(self.dashboard, "Status Core")
+        self.tabs.addTab(self.dashboard, "Power")
         self.environment_page = EnvironmentSourcesPage()
         self.tabs.addTab(self.environment_page, "Environment")
         self.ground_floor_page = CbusFloorPage(

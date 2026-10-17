@@ -28,6 +28,7 @@ RELAY_OFF = 1
 SETPOINT_HYSTERESIS_C = 0.5
 VACATION_EXERCISE_SECONDS = 300
 SETTINGS_SAVE_DELAY_SECONDS = 10
+FORECAST_START_MARGIN_C = 2.0
 
 try:
     import paho.mqtt.client as mqtt
@@ -95,6 +96,8 @@ class HvacHardwareDaemon:
         self.environment_sources = {}
         self.manual_target = None
         self.manual_fan_requested = False
+        self.forecast_high = None
+        self.forecast_low = None
         self.heater_relay_on = False
         self.cooler_relay_on = False
         self.fan_relay_on = False
@@ -286,17 +289,39 @@ class HvacHardwareDaemon:
             elif msg.topic == "home/hvac/command":
                 payload = json.loads(msg.payload.decode("utf-8"))
                 self._handle_manual_command(payload.get("action"))
+            elif msg.topic == "home/environment/forecast":
+                payload = json.loads(msg.payload.decode("utf-8"))
+                self._record_forecast(payload)
             elif (
                 msg.topic.startswith("home/environment/")
-                and msg.topic not in (
-                    "home/environment/inside",
-                    "home/environment/forecast",
-                )
+                and msg.topic != "home/environment/inside"
             ):
                 payload = json.loads(msg.payload.decode("utf-8"))
                 self._record_environment_source(msg.topic, payload)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as e:
             print(f"[PARSE EXCEPTION] Bad configuration update payload structure: {e}")
+
+    def _record_forecast(self, payload):
+        days = payload.get("forecast_set") if isinstance(payload, dict) else None
+        if not isinstance(days, list) or not days:
+            return
+        today = min(
+            (day for day in days if isinstance(day, dict) and "day_index" in day),
+            key=lambda day: day["day_index"],
+            default=None,
+        )
+        if today is None:
+            return
+        with self._settings_lock:
+            self.forecast_high = self._optional_float(today.get("expected_max"))
+            self.forecast_low = self._optional_float(today.get("expected_min"))
+
+    @staticmethod
+    def _optional_float(value):
+        try:
+            return None if value is None else float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _handle_manual_command(self, action):
         action = str(action or "").upper()
@@ -342,6 +367,10 @@ class HvacHardwareDaemon:
             ):
                 self._start_manual_postrun(time.time())
             else:
+                if self._rest_active(time.time()):
+                    print(f"[MANUAL CONTROL] Ignored {action}; HVAC is in its mandatory rest period.")
+                    self._process_control_tick_locked()
+                    return
                 self.manual_target = action
                 self.current_state = "OFF"
                 self.active_run_started_at = None
@@ -700,16 +729,25 @@ class HvacHardwareDaemon:
         heating_allowed = outdoor_temp is None or outdoor_temp <= midpoint
         cooling_allowed = outdoor_temp is None or outdoor_temp >= midpoint
 
+        # A forecast that will reach the other set point means the house will warm
+        # (or cool) by itself, so only start running when well outside the band.
+        heat_start = self.t_min
+        if self.forecast_high is not None and self.forecast_high > self.t_max:
+            heat_start = self.t_min - FORECAST_START_MARGIN_C
+        cool_start = self.t_max
+        if self.forecast_low is not None and self.forecast_low < self.t_min:
+            cool_start = self.t_max + FORECAST_START_MARGIN_C
+
         if heating_allowed and current_temp < (
             self.t_min + SETPOINT_HYSTERESIS_C
             if heating_active
-            else self.t_min
+            else heat_start
         ):
             return "HEATING"
         if cooling_allowed and current_temp > (
             self.t_max - SETPOINT_HYSTERESIS_C
             if cooling_active
-            else self.t_max
+            else cool_start
         ):
             return "COOLING"
         return "OFF"
@@ -738,6 +776,12 @@ class HvacHardwareDaemon:
             return
 
         if self.sequence_state in ("MANUAL_HEATING", "MANUAL_COOLING"):
+            if (
+                self.active_run_started_at is not None
+                and now - self.active_run_started_at >= self.max_run_seconds
+            ):
+                print(f"[SAFETY] Maximum run reached during manual {self.current_state}. Entering rest.")
+                self._start_manual_postrun(now, start_rest=True)
             return
 
         if self.manual_fan_requested:
@@ -757,17 +801,27 @@ class HvacHardwareDaemon:
     def _start_manual_active_run(self, target_state: str):
         self.current_state = target_state
         self.sequence_state = f"MANUAL_{target_state}"
+        self.active_run_started_at = time.time()
         self._write_relays(target_state)
 
-    def _start_manual_postrun(self, now: float):
+    def _start_manual_postrun(self, now: float, start_rest: bool = False):
         self.manual_target = "OFF"
         self.current_state = "OFF"
         self.active_run_started_at = None
         self.sequence_state = "MANUAL_POSTRUN"
         self.sequence_started_at = now
+        if start_rest:
+            self.in_rest_period = True
+            self.rest_start_time = now
         self._write_relays("FAN")
         if self.fan_postrun_seconds == 0:
             self._process_manual_control_tick(now)
+
+    def _rest_active(self, now: float) -> bool:
+        if self.in_rest_period and now - self.rest_start_time >= self.rest_seconds:
+            print("[SAFETY] Mandatory runtime rest interval cleared. Resuming control access.")
+            self.in_rest_period = False
+        return self.in_rest_period
 
     def _start_preheat(self, target_state: str, now: float):
         self.pending_state = target_state

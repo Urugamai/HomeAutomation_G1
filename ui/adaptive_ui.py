@@ -751,7 +751,7 @@ class AdaptiveDashboard(QWidget):
                 self.hvac_command_requested.emit
             )
             self.hvac_config_tab.update_display_metrics()
-            parent_tab_widget.addTab(self.hvac_config_tab, "Climate Settings")
+            parent_tab_widget.addTab(self.hvac_config_tab, "HVAC")
 
     def _refresh_time(self):
         now = QTime.currentTime().toString("hh:mm:ss")
