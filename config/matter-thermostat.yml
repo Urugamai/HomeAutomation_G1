@@ -3,6 +3,7 @@ enabled: true
 matter-server-url: ws://127.0.0.1:5580/ws
 node-id: 1
 endpoint-id: 1
+fan-endpoint-id: 2
 fan-control-enabled: true
 active-heating-setpoint-c: 25.0
 active-cooling-setpoint-c: 21.0

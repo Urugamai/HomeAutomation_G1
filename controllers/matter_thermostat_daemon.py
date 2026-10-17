@@ -80,6 +80,7 @@ class MatterThermostatDaemon:
         if not isinstance(node_id, int):
             raise RuntimeError("Set node-id after commissioning the thermostat")
         endpoint_id = int(self.config.get("endpoint-id", 1))
+        fan_endpoint_id = int(self.config.get("fan-endpoint-id", endpoint_id))
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(self.config["matter-server-url"]) as websocket:
                 await websocket.receive_json()
@@ -88,7 +89,7 @@ class MatterThermostatDaemon:
                     if not fan_control:
                         raise RuntimeError("Thermostat fan control is not enabled")
                     await self._write_attribute(
-                        websocket, node_id, endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_ON
+                        websocket, node_id, fan_endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_ON
                     )
                     return
                 await self._write_attribute(
@@ -98,7 +99,7 @@ class MatterThermostatDaemon:
                 if mode == "OFF" and fan_control:
                     # A manual FAN request leaves the fan running until it is explicitly turned off.
                     await self._write_attribute(
-                        websocket, node_id, endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_OFF
+                        websocket, node_id, fan_endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_OFF
                     )
                 if mode == "HEATING":
                     await self._write_attribute(

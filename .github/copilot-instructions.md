@@ -1,3 +1,7 @@
+# HVAC actuator
+
+The relay (GPIO) backend is retired. `config/hvac-actuator.yml` uses `backend: matter`, and the thermostat is driven through `controllers/matter_thermostat_daemon.py`. Do not spend effort on relay code paths or the relay-only tests (`test_waveshare_relay_mapping_*`); focus on the Matter interface.
+
 # Android companion app
 
 The Android desk controller lives in `C:\Development\DeskControllerAndroid` and talks to the home controller over MQTT.
