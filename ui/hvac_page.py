@@ -495,6 +495,11 @@ class HvacConfigurationPage(QWidget):
         self.average_house_temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.average_house_temp_lbl.setFont(QFont("Monospace", 24, QFont.Weight.Bold))
         layout.addWidget(self.average_house_temp_lbl)
+
+        self.outdoor_temp_lbl = QLabel("Outdoor: --")
+        self.outdoor_temp_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.outdoor_temp_lbl.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(self.outdoor_temp_lbl)
         layout.addStretch(1)
         return container
 
@@ -1061,6 +1066,12 @@ class HvacConfigurationPage(QWidget):
             self.average_house_temp_lbl.setText(f"{float(temperature):.1f} °C")
         except (TypeError, ValueError):
             self.average_house_temp_lbl.setText("--")
+        sources = data.get("environment_sources", {})
+        outdoor_source = sources.get("Ecowitt") if isinstance(sources, dict) else None
+        outdoor = self._temperature(outdoor_source) if isinstance(outdoor_source, dict) else None
+        self.outdoor_temp_lbl.setText(
+            f"Outdoor: {outdoor:.1f} °C" if outdoor is not None else "Outdoor: --"
+        )
 
     def _average_indoor_temperature(self, sources):
         if not isinstance(sources, dict):
