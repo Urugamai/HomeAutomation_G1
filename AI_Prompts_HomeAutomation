@@ -1,15 +1,4 @@
 
-On the CBus there are two valve controls for the HVAC ducts - '1 AC V Bedrooms' and '1 AC V Main'.  The bedrooms are on the east and north
-sides of the house and currently the north bedrooms are not used so the doors are usually closed.  The main vent services the west side
-of the house, which also has some north windows, and it sends some air to the ground floor space that is well shaded and so direction
-of the windows does not play a big part
-in how well the HVAC works.  At least one of these valves must be open at all times, and change-over should open both and then close the one
-we want to close.  During the day (e.g. after 0900) the bedrooms do not need heating/cooling and so they should be closed so that all the
-HVAC effort goes into the main house area.  Once the sun goes down, the bedrooms can again be opened and processed.  If the house is still
-heating/cooling after 2200 then the main valve can close to 50% to push more of the air to the bedrooms.  At present, closing the main
-valve and leaving the bedrooms open tends to make a lot of air noise so we wont close it completely until I have researched the cause and
-resolved.
-
 On the HVAC Settings page, I need a button to bring up some finer control settings that probably needs to be a full screen dialog
 (probably on the same row as the vacation, empty house, etc buttons)
 Things to set:
