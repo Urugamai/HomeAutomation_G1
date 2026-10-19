@@ -59,6 +59,8 @@ def _load_power_chart_grid_interval(hostname):
 
 class MainWindow(QMainWindow):
     DISPLAY_IDLE_TIMEOUT_MS = 5 * 60 * 1000
+    SCREENSAVER_EXTENSION_MS = 10 * 60 * 1000
+    SCREENSAVER_MAX_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
     # Open main.py and place this stylesheet assignment right inside MainWindow.__init__:
 
@@ -66,6 +68,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Smart Automation Terminal Node")
         self._display_is_sleeping = False
+        self._idle_timeout_ms = self.DISPLAY_IDLE_TIMEOUT_MS
         self._sleep_overlay = QWidget(self)
         self._sleep_overlay.setStyleSheet("background-color: black;")
         self._sleep_overlay.hide()
@@ -116,6 +119,13 @@ class MainWindow(QMainWindow):
         self.status_bar.addWidget(self.hvac_status_label, 1)
         self.connection_status_label = QLabel("Initializing system connection profile...")
         self.status_bar.addPermanentWidget(self.connection_status_label)
+        self.screensaver_button = QPushButton()
+        self.screensaver_button.setToolTip(
+            "Add 10 minutes to the screensaver delay until it next activates"
+        )
+        self.screensaver_button.clicked.connect(self._extend_screensaver_delay)
+        self._update_screensaver_button()
+        self.status_bar.addPermanentWidget(self.screensaver_button)
         if sys.platform == "win32":
             self.exit_button = QPushButton("Exit")
             self.exit_button.setToolTip("Exit the testing display")
@@ -250,9 +260,28 @@ class MainWindow(QMainWindow):
 
     def _reset_idle_timer(self):
         if not self._display_is_sleeping:
-            self._idle_timer.start(self.DISPLAY_IDLE_TIMEOUT_MS)
+            self._idle_timer.start(self._idle_timeout_ms)
+
+    def _extend_screensaver_delay(self):
+        self._idle_timeout_ms = min(
+            self._idle_timeout_ms + self.SCREENSAVER_EXTENSION_MS,
+            self.SCREENSAVER_MAX_TIMEOUT_MS,
+        )
+        self._update_screensaver_button()
+        self._reset_idle_timer()
+
+    def _update_screensaver_button(self):
+        minutes = self._idle_timeout_ms // 60_000
+        extended = self._idle_timeout_ms != self.DISPLAY_IDLE_TIMEOUT_MS
+        self.screensaver_button.setText(f"Screensaver: {minutes} min")
+        self.screensaver_button.setStyleSheet(
+            "background-color: #ffc107; font-weight: bold;" if extended else ""
+        )
 
     def _sleep_display(self):
+        # The extended delay has expired: return to the default for the next period.
+        self._idle_timeout_ms = self.DISPLAY_IDLE_TIMEOUT_MS
+        self._update_screensaver_button()
         self._display_is_sleeping = True
         self._sleep_overlay.setGeometry(self.rect())
         self._sleep_overlay.raise_()

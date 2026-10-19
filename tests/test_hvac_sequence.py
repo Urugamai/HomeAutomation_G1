@@ -658,7 +658,7 @@ def test_hvac_connection_releases_stale_blind_locks():
     )
 
 
-def test_hvac_postrun_releases_blind_locks(monkeypatch):
+def test_hvac_postrun_releases_blind_locks_only_after_30_minutes_idle(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _RecordingMqttClient()
     controller.latest_inside_temperature = 22.0
@@ -666,15 +666,37 @@ def test_hvac_postrun_releases_blind_locks(monkeypatch):
     controller.sequence_started_at = 0.0
     controller.fan_postrun_seconds = 120.0
     controller.blind_pre_close_triggered = True
-    monkeypatch.setattr(hvac_daemon.time, "time", lambda: 120.0)
+    clock = [120.0]
+    monkeypatch.setattr(hvac_daemon.time, "time", lambda: clock[0])
     controller._write_relays = lambda mode: None
+    release = ("home/blinds/command", {"action": "RELEASE_HVAC_LOCKS"})
 
     controller._process_control_tick()
+    assert release not in controller.client.messages
+    assert controller.blind_pre_close_triggered is True
 
-    assert ("home/blinds/command", {"action": "RELEASE_HVAC_LOCKS"}) in (
-        controller.client.messages
-    )
+    clock[0] = 120.0 + 1799.0
+    controller._process_control_tick()
+    assert release not in controller.client.messages
+
+    clock[0] = 120.0 + 1800.0
+    controller._process_control_tick()
+    assert release in controller.client.messages
     assert controller.blind_pre_close_triggered is False
+
+
+def test_hvac_activity_cancels_pending_blind_release(monkeypatch):
+    controller = hvac_daemon.HvacHardwareDaemon()
+    controller.client = _RecordingMqttClient()
+    controller.blind_pre_close_triggered = True
+    controller.blind_release_due = 100.0
+    controller.current_state = "COOLING"
+
+    controller._process_blind_release(5000.0)
+
+    assert controller.blind_release_due is None
+    assert controller.blind_pre_close_triggered is True
+    assert controller.client.messages == []
 
 
 def test_hvac_settings_persist_to_and_load_from_nas_store(tmp_path):

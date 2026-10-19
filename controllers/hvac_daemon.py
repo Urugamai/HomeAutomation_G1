@@ -29,6 +29,7 @@ SETPOINT_HYSTERESIS_C = 0.5
 VACATION_EXERCISE_SECONDS = 300
 SETTINGS_SAVE_DELAY_SECONDS = 10
 FORECAST_START_MARGIN_C = 2.0
+BLIND_RELEASE_DELAY_SECONDS = 1800
 
 try:
     import paho.mqtt.client as mqtt
@@ -93,6 +94,7 @@ class HvacHardwareDaemon:
         self.in_rest_period = False
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
+        self.blind_release_due = None
         self.latest_inside_temperature = None
         self.indoor_sensor_count = 0
         self.environment_sources = {}
@@ -511,6 +513,7 @@ class HvacHardwareDaemon:
     def _process_control_tick(self):
         with self._settings_lock:
             self._process_control_tick_locked()
+            self._process_blind_release(time.time())
             self.duct_valves.update(
                 datetime.datetime.now().astimezone(),
                 self.current_state in ("HEATING", "COOLING"),
@@ -888,6 +891,7 @@ class HvacHardwareDaemon:
             self._release_hvac_blind_locks()
 
     def _maybe_close_blinds_for_state(self, target_state: str):
+        self.blind_release_due = None
         if not self.blind_pre_close_triggered:
             reason = "HVAC_PREHEAT" if target_state == "HEATING" else "HVAC_PRECOOL"
             print("[AUTOMATION] Issuing anticipatory blind close command.")
@@ -895,7 +899,27 @@ class HvacHardwareDaemon:
             self.blind_pre_close_triggered = True
 
     def _release_hvac_blind_locks(self):
-        if not self.blind_pre_close_triggered:
+        """Schedules the unlock; blinds stay down until the HVAC has been idle for the delay."""
+        if not self.blind_pre_close_triggered or self.blind_release_due is not None:
+            return
+        self.blind_release_due = time.time() + BLIND_RELEASE_DELAY_SECONDS
+        print(
+            f"[AUTOMATION] HVAC blind locks will release after "
+            f"{BLIND_RELEASE_DELAY_SECONDS / 60:.0f} minutes of inactivity."
+        )
+
+    def _process_blind_release(self, now):
+        if not self.blind_pre_close_triggered or self.blind_release_due is None:
+            return
+        if self.current_state in ("HEATING", "COOLING") or self.sequence_state in (
+            "PREHEAT",
+            "MANUAL_PREHEAT",
+            "MANUAL_HEATING",
+            "MANUAL_COOLING",
+        ):
+            self.blind_release_due = None
+            return
+        if now < self.blind_release_due:
             return
         print("[AUTOMATION] Releasing HVAC blind locks.")
         self.client.publish(
@@ -903,6 +927,7 @@ class HvacHardwareDaemon:
             json.dumps({"action": "RELEASE_HVAC_LOCKS"}),
         )
         self.blind_pre_close_triggered = False
+        self.blind_release_due = None
 
     def _broadcast_status_telemetry(self, current_temp):
         """Pushes health data updates back out over the broker line to feed adaptive layouts."""
