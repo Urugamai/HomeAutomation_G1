@@ -3,3 +3,11 @@ backend: matter
 
 matter:
   command-topic: home/hvac/matter/command
+
+# C-Bus groups for '1_AC_V_Main' and '1_AC_V_Bedrooms'. ON/brightness 255 = open.
+duct-valves:
+  main-address: 35
+  bedrooms-address: 42
+  day-start-hour: 9
+  main-reduce-hour: 22
+  main-reduced-percent: 50

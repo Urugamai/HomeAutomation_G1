@@ -1,5 +1,24 @@
 import datetime
 import math
+from pathlib import Path
+
+
+def load_location(settings_path=None):
+    """Read the home latitude/longitude from blind-settings.yml; None if unavailable."""
+    import yaml
+
+    path = Path(settings_path) if settings_path else (
+        Path(__file__).resolve().parent.parent / "config" / "blind-settings.yml"
+    )
+    try:
+        with path.open("r", encoding="utf-8") as settings_file:
+            location = (yaml.safe_load(settings_file) or {}).get("location") or {}
+        return {
+            "latitude": float(location["latitude"]),
+            "longitude": float(location["longitude"]),
+        }
+    except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError):
+        return None
 
 
 def sun_position(latitude, longitude, when):

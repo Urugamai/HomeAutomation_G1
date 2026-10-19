@@ -43,6 +43,8 @@ from libraries.environment_metrics import (
     temperature_value,
 )
 from libraries.hvac_settings import HvacSettingsStore
+from libraries.duct_valves import DuctValveController
+from libraries.solar import load_location
 
 
 class HvacHardwareDaemon:
@@ -106,7 +108,9 @@ class HvacHardwareDaemon:
         self._gpio_backend = None
         self._lgpio_chip = None
         self.actuator_backend, self.matter_command_topic = self._load_actuator_config()
-
+        self.duct_valves = DuctValveController(
+            lambda: self.client, load_location(), self._load_duct_valve_settings()
+        )
         if self.actuator_backend == "matter":
             print("[HVAC] Matter thermostat actuator selected; GPIO relay outputs are disabled.")
         elif IS_RASPI:
@@ -494,9 +498,23 @@ class HvacHardwareDaemon:
             ),
         }
 
+    def _load_duct_valve_settings(self):
+        try:
+            with (project_root / "config" / "hvac-actuator.yml").open(
+                "r", encoding="utf-8"
+            ) as config_file:
+                settings = (yaml.safe_load(config_file) or {}).get("duct-valves") or {}
+            return settings if isinstance(settings, dict) else {}
+        except (OSError, yaml.YAMLError):
+            return {}
+
     def _process_control_tick(self):
         with self._settings_lock:
             self._process_control_tick_locked()
+            self.duct_valves.update(
+                datetime.datetime.now().astimezone(),
+                self.current_state in ("HEATING", "COOLING"),
+            )
 
     def _process_control_tick_locked(self):
         """Evaluates HVAC safety rules, time tracking metrics, and structural thresholds."""
