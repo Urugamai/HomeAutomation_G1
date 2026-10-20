@@ -685,24 +685,6 @@ def test_hvac_postrun_releases_blind_locks_only_after_30_minutes_idle(monkeypatc
     assert controller.blind_pre_close_triggered is False
 
 
-def test_hvac_reissues_blind_close_hourly_while_locked():
-    controller = hvac_daemon.HvacHardwareDaemon()
-    controller.client = _RecordingMqttClient()
-    controller.blind_pre_close_triggered = True
-    controller.blind_close_reason = "HVAC_PRECOOL"
-    controller.blind_last_close_at = 1_000.0
-    close = ("home/blinds/command", {"action": "CLOSE", "reason": "HVAC_PRECOOL"})
-
-    controller._process_blind_release(1_000.0 + 3599.0)
-    assert close not in controller.client.messages
-
-    controller._process_blind_release(1_000.0 + 3600.0)
-    assert controller.client.messages.count(close) == 1
-
-    controller._process_blind_release(1_000.0 + 3601.0)
-    assert controller.client.messages.count(close) == 1
-
-
 def test_hvac_activity_cancels_pending_blind_release(monkeypatch):
     controller = hvac_daemon.HvacHardwareDaemon()
     controller.client = _RecordingMqttClient()

@@ -30,7 +30,6 @@ VACATION_EXERCISE_SECONDS = 300
 SETTINGS_SAVE_DELAY_SECONDS = 10
 FORECAST_START_MARGIN_C = 2.0
 BLIND_RELEASE_DELAY_SECONDS = 1800
-BLIND_RECLOSE_INTERVAL_SECONDS = 3600
 
 try:
     import paho.mqtt.client as mqtt
@@ -96,8 +95,7 @@ class HvacHardwareDaemon:
         self.rest_start_time = 0.0
         self.blind_pre_close_triggered = False
         self.blind_release_due = None
-        self.blind_close_reason = "HVAC_PRECOOL"
-        self.blind_last_close_at = 0.0
+        self.blind_reset_date = None
         self.latest_inside_temperature = None
         self.indoor_sensor_count = 0
         self.environment_sources = {}
@@ -900,8 +898,6 @@ class HvacHardwareDaemon:
             print("[AUTOMATION] Issuing anticipatory blind close command.")
             self.client.publish("home/blinds/command", json.dumps({"action": "CLOSE", "reason": reason}))
             self.blind_pre_close_triggered = True
-            self.blind_close_reason = reason
-            self.blind_last_close_at = time.time()
 
     def _release_hvac_blind_locks(self):
         """Schedules the unlock; blinds stay down until the HVAC has been idle for the delay."""
@@ -914,17 +910,14 @@ class HvacHardwareDaemon:
         )
 
     def _process_blind_release(self, now):
-        if not self.blind_pre_close_triggered:
-            return
-        if self.blind_release_due is None:
-            # Re-send so blinds whose windows have since come into sun also close.
-            if now - self.blind_last_close_at >= BLIND_RECLOSE_INTERVAL_SECONDS:
-                print("[AUTOMATION] Re-issuing blind close command for windows now in sun.")
-                self.client.publish(
-                    "home/blinds/command",
-                    json.dumps({"action": "CLOSE", "reason": self.blind_close_reason}),
-                )
-                self.blind_last_close_at = now
+        today = datetime.date.fromtimestamp(now)
+        if self.blind_reset_date != today:
+            if self.blind_reset_date is not None:
+                # The blind controller clears its own locks at midnight; drop ours to match.
+                self.blind_pre_close_triggered = False
+                self.blind_release_due = None
+            self.blind_reset_date = today
+        if not self.blind_pre_close_triggered or self.blind_release_due is None:
             return
         if self.current_state in ("HEATING", "COOLING") or self.sequence_state in (
             "PREHEAT",

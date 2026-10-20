@@ -44,6 +44,8 @@ class BlindAutomationDaemon:
         self.devices = self._load_settings()
         self.states, self.dark_since = self._load_state()
         self.latest_outside_w_m2 = None
+        self.hvac_close_reason = None
+        self.reset_date = None
         self.client = None
 
     def _load_broker_config(self) -> str:
@@ -274,29 +276,64 @@ class BlindAutomationDaemon:
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
             print(f"[PARSE ERROR] Blind Daemon rejected MQTT message: {error}")
 
+    def _apply_hvac_close(self):
+        """Close and lock only blinds the sun is on now; others join as the sun reaches them."""
+        reason = self.hvac_close_reason
+        if reason is None:
+            return
+        closed_any = False
+        for address, policy in self.devices.items():
+            # Shutters sit under verandahs and get no direct sun, so HVAC never closes them.
+            if policy["label"].upper().split("_")[2] == "S":
+                continue
+            state = self._state_for(address)
+            sunlit = self._sun_on_window(policy)
+            if state["hvac_locked"] and not sunlit:
+                # Sun has left this window, so hand the blind back to normal automation.
+                state["hvac_locked"] = False
+                closed_any = True
+                continue
+            if state["hvac_locked"] or not sunlit:
+                continue
+            state["hvac_locked"] = True
+            self._move(
+                address,
+                "CLOSED",
+                automated=False,
+                reason=f"HVAC override ({reason})",
+                force=True,
+            )
+            closed_any = True
+        if closed_any:
+            self._save_state()
+
+    def _reset_daily_if_new_day(self):
+        today = self._now().date()
+        if self.reset_date is None:
+            self.reset_date = today
+            return
+        if today == self.reset_date:
+            return
+        print("[RESET] New day: clearing all blind holds and HVAC locks.")
+        self.reset_date = today
+        self.hvac_close_reason = None
+        for address in self.devices:
+            state = self._state_for(address)
+            state["manual_hold_until"] = 0.0
+            state["automated_hold_until"] = 0.0
+            state["hvac_locked"] = False
+        self._save_state()
+
     def _handle_blind_command(self, payload):
         action = str(payload.get("action", "")).upper()
         if action == "CLOSE":
             reason = str(payload.get("reason", "UNKNOWN"))
             print(f"[COMMAND] HVAC requested blind close: {reason}")
-            for address, policy in self.devices.items():
-                # Shutters sit under verandahs and get no direct sun, so HVAC never closes them.
-                if policy["label"].upper().split("_")[2] == "S":
-                    continue
-                if not self._sun_on_window(policy):
-                    continue
-                state = self._state_for(address)
-                state["hvac_locked"] = True
-                self._move(
-                    address,
-                    "CLOSED",
-                    automated=False,
-                    reason=f"HVAC override ({reason})",
-                    force=True,
-                )
-            self._save_state()
+            self.hvac_close_reason = reason
+            self._apply_hvac_close()
         elif action == "RESET_AUTOMATION_HOLDS":
             print("[COMMAND] Clearing blind automation holds at HVAC AUTO request.")
+            self.hvac_close_reason = None
             for address in self.devices:
                 state = self._state_for(address)
                 state["manual_hold_until"] = 0.0
@@ -307,6 +344,7 @@ class BlindAutomationDaemon:
                 self._evaluate_irradiance(self.latest_outside_w_m2)
         elif action == "RELEASE_HVAC_LOCKS":
             print("[COMMAND] Releasing HVAC blind locks after the HVAC cycle.")
+            self.hvac_close_reason = None
             for address in self.devices:
                 self._state_for(address)["hvac_locked"] = False
             self._save_state()
@@ -351,6 +389,8 @@ class BlindAutomationDaemon:
         if outside_w_m2 is None:
             return
         self.latest_outside_w_m2 = float(outside_w_m2)
+        self._reset_daily_if_new_day()
+        self._apply_hvac_close()
         self._evaluate_irradiance(self.latest_outside_w_m2)
 
     def _handle_cbus_state(self, topic, payload):

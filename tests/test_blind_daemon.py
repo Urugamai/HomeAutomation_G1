@@ -212,6 +212,78 @@ def test_hvac_close_only_closes_windows_the_sun_is_on(tmp_path, monkeypatch):
     assert closed_at(21) == []
 
 
+def test_hvac_lockout_applies_only_to_blinds_it_closed(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path)
+    settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    settings["devices"] = {"1_SIT_B_N": {"address": 13}, "1_LNG_B_WL": {"address": 29}}
+    settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
+    hour = [13]
+    monkeypatch.setattr(
+        BlindAutomationDaemon, "_now", staticmethod(lambda: summer_time(hour[0]))
+    )
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "state.json")
+    daemon.client = RecordingMqttClient()
+
+    daemon._handle_blind_command({"action": "CLOSE", "reason": "HVAC_PRECOOL"})
+
+    assert daemon.states["13"]["hvac_locked"] is True
+    assert not daemon.states.get("29", {}).get("hvac_locked", False)
+    assert len(daemon.client.messages) == 1
+
+    hour[0] = 17
+    daemon._handle_environment({"light_w_m2": 500})
+
+    assert daemon.states["29"]["hvac_locked"] is True
+    assert daemon.states["13"]["hvac_locked"] is False
+    assert [m[1]["topic"] for m in daemon.client.messages[:2]] == [
+        "homeassistant/light/cbus_13/set",
+        "homeassistant/light/cbus_29/set",
+    ]
+
+
+def test_hvac_lock_released_when_sun_leaves_window(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path)
+    settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    settings["devices"] = {"1_SIT_B_N": {"address": 13}}
+    settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
+    hour = [12]
+    monkeypatch.setattr(
+        BlindAutomationDaemon, "_now", staticmethod(lambda: summer_time(hour[0]))
+    )
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "state.json")
+    daemon.client = RecordingMqttClient()
+    daemon._handle_blind_command({"action": "CLOSE", "reason": "HVAC_PRECOOL"})
+    assert daemon.states["13"]["hvac_locked"] is True
+
+    hour[0] = 20
+    daemon._handle_environment({"light_w_m2": 0})
+
+    assert daemon.states["13"]["hvac_locked"] is False
+
+
+def test_midnight_clears_all_holds_and_hvac_locks(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path)
+    day = [datetime.datetime(2026, 12, 21, 23, 0, tzinfo=datetime.timezone.utc)]
+    monkeypatch.setattr(BlindAutomationDaemon, "_now", staticmethod(lambda: day[0]))
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "state.json")
+    daemon.client = RecordingMqttClient()
+    daemon._handle_environment({"light_w_m2": 500})
+    state = daemon._state_for(31)
+    state.update(hvac_locked=True, manual_hold_until=9e12, automated_hold_until=9e12)
+    daemon.hvac_close_reason = "HVAC_PRECOOL"
+
+    day[0] = datetime.datetime(2026, 12, 22, 0, 1, tzinfo=datetime.timezone.utc)
+    daemon._handle_environment({"light_w_m2": 500})
+
+    assert state["hvac_locked"] is False
+    assert state["manual_hold_until"] == 0.0
+    assert state["automated_hold_until"] == 0.0
+    assert daemon.hvac_close_reason is None
+
+
 def test_releasing_hvac_locks_preserves_manual_hold(tmp_path, monkeypatch):
     settings_path = tmp_path / "blind-settings.yml"
     state_path = tmp_path / "blind-state.json"
