@@ -69,3 +69,18 @@ def test_main_valve_is_never_fully_closed():
             main, bedrooms = desired_levels(at(hour), 10 if 9 <= hour < 19 else -10, running)
             assert main > 0 or bedrooms > 0
             assert main >= 50
+
+
+def test_open_fractions_always_sum_to_at_least_one():
+    from libraries.duct_valves import _enforce_min_total
+
+    assert _enforce_min_total(50, 0) == (100, 0)
+    assert _enforce_min_total(30, 40) == (60, 40)
+    assert _enforce_min_total(-5, 200) == (0, 100)
+    for hour in range(24):
+        for sun in (10, -10):
+            for running in (True, False):
+                for pct in (0, 25, 50, 100):
+                    levels = desired_levels(at(hour), sun, running, {'main-reduced-percent': pct})
+                    assert sum(levels) >= 100
+

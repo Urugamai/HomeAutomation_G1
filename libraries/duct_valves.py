@@ -22,11 +22,23 @@ def desired_levels(local_now, sun_elevation, hvac_running, settings=None):
     config = {**DEFAULT_SETTINGS, **(settings or {})}
     hour = local_now.hour + local_now.minute / 60.0
     if hour >= config["day-start-hour"] and sun_elevation > 0:
-        return 100, 0
-    late = hour >= config["main-reduce-hour"] or hour < config["day-start-hour"]
-    if hvac_running and late:
-        return config["main-reduced-percent"], 100
-    return 100, 100
+        main, bedrooms = 100, 0
+    else:
+        late = hour >= config["main-reduce-hour"] or hour < config["day-start-hour"]
+        if hvac_running and late:
+            main, bedrooms = config["main-reduced-percent"], 100
+        else:
+            main, bedrooms = 100, 100
+    return _enforce_min_total(main, bedrooms)
+
+
+def _enforce_min_total(main, bedrooms):
+    """Clamp to 0-100 and guarantee the open fractions sum to at least 1 (protects fan motors)."""
+    main = max(0, min(100, main))
+    bedrooms = max(0, min(100, bedrooms))
+    if main + bedrooms < 100:
+        main = 100 - bedrooms
+    return main, bedrooms
 
 
 class DuctValveController:
