@@ -9,5 +9,4 @@ duct-valves:
   main-address: 35
   bedrooms-address: 42
   day-start-hour: 9
-  main-reduce-hour: 22
-  main-reduced-percent: 50
+  night-start-hour: 21  # both valves fully open from here until day-start-hour

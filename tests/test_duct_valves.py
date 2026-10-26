@@ -27,10 +27,13 @@ def test_bedrooms_closed_by_day_open_after_sunset():
     assert desired_levels(at(21), -5, True) == (100, 100)
 
 
-def test_main_reduces_to_half_after_2200_only_while_running():
-    assert desired_levels(at(22, 30), -30, True) == (50, 100)
-    assert desired_levels(at(22, 30), -30, False) == (100, 100)
-    assert desired_levels(at(23), -30, True)[0] > 0
+def test_both_fully_open_overnight_2100_to_0900():
+    for hour in list(range(21, 24)) + list(range(0, 9)):
+        for sun in (10, -10):
+            for running in (True, False):
+                assert desired_levels(at(hour), sun, running) == (100, 100)
+    assert desired_levels(at(20, 59), 5, True) == (100, 0)
+    assert desired_levels(at(9), 5, True) == (100, 0)
 
 
 def test_startup_opens_both_then_closes_bedrooms():
@@ -68,7 +71,7 @@ def test_main_valve_is_never_fully_closed():
         for running in (True, False):
             main, bedrooms = desired_levels(at(hour), 10 if 9 <= hour < 19 else -10, running)
             assert main > 0 or bedrooms > 0
-            assert main >= 50
+            assert main == 100
 
 
 def test_open_fractions_always_sum_to_at_least_one():
@@ -80,7 +83,5 @@ def test_open_fractions_always_sum_to_at_least_one():
     for hour in range(24):
         for sun in (10, -10):
             for running in (True, False):
-                for pct in (0, 25, 50, 100):
-                    levels = desired_levels(at(hour), sun, running, {'main-reduced-percent': pct})
-                    assert sum(levels) >= 100
+                assert sum(desired_levels(at(hour), sun, running)) >= 100
 

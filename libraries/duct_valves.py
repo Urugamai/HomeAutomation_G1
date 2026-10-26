@@ -7,28 +7,24 @@ DEFAULT_SETTINGS = {
     "main-address": 35,
     "bedrooms-address": 42,
     "day-start-hour": 9,
-    "main-reduce-hour": 22,
-    "main-reduced-percent": 50,
+    "night-start-hour": 21,
 }
 
 
 def desired_levels(local_now, sun_elevation, hvac_running, settings=None):
     """Return (main_percent, bedrooms_percent).
 
-    By day the bedrooms are closed so all airflow goes to the main house. At night they
-    reopen, and if HVAC is still running late the main valve is reduced to push air to them.
-    The main valve is never fully closed because that makes the duct noisy.
+    Both valves are fully open overnight (night-start-hour to day-start-hour) because any
+    closure makes the duct noisy. By day, while the sun is up, the bedrooms are closed so
+    all airflow goes to the main house.
     """
     config = {**DEFAULT_SETTINGS, **(settings or {})}
     hour = local_now.hour + local_now.minute / 60.0
-    if hour >= config["day-start-hour"] and sun_elevation > 0:
+    night = hour >= config["night-start-hour"] or hour < config["day-start-hour"]
+    if not night and sun_elevation > 0:
         main, bedrooms = 100, 0
     else:
-        late = hour >= config["main-reduce-hour"] or hour < config["day-start-hour"]
-        if hvac_running and late:
-            main, bedrooms = config["main-reduced-percent"], 100
-        else:
-            main, bedrooms = 100, 100
+        main, bedrooms = 100, 100
     return _enforce_min_total(main, bedrooms)
 
 
