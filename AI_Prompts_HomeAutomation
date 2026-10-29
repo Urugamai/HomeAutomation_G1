@@ -1,4 +1,8 @@
 
+the vacation function gets stuck in a loop if I select the date before setting the time.
+Once it is confused, it does not work unless I exit and start again by doing the times first.
+Can we make the date and time selections not dependent on entry sequence?
+
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control
