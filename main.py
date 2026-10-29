@@ -290,6 +290,9 @@ class MainWindow(QMainWindow):
     def _wake_display(self):
         self._sleep_overlay.hide()
         self._display_is_sleeping = False
+        hvac_tab = self.dashboard.hvac_config_tab
+        if hvac_tab is not None and self.tabs.indexOf(hvac_tab) >= 0:
+            self.tabs.setCurrentWidget(hvac_tab)
         self._reset_idle_timer()
 
     def closeEvent(self, event):
