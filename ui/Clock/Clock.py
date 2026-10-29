@@ -533,8 +533,9 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         battery = float(data.get("battery_flow", 0.0))
         grid = float(data.get("grid_flow", 0.0))
         solar_percent = max(0, min(100, solar / 10 * 100))
+        house = solar - battery - grid
         self.solar_power_bar.set_percentage(
-            solar_percent, f"Solar: {solar:.1f}kW {solar_percent:.0f}%"
+            solar_percent, f"Solar: {solar:.1f}kW House: {house:.1f}kW"
         )
         self.battery_power_bar.set_battery_soc(
             soc, battery, f"Battery: {soc}% {battery:+.2f}kW"
