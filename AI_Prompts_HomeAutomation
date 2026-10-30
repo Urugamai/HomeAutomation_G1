@@ -1,7 +1,27 @@
 
+on the home controller on the cbus control screens (ground floor and first floor),
+please make the array of buttons 6 wide so there is no scrolling.
+
+Can we please expand the names on the buttons to better represent their meaning. so, DIN=Dining, LNG=Lounge, HL=Hallway, PTY=Pantry,
+KTCH=Kitchen, SIT=Sitting Room, ENS=Ensuite, TLT=Toilet, WIR=Walk-in-Robe, BTH=Bathroom, BDx=Bedroom x (where x is a number), AC=AirDuct,
+ALCOVE=Alcove, BCNY=Balcony, ENT=Entry, EQUIP=Equipment, GARAGE=Garage, LNDRY=Laundry, RMPS=Rumpus, STDY=Study, WRK=Store Room
+Also alter G BCNY L W should be on the first floor page as it is mis-named in the cbus system (I will fix that one day too so allow it
+to be called 1 BCNY L W instead in the future).  Can we make all this mapping into a configuration file so I can update the file
+rather than the code to make changes to each CBus devices name on the display?
+
 the vacation function gets stuck in a loop if I select the date before setting the time.
 Once it is confused, it does not work unless I exit and start again by doing the times first.
 Can we make the date and time selections not dependent on entry sequence?
+
+During vacation mode or empty house mode, the blinds should still close based on the house temperature and sun position but
+the temperature setting point should be 2 degrees sooner (lower) as the hvac will not run to cool the house.
+
+I would like one of the monitoring services (possibly the blind controller?) to also turn off all the lights that have
+been left on at about 0100 daily except the step lights (1 LNG L AlcoveSteps) as it has a light-level controller that does not
+cope with the power being turned off to it so you should also make sure it is always on.
+
+Please colour-code the background of the various CBus control buttons so that lights are light blue, blinds are light gray,
+shutters are a slightly darker light gray, and other devices are light yellow.
 
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.

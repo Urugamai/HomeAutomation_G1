@@ -30,6 +30,8 @@ VACATION_EXERCISE_SECONDS = 300
 SETTINGS_SAVE_DELAY_SECONDS = 10
 FORECAST_START_MARGIN_C = 2.0
 BLIND_RELEASE_DELAY_SECONDS = 1800
+# HVAC does not cool during vacation/empty house, so blinds close this much sooner.
+AWAY_BLIND_EARLY_CLOSE_DEGREES = 2.0
 
 try:
     import paho.mqtt.client as mqtt
@@ -883,10 +885,10 @@ class HvacHardwareDaemon:
             return
         if self.sequence_state != "OFF":
             return
-        self._maybe_close_blinds(current_temp)
+        self._maybe_close_blinds(current_temp, AWAY_BLIND_EARLY_CLOSE_DEGREES)
 
-    def _maybe_close_blinds(self, current_temp: float):
-        if current_temp >= self.t_max - 1.0:
+    def _maybe_close_blinds(self, current_temp: float, early_degrees: float = 0.0):
+        if current_temp >= self.t_max - 1.0 - early_degrees:
             self._maybe_close_blinds_for_state("COOLING")
         else:
             self._release_hvac_blind_locks()
