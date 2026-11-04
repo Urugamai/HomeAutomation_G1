@@ -97,7 +97,7 @@ def test_compact_floor_controls_omit_dimmers_and_use_smaller_buttons():
     button = page._buttons["56/1/1"]
     assert page._sliders == {}
     assert page.columns == 6
-    assert button.height() == 22
+    assert button.height() == 18
     assert button.text() == "ON"
 
     button.click()
