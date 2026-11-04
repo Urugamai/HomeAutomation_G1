@@ -5,6 +5,9 @@ from PyQt6.QtWidgets import (
 )
 
 
+from libraries.cbus_names import CbusNameMapper
+
+
 class CbusFloorPage(QWidget):
     """Touch-friendly C-Bus lighting controls for one floor."""
 
@@ -13,7 +16,8 @@ class CbusFloorPage(QWidget):
         self.floor = floor
         self.command_callback = command_callback
         self.compact = compact
-        self.columns = 6 if compact else 5 if floor == "Ground" else 4
+        self.names = CbusNameMapper.load()
+        self.columns = 6
         self._buttons = {}
         self._sliders = {}
 
@@ -34,10 +38,10 @@ class CbusFloorPage(QWidget):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         if compact:
-            self.scroll.setHorizontalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-            )
             self.scroll.setVerticalScrollBarPolicy(
                 Qt.ScrollBarPolicy.ScrollBarAlwaysOff
             )
@@ -55,16 +59,11 @@ class CbusFloorPage(QWidget):
         self.scroll.setWidget(self.device_widget)
         layout.addWidget(self.scroll)
 
-    @staticmethod
-    def _floor_matches(floor, name):
-        normalized = name.strip().upper()
-        if floor == "Ground":
-            return normalized.startswith(("G_", "OUT_"))
-        return normalized.startswith("1_")
+    def _floor_matches(self, floor, name):
+        return self.names.floor_for(name) == floor
 
-    @staticmethod
-    def _display_name(name):
-        return name.replace("_", " ").strip() or "Unnamed C-Bus device"
+    def _display_name(self, name):
+        return self.names.display_name(name)
 
     def _clear_devices(self):
         self._buttons.clear()

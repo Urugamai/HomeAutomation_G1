@@ -1,0 +1,43 @@
+# Controls how C-Bus device names appear on the controller screens.
+# Device names are split on "_" (or spaces); each word is looked up below
+# (case-insensitive). Unknown words are shown as-is.
+
+# Leading words removed from the display name (the floor prefix).
+strip_prefixes: ["G", "1"]
+
+words:
+  DIN: Dining
+  LNG: Lounge
+  HL: Hallway
+  PTY: Pantry
+  KTCH: Kitchen
+  SIT: Sitting Room
+  ENS: Ensuite
+  TLT: Toilet
+  WIR: Walk-in-Robe
+  BTH: Bathroom
+  AC: AirDuct
+  ALCOVE: Alcove
+  BCNY: Balcony
+  ENT: Entry
+  EQUIP: Equipment
+  GARAGE: Garage
+  LNDRY: Laundry
+  RMPS: Rumpus
+  STDY: Study
+  WRK: Store Room
+  OUT: Outside
+
+# Regex patterns for words with a number, e.g. BD2 -> Bedroom 2.
+patterns:
+  '^BD(\d+)$': 'Bedroom \1'
+
+# Force a device onto a floor (Ground or First) by its C-Bus name.
+# Needed for devices whose C-Bus name has the wrong floor prefix.
+# Once renamed in C-Bus to "1 BCNY L W" this entry is no longer required.
+floor_overrides:
+  G_BCNY_L_W: First
+
+# Complete replacement of the display text for a specific device name.
+# Takes priority over words/patterns.
+name_overrides: {}

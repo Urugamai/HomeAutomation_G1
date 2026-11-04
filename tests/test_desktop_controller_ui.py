@@ -107,11 +107,11 @@ def test_compact_floor_controls_omit_dimmers_and_use_smaller_buttons():
     app.processEvents()
 
 
-def test_full_controller_ground_floor_uses_five_narrow_columns():
+def test_full_controller_ground_floor_uses_six_narrow_columns():
     app = _application()
     page = CbusFloorPage("Ground", lambda *_: None)
 
-    assert page.columns == 5
+    assert page.columns == 6
     assert page.grid.horizontalSpacing() == 4
 
     page.refresh_devices(
@@ -128,6 +128,18 @@ def test_full_controller_ground_floor_uses_five_narrow_columns():
     assert page._buttons["56/1/1"].minimumWidth() == 0
     page.deleteLater()
     app.processEvents()
+
+
+def test_cbus_name_mapping_and_floor_override():
+    from libraries.cbus_names import CbusNameMapper
+
+    names = CbusNameMapper.load()
+    assert names.display_name("G_KTCH_BD2") == "Kitchen Bedroom 2"
+    assert names.display_name("1_WIR") == "Walk-in-Robe"
+    assert names.floor_for("G_BCNY_L_W") == "First"
+    assert names.display_name("G_BCNY_L_W") == "Balcony L W"
+    assert names.floor_for("1_BCNY_L_W") == "First"
+    assert names.floor_for("G_DIN") == "Ground"
 
 
 def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):
