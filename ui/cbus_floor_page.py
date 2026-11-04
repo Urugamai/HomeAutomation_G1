@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QGridLayout, QGroupBox, QLabel, QPushButton, QScrollArea, QSlider,
+    QGridLayout, QGroupBox, QLabel, QPushButton, QScrollArea, QSizePolicy,
+    QSlider,
     QVBoxLayout, QWidget,
 )
 
@@ -105,6 +106,9 @@ class CbusFloorPage(QWidget):
                 group_layout.setSpacing(0)
             else:
                 group.setMinimumWidth(0)
+                group.setStyleSheet(
+                    "QGroupBox { font-size: 8pt; margin-top: 10px; }"
+                )
                 group_layout.setContentsMargins(4, 4, 4, 4)
                 group_layout.setSpacing(2)
 
@@ -134,7 +138,12 @@ class CbusFloorPage(QWidget):
             self._update_device(device)
 
             row, column = divmod(index, self.columns)
+            group.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+            )
             self.grid.addWidget(group, row, column)
+        for column in range(self.columns):
+            self.grid.setColumnStretch(column, 1)
 
         self.status_label.setText(
             f"{len(visible)} {self.floor.lower()}-floor C-Bus devices"
