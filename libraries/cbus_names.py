@@ -38,6 +38,16 @@ class CbusNameMapper:
             for k, v in (config.get("name_overrides") or {}).items()
         }
 
+        self.type_colors = {
+            str(k).upper(): str(v)
+            for k, v in (config.get("type_colors") or {}).items()
+        }
+
+    def color_for(self, name):
+        parts = _key(name).split("_")
+        device_type = parts[2] if len(parts) > 2 else ""
+        return self.type_colors.get(device_type) or self.type_colors.get("OTHER")
+
     @classmethod
     def load(cls, path=DEFAULT_CONFIG_PATH):
         if yaml is None or not os.path.exists(path):

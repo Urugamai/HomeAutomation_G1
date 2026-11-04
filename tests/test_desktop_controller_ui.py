@@ -140,6 +140,10 @@ def test_cbus_name_mapping_and_floor_override():
     assert names.display_name("G_BCNY_L_W") == "Balcony L W"
     assert names.floor_for("1_BCNY_L_W") == "First"
     assert names.floor_for("G_DIN") == "Ground"
+    assert names.color_for("G_KTCH_L") == "#ADD8E6"
+    assert names.color_for("G_STDY_B_W") == "#D3D3D3"
+    assert names.color_for("G_RMPS_S_EL") == "#BEBEBE"
+    assert names.color_for("G_FAN") == "#FFFFE0"
 
 
 def test_desktop_window_uses_top_tabs_and_shared_telemetry(monkeypatch):

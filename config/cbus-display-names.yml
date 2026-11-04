@@ -41,3 +41,11 @@ floor_overrides:
 # Complete replacement of the display text for a specific device name.
 # Takes priority over words/patterns.
 name_overrides: {}
+
+# Background colour by device type. The type is the third word of the C-Bus
+# name (e.g. G_KTCH_L -> L). Names with any other type use "other".
+type_colors:
+  L: "#ADD8E6"      # lights: light blue
+  B: "#D3D3D3"      # blinds: light gray
+  S: "#BEBEBE"      # shutters: slightly darker light gray
+  other: "#FFFFE0"  # everything else: light yellow

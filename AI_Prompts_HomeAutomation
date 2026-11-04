@@ -3,9 +3,6 @@ the vacation function gets stuck in a loop if I select the date before setting t
 Once it is confused, it does not work unless I exit and start again by doing the times first.
 Can we make the date and time selections not dependent on entry sequence?
 
-Please colour-code the background of the various CBus control buttons so that lights are light blue, blinds are light gray,
-shutters are a slightly darker light gray, and other devices are light yellow.
-
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control

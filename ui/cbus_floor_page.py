@@ -20,6 +20,7 @@ class CbusFloorPage(QWidget):
         self.names = CbusNameMapper.load()
         self.columns = 6
         self._buttons = {}
+        self._colors = {}
         self._sliders = {}
 
         layout = QVBoxLayout(self)
@@ -68,6 +69,7 @@ class CbusFloorPage(QWidget):
 
     def _clear_devices(self):
         self._buttons.clear()
+        self._colors.clear()
         self._sliders.clear()
         while self.grid.count():
             item = self.grid.takeAt(0)
@@ -96,18 +98,22 @@ class CbusFloorPage(QWidget):
             address = device["address"]
             group = QGroupBox(self._display_name(device.get("name", "")))
             group_layout = QVBoxLayout(group)
+            color = self.names.color_for(device.get("name", ""))
+            self._colors[address] = color
+            group_color = f"background: {color}; color: black; " if color else ""
             if self.compact:
                 group.setFixedHeight(42)
                 group.setStyleSheet(
-                    "QGroupBox { font-size: 7pt; margin-top: 10px; "
-                    "padding: 0px; }"
+                    f"QGroupBox {{ {group_color}font-size: 7pt; "
+                    "margin-top: 10px; padding: 0px; }"
                 )
                 group_layout.setContentsMargins(2, 1, 2, 1)
                 group_layout.setSpacing(0)
             else:
                 group.setMinimumWidth(0)
                 group.setStyleSheet(
-                    "QGroupBox { font-size: 8pt; margin-top: 10px; }"
+                    f"QGroupBox {{ {group_color}font-size: 8pt; "
+                    "margin-top: 10px; }"
                 )
                 group_layout.setContentsMargins(4, 4, 4, 4)
                 group_layout.setSpacing(2)
@@ -179,8 +185,15 @@ class CbusFloorPage(QWidget):
             slider.setValue(brightness)
             slider.blockSignals(False)
         font_style = "font-size: 8pt; " if self.compact else ""
+        color = self._colors.get(address)
+        base = (
+            f"QPushButton {{ background: {color}; color: black; "
+            f"border: 1px solid #707070; border-radius: 3px; {font_style}}}"
+            if color else ""
+        )
         button.setStyleSheet(
-            "QPushButton:checked { background: #28a745; color: white; "
+            base
+            + "QPushButton:checked { background: #28a745; color: white; "
             f"font-weight: bold; {font_style}}}"
         )
 
