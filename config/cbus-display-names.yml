@@ -33,8 +33,18 @@ words:
   W: West
   E: East
   N: North
-  S: South
   C: Centre
+  S: Shutter
+  B: Blind
+  El: East Left
+  Er: East Right
+  Nl: North Left
+  Nr: North Right
+  Sr: South
+  Wl: West Left
+  Wc: West Centre
+  Wr: West Right
+
 
 # Regex patterns for words with a number, e.g. BD2 -> Bedroom 2.
 patterns:
