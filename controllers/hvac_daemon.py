@@ -724,6 +724,18 @@ class HvacHardwareDaemon:
         self.vacation_last_exercise_date = None
         self.vacation_exercise_target = None
         self._save_vacation_progress()
+        self._publish_settings()
+
+    def _publish_settings(self):
+        # Displays take their settings from the retained broker message, so it must be refreshed.
+        if self.client is None:
+            return
+        self.client.publish(
+            "home/hvac/settings",
+            json.dumps(self._settings_payload()),
+            qos=1,
+            retain=True,
+        )
 
     def _is_vacation_active(self, current_datetime):
         if self.vacation_start is None or self.vacation_end is None:
