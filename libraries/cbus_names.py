@@ -85,5 +85,5 @@ class CbusNameMapper:
                     out.append(pattern.sub(replacement, token))
                     break
             else:
-                out.append(token)
+                out.append(token.title())
         return " ".join(out) or "Unnamed C-Bus device"

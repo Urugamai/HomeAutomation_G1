@@ -27,6 +27,14 @@ words:
   STDY: Study
   WRK: Store Room
   OUT: Outside
+  L: Light
+  LIGHT: Light
+  UPLIGHT: Uplight
+  W: West
+  E: East
+  N: North
+  S: South
+  C: Centre
 
 # Regex patterns for words with a number, e.g. BD2 -> Bedroom 2.
 patterns:
@@ -46,6 +54,8 @@ name_overrides: {}
 # name (e.g. G_KTCH_L -> L). Names with any other type use "other".
 type_colors:
   L: "#ADD8E6"      # lights: light blue
+  LIGHT: "#ADD8E6"
+  UPLIGHT: "#ADD8E6"
   B: "#D3D3D3"      # blinds: light gray
   S: "#BEBEBE"      # shutters: slightly darker light gray
   other: "#FFFFE0"  # everything else: light yellow
