@@ -39,6 +39,11 @@ words:
 # Regex patterns for words with a number, e.g. BD2 -> Bedroom 2.
 patterns:
   '^BD(\d+)$': 'Bedroom \1'
+  '^N(\d+)$': 'North \1'
+  '^E(\d+)$': 'East \1'
+  '^S(\d+)$': 'South \1'
+  '^W(\d+)$': 'West \1'
+  '^C(\d+)$': 'Centre \1'
 
 # Force a device onto a floor (Ground or First) by its C-Bus name.
 # Needed for devices whose C-Bus name has the wrong floor prefix.
