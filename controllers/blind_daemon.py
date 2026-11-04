@@ -42,6 +42,11 @@ class BlindAutomationDaemon:
         self.settings_path = Path(settings_path or self.SETTINGS_PATH)
         self.state_path = Path(state_path or self.STATE_PATH)
         self.devices = self._load_settings()
+        self.lights_off = self._load_lights_off()
+        self.light_names = {}
+        self.light_states = {}
+        self.lights_off_date = None
+        self.always_on_checked = {}
         self.states, self.dark_since = self._load_state()
         self.latest_outside_w_m2 = None
         self.hvac_close_reason = None
@@ -143,6 +148,85 @@ class BlindAutomationDaemon:
         return devices
 
     COMPASS_DEGREES = {"N": 0.0, "E": 90.0, "S": 180.0, "W": 270.0}
+
+    @staticmethod
+    def _name_key(name):
+        return re.sub(r"[\s_]+", "_", str(name).strip()).upper()
+
+    def _load_lights_off(self):
+        try:
+            with self.settings_path.open("r", encoding="utf-8") as settings_file:
+                section = (yaml.safe_load(settings_file) or {}).get("lights_off") or {}
+            return {
+                "time": datetime.time.fromisoformat(str(section.get("time", "01:00"))),
+                "window_minutes": float(section.get("window_minutes", 15)),
+                "always_on": {
+                    self._name_key(name) for name in section.get("always_on") or []
+                },
+                "exclude": {
+                    self._name_key(name) for name in section.get("exclude") or []
+                },
+            }
+        except (TypeError, ValueError, AttributeError) as error:
+            raise RuntimeError(f"Invalid lights_off settings: {error}") from error
+
+    def _light_key(self, address):
+        return self._name_key(self.light_names.get(address, ""))
+
+    def _publish_light(self, address, on, reason):
+        self.client.publish(
+            "home/cbus/queued-command",
+            json.dumps(
+                {
+                    "topic": f"homeassistant/light/cbus_{address}/set",
+                    "payload": {
+                        "state": "ON" if on else "OFF",
+                        "brightness": 255 if on else 0,
+                        "transition": 0,
+                    },
+                    "reason": reason,
+                }
+            ),
+            qos=1,
+            retain=False,
+        )
+        print(
+            f"[LIGHTS] {self.light_names.get(address, address)} "
+            f"address={address} -> {'ON' if on else 'OFF'} ({reason})"
+        )
+
+    def _lights_tick(self):
+        """Keep always-on lights on, and switch off forgotten lights once nightly."""
+        now = self._now()
+        monotonic_now = time.time()
+        settings = self.lights_off
+        for address, state in self.light_states.items():
+            if self._light_key(address) not in settings["always_on"]:
+                continue
+            if state == "ON" or monotonic_now - self.always_on_checked.get(address, 0) < 30:
+                continue
+            self.always_on_checked[address] = monotonic_now
+            self._publish_light(address, True, "always-on light found off")
+
+        start = datetime.datetime.combine(now.date(), settings["time"], now.tzinfo)
+        elapsed = (now - start).total_seconds()
+        if (
+            self.lights_off_date == now.date()
+            or not 0 <= elapsed < settings["window_minutes"] * 60
+        ):
+            return
+        self.lights_off_date = now.date()
+        for address, state in sorted(self.light_states.items()):
+            key = self._light_key(address)
+            if (
+                state != "ON"
+                or not key
+                or address in self.devices
+                or key in settings["always_on"]
+                or key in settings["exclude"]
+            ):
+                continue
+            self._publish_light(address, False, "nightly lights-off")
 
     @classmethod
     def _parse_sun_window(cls, value, label_parts):
@@ -249,6 +333,7 @@ class BlindAutomationDaemon:
         try:
             while True:
                 time.sleep(1.0)
+                self._lights_tick()
         except KeyboardInterrupt:
             print("[SHUTDOWN] Terminating Blind Automation Daemon.")
             self.client.loop_stop()
@@ -259,6 +344,7 @@ class BlindAutomationDaemon:
         self.client.subscribe("home/cbus/queued-command")
         self.client.subscribe("home/environment/ecowitt")
         self.client.subscribe("homeassistant/light/+/state")
+        self.client.subscribe("homeassistant/light/+/config")
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -270,8 +356,13 @@ class BlindAutomationDaemon:
             elif msg.topic == "home/environment/ecowitt":
                 self._handle_environment(payload)
             elif msg.topic.startswith("homeassistant/light/cbus_") and msg.topic.endswith(
+                "/config"
+            ):
+                self._track_light_config(msg.topic, payload)
+            elif msg.topic.startswith("homeassistant/light/cbus_") and msg.topic.endswith(
                 "/state"
             ):
+                self._track_light_state(msg.topic, payload)
                 self._handle_cbus_state(msg.topic, payload)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
             print(f"[PARSE ERROR] Blind Daemon rejected MQTT message: {error}")
@@ -392,6 +483,21 @@ class BlindAutomationDaemon:
         self._reset_daily_if_new_day()
         self._apply_hvac_close()
         self._evaluate_irradiance(self.latest_outside_w_m2)
+
+    @staticmethod
+    def _topic_address(topic):
+        text = topic.split("/")[2].removeprefix("cbus_")
+        return int(text) if text.isdigit() else None
+
+    def _track_light_config(self, topic, payload):
+        address = self._topic_address(topic)
+        if address is not None and isinstance(payload, dict) and payload.get("name"):
+            self.light_names[address] = str(payload["name"])
+
+    def _track_light_state(self, topic, payload):
+        address = self._topic_address(topic)
+        if address is not None and isinstance(payload, dict):
+            self.light_states[address] = str(payload.get("state", "")).upper()
 
     def _handle_cbus_state(self, topic, payload):
         address_text = topic.removeprefix("homeassistant/light/cbus_").removesuffix(

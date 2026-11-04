@@ -303,3 +303,32 @@ def test_releasing_hvac_locks_preserves_manual_hold(tmp_path, monkeypatch):
     assert state["hvac_locked"] is False
     assert state["manual_hold_until"] == 4_600.0
     assert daemon.client.messages == []
+
+def test_nightly_lights_off_spares_blinds_and_alcove_steps(tmp_path):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path)
+    settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
+    settings["lights_off"] = {"always_on": ["1_LNG_L_ALCOVESTEPS"]}
+    settings_path.write_text(yaml.safe_dump(settings), encoding="utf-8")
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "state.json")
+    daemon.client = RecordingMqttClient()
+    for address, name, state in (
+        (5, "G_KTCH_L", "ON"),
+        (6, "1 LNG L ALCOVESTEPS", "OFF"),
+        (7, "1_BD1_L", "OFF"),
+        (31, "G_STDY_B_W", "ON"),
+    ):
+        daemon._track_light_config(f"homeassistant/light/cbus_{address}/config", {"name": name})
+        daemon._track_light_state(f"homeassistant/light/cbus_{address}/state", {"state": state})
+    daemon._now = lambda: datetime.datetime(
+        2026, 12, 21, 1, 2, tzinfo=datetime.timezone(datetime.timedelta(hours=11))
+    )
+
+    daemon._lights_tick()
+    daemon._lights_tick()
+
+    sent = [(m[1]["topic"], m[1]["payload"]["state"]) for m in daemon.client.messages]
+    assert sent == [
+        ("homeassistant/light/cbus_6/set", "ON"),
+        ("homeassistant/light/cbus_5/set", "OFF"),
+    ]

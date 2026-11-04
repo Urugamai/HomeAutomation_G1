@@ -3,10 +3,6 @@ the vacation function gets stuck in a loop if I select the date before setting t
 Once it is confused, it does not work unless I exit and start again by doing the times first.
 Can we make the date and time selections not dependent on entry sequence?
 
-I would like one of the monitoring services (possibly the blind controller?) to also turn off all the lights that have
-been left on at about 0100 daily except the step lights (1 LNG L AlcoveSteps) as it has a light-level controller that does not
-cope with the power being turned off to it so you should also make sure it is always on.
-
 Please colour-code the background of the various CBus control buttons so that lights are light blue, blinds are light gray,
 shutters are a slightly darker light gray, and other devices are light yellow.
 

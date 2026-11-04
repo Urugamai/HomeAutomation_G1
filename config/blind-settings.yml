@@ -130,3 +130,12 @@ devices:
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"
+
+# Nightly lights-off. Names are the C-Bus names (spaces/underscores are equivalent).
+# Blind and shutter groups above are never touched.
+lights_off:
+  time: "01:00"
+  window_minutes: 15      # skipped if the daemon starts later than this after the time
+  always_on:              # never switched off, and switched back on if found off
+    - 1_LNG_L_ALCOVESTEPS   # light-level controller cannot cope with power loss
+  exclude: []
