@@ -3,7 +3,7 @@
 # (case-insensitive). Unknown words are shown as-is.
 
 # Leading words removed from the display name (the floor prefix).
-strip_prefixes: ["G", "1"]
+strip_prefixes: ["G", "1", "OUTSIDE", "V"]
 
 words:
   DIN: Dining
@@ -25,6 +25,7 @@ words:
   LNDRY: Laundry
   RMPS: Rumpus
   STDY: Study
+  STR: Stair
   WRK: Store Room
   OUT: Outside
   L: Light
