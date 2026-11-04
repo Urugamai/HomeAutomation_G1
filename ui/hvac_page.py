@@ -670,7 +670,10 @@ class HvacConfigurationPage(QWidget):
                     "a new range."
                 )
             elif selection["start"]:
-                instruction.setText("Select a later date as the end of vacation.")
+                instruction.setText(
+                    f"Start {selection['start'].isoformat()}. "
+                    "Select a later date as the end of vacation."
+                )
             else:
                 instruction.setText("Select the first day of vacation.")
 
@@ -681,6 +684,9 @@ class HvacConfigurationPage(QWidget):
                 selection["end"] = None
             elif selected_date > selection["start"]:
                 selection["end"] = selected_date
+            else:
+                # An earlier (or the same) date simply restarts the range.
+                selection["start"] = selected_date
             update_instruction()
 
         def apply_vacation():
