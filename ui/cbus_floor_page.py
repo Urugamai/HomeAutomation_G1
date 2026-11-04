@@ -101,11 +101,18 @@ class CbusFloorPage(QWidget):
             color = self.names.color_for(device.get("name", ""))
             self._colors[address] = color
             group_color = f"background: {color}; color: black; " if color else ""
+            title_height = 11 if self.compact else 14
+            title_style = (
+                "QGroupBox::title { subcontrol-origin: padding; "
+                "subcontrol-position: top center; }"
+            )
             if self.compact:
                 group.setFixedHeight(42)
                 group.setStyleSheet(
                     f"QGroupBox {{ {group_color}font-size: 7pt; "
-                    "margin-top: 10px; padding: 0px; }"
+                    "border: 1px solid #909090; border-radius: 3px; "
+                    f"margin-top: 0px; padding-top: {title_height}px; }}"
+                    + title_style
                 )
                 group_layout.setContentsMargins(2, 1, 2, 1)
                 group_layout.setSpacing(0)
@@ -113,7 +120,9 @@ class CbusFloorPage(QWidget):
                 group.setMinimumWidth(0)
                 group.setStyleSheet(
                     f"QGroupBox {{ {group_color}font-size: 8pt; "
-                    "margin-top: 10px; }"
+                    "border: 1px solid #909090; border-radius: 3px; "
+                    f"margin-top: 0px; padding-top: {title_height}px; }}"
+                    + title_style
                 )
                 group_layout.setContentsMargins(4, 4, 4, 4)
                 group_layout.setSpacing(2)

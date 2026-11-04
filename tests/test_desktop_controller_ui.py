@@ -137,7 +137,7 @@ def test_cbus_name_mapping_and_floor_override():
     assert names.display_name("G_KTCH_BD2") == "Kitchen Bedroom 2"
     assert names.display_name("1_WIR") == "Walk-in-Robe"
     assert names.floor_for("G_BCNY_L_W") == "First"
-    assert names.display_name("G_BCNY_L_W") == "Balcony Light W"
+    assert names.display_name("G_BCNY_L_W") == "Balcony Light West"
     assert names.floor_for("1_BCNY_L_W") == "First"
     assert names.floor_for("G_DIN") == "Ground"
     assert names.color_for("G_KTCH_L") == "#ADD8E6"
