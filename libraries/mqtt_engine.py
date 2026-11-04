@@ -1,6 +1,7 @@
 import datetime
 import json
 import sys
+import time
 from PyQt6.QtCore import QObject, pyqtSignal
 
 try:
@@ -24,6 +25,7 @@ class MqttTelemetryListener(QObject):
         self.location = location.strip("/") if location else None
         self.is_windows = (sys.platform == "win32")
         self.client = None
+        self._source_seen = {}
 
         self.cached_data = {
             "living_temp": 0.0,
@@ -170,6 +172,7 @@ class MqttTelemetryListener(QObject):
                     raise ValueError("Charger status payload must be an object")
                 self.cached_data["charger_status"] = data
 
+            self._prune_stale_sources()
             self.telemetry_received.emit(self.cached_data.copy())
         except (TypeError, ValueError, json.JSONDecodeError) as error:
             print(f"[MQTT DATA ERROR] Failed processing {msg.topic}: {error}")
@@ -335,6 +338,33 @@ class MqttTelemetryListener(QObject):
                 self.cached_data[cache_key] = float(data[key])
                 return
 
+    STALE_SOURCE_SECONDS = 10 * 24 * 3600
+
+    @staticmethod
+    def _source_timestamp(data):
+        value = data.get("timestamp")
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+        try:
+            return datetime.datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            return None
+
+    def _prune_stale_sources(self, now=None):
+        now = time.time() if now is None else now
+        sources = self.cached_data["environment_sources"]
+        for key in [
+            key for key, source in sources.items()
+            if now - self._source_seen.get(key, now) > self.STALE_SOURCE_SECONDS
+        ]:
+            print(f"[MQTT] Dropping environment source not updated for 10 days: {key}")
+            del sources[key]
+            self._source_seen.pop(key, None)
+
     def _record_environment_source(self, topic, data, source_key):
         source = dict(data)
         source["topic"] = topic
@@ -344,6 +374,8 @@ class MqttTelemetryListener(QObject):
             if source_key == "Ecowitt"
             else data.get("hostname", data.get("device_name", source_key))
         )
+        # Retained messages for retired rooms replay on connect, so age comes from the payload.
+        self._source_seen[source_key] = self._source_timestamp(data) or time.time()
         self.cached_data["environment_sources"][source_key] = source
 
     @staticmethod

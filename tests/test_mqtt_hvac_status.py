@@ -114,3 +114,20 @@ def test_charger_override_is_published_as_retained_command():
     assert listener.client.published == [
         ("home/charger/override", {"enabled": True}, 1, True)
     ]
+
+
+def test_environment_sources_not_updated_for_ten_days_are_dropped():
+    import time
+
+    listener = MqttTelemetryListener()
+    now = time.time()
+    listener._record_environment_source(
+        "home/environment/study", {"timestamp": now - 11 * 86400}, "study"
+    )
+    listener._record_environment_source(
+        "home/environment/living", {"timestamp": now - 3600}, "living"
+    )
+
+    listener._prune_stale_sources()
+
+    assert list(listener.cached_data["environment_sources"]) == ["living"]
