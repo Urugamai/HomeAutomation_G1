@@ -652,6 +652,7 @@ class HvacHardwareDaemon:
     def _process_vacation_control(self, now, current_temp):
         current_datetime = datetime.datetime.fromtimestamp(now)
         today = current_datetime.date()
+        self._clear_expired_vacation(current_datetime)
         if not self._is_vacation_active(current_datetime):
             return False
 
@@ -710,6 +711,19 @@ class HvacHardwareDaemon:
             if self.heater_relay_on or self.cooler_relay_on or self.fan_relay_on:
                 self._write_relays("OFF")
         return True
+
+    def _clear_expired_vacation(self, current_datetime):
+        if self.vacation_start is None or self.vacation_end is None:
+            return
+        expiry = datetime.datetime.combine(self.vacation_end, self.vacation_end_time)
+        if current_datetime < expiry:
+            return
+        print("[VACATION] End date/time reached; clearing the vacation setting.")
+        self.vacation_start = None
+        self.vacation_end = None
+        self.vacation_last_exercise_date = None
+        self.vacation_exercise_target = None
+        self._save_vacation_progress()
 
     def _is_vacation_active(self, current_datetime):
         if self.vacation_start is None or self.vacation_end is None:

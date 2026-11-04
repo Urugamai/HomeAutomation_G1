@@ -1,6 +1,4 @@
 
-Can we clear the vacation setting once the expiry date/time has passed?
-
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control

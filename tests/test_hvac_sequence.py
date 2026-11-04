@@ -341,6 +341,9 @@ def test_vacation_stops_normal_control_and_runs_weekly_exercise(tmp_path):
 
     return_date = datetime.datetime.combine(end, datetime.time(hour=9)).timestamp()
     assert controller._process_vacation_control(return_date, 20.0) is False
+    assert controller.vacation_start is None
+    assert controller.vacation_end is None
+    assert controller._settings_payload()["vacation_end"] is None
 
 
 def test_vacation_activates_at_1800_and_resumes_at_0900():
