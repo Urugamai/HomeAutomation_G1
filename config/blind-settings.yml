@@ -138,4 +138,5 @@ lights_off:
   window_minutes: 15      # skipped if the daemon starts later than this after the time
   always_on:              # never switched off, and switched back on if found off
     - 1_LNG_L_ALCOVESTEPS   # light-level controller cannot cope with power loss
-  exclude: []
+  light_types: [L, LIGHT, UPLIGHT]   # only groups of these types are switched off
+  exclude: []   # names never switched off

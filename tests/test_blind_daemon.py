@@ -317,6 +317,9 @@ def test_nightly_lights_off_spares_blinds_and_alcove_steps(tmp_path):
         (6, "1 LNG L ALCOVESTEPS", "OFF"),
         (7, "1_BD1_L", "OFF"),
         (31, "G_STDY_B_W", "ON"),
+        (35, "1_AC_V_MAIN", "ON"),
+        (42, "1_AC_V_BEDROOMS", "ON"),
+        (50, "G_PUMP", "ON"),
     ):
         daemon._track_light_config(f"homeassistant/light/cbus_{address}/config", {"name": name})
         daemon._track_light_state(f"homeassistant/light/cbus_{address}/state", {"state": state})

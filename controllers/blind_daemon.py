@@ -166,9 +166,30 @@ class BlindAutomationDaemon:
                 "exclude": {
                     self._name_key(name) for name in section.get("exclude") or []
                 },
+                "light_types": {
+                    str(t).upper()
+                    for t in section.get("light_types") or ["L", "LIGHT", "UPLIGHT"]
+                },
+                "protected_addresses": self._load_duct_valve_addresses(),
             }
         except (TypeError, ValueError, AttributeError) as error:
             raise RuntimeError(f"Invalid lights_off settings: {error}") from error
+
+    @staticmethod
+    def _load_duct_valve_addresses():
+        """Duct valves are C-Bus groups too; closing them overnight starves the HVAC fans."""
+        addresses = {35, 42}
+        try:
+            with (project_root / "config" / "hvac-actuator.yml").open(
+                "r", encoding="utf-8"
+            ) as actuator_file:
+                valves = (yaml.safe_load(actuator_file) or {}).get("duct-valves") or {}
+            for key in ("main-address", "bedrooms-address"):
+                if key in valves:
+                    addresses.add(int(valves[key]))
+        except (OSError, TypeError, ValueError, yaml.YAMLError):
+            pass
+        return addresses
 
     def _light_key(self, address):
         return self._name_key(self.light_names.get(address, ""))
@@ -218,10 +239,14 @@ class BlindAutomationDaemon:
         self.lights_off_date = now.date()
         for address, state in sorted(self.light_states.items()):
             key = self._light_key(address)
+            parts = key.split("_")
             if (
                 state != "ON"
                 or not key
+                or len(parts) < 3
+                or parts[2] not in settings["light_types"]
                 or address in self.devices
+                or address in settings["protected_addresses"]
                 or key in settings["always_on"]
                 or key in settings["exclude"]
             ):
