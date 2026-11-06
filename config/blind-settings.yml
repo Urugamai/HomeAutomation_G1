@@ -58,7 +58,7 @@ devices:
     close_below_w_m2: 1
     open_above_w_m2: 10
     open_after: "04:00"
-    sunset_delay_minutes: 30
+    sunset_delay_minutes: 1
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"
@@ -67,7 +67,7 @@ devices:
     close_below_w_m2: 1
     open_above_w_m2: 10
     open_after: "04:00"
-    sunset_delay_minutes: 30
+    sunset_delay_minutes: 1
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"
@@ -76,7 +76,7 @@ devices:
     close_below_w_m2: 5
     open_above_w_m2: 10
     open_after: "04:00"
-    sunset_delay_minutes: 30
+    sunset_delay_minutes: 1
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"
@@ -85,7 +85,7 @@ devices:
     close_below_w_m2: 1
     open_above_w_m2: 5
     open_after: "04:00"
-    sunset_delay_minutes: 30
+    sunset_delay_minutes: 20
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"
