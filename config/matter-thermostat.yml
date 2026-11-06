@@ -7,3 +7,8 @@ fan-endpoint-id: 2
 fan-control-enabled: true
 active-heating-setpoint-c: 25.0
 active-cooling-setpoint-c: 21.0
+
+# Publish the thermostat's own room temperature as an environment source.
+publish-temperature: true
+temperature-poll-seconds: 60
+room-name: Thermostat

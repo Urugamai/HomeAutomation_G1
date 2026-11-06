@@ -4,6 +4,8 @@ import asyncio
 import configparser
 import json
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -18,6 +20,8 @@ from libraries.paho_compat import create_client
 
 COMMAND_TOPIC = "home/hvac/matter/command"
 STATUS_TOPIC = "home/hvac/matter/status"
+TEMPERATURE_TOPIC = "home/environment/thermostat"
+LOCAL_TEMPERATURE_ATTRIBUTE = 0x0000
 THERMOSTAT_CLUSTER = 0x0201
 FAN_CONTROL_CLUSTER = 0x0202
 SYSTEM_MODE_ATTRIBUTE = 0x001C
@@ -48,7 +52,69 @@ class MatterThermostatDaemon:
     def start(self):
         broker = self._broker()
         self.client.connect(broker, 1883, keepalive=60)
+        if self.config.get("enabled") and self.config.get("publish-temperature", True):
+            threading.Thread(target=self._temperature_loop, daemon=True).start()
         self.client.loop_forever()
+
+    def _temperature_loop(self):
+        interval = max(10.0, float(self.config.get("temperature-poll-seconds", 60)))
+        while True:
+            try:
+                temperature = asyncio.run(self._read_temperature())
+                if temperature is not None:
+                    self._publish_temperature(temperature)
+            except (
+                KeyError, TypeError, ValueError, RuntimeError, OSError,
+                asyncio.TimeoutError, aiohttp.ClientError,
+            ) as error:
+                print(f"[MATTER] temperature read failed: {error}", flush=True)
+            time.sleep(interval)
+
+    async def _read_temperature(self):
+        node_id = self.config.get("node-id")
+        if not isinstance(node_id, int):
+            return None
+        endpoint_id = int(self.config.get("endpoint-id", 1))
+        message_id = uuid.uuid4().hex
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(
+                self.config["matter-server-url"], timeout=10
+            ) as websocket:
+                await websocket.receive_json()
+                await websocket.send_json(
+                    {
+                        "message_id": message_id,
+                        "command": "get_node",
+                        "args": {"node_id": node_id},
+                    }
+                )
+                while response := await asyncio.wait_for(websocket.receive_json(), 10):
+                    if response.get("message_id") != message_id:
+                        continue
+                    if "error_code" in response:
+                        raise RuntimeError(response.get("details") or "get_node failed")
+                    attributes = response["result"].get("attributes", {})
+                    raw = attributes.get(
+                        f"{endpoint_id}/{THERMOSTAT_CLUSTER}/{LOCAL_TEMPERATURE_ATTRIBUTE}"
+                    )
+                    # Matter reports centi-degrees Celsius; null when the sensor has no reading.
+                    return None if raw is None else raw / 100.0
+
+    def _publish_temperature(self, temperature):
+        name = str(self.config.get("room-name", "Thermostat"))
+        self.client.publish(
+            TEMPERATURE_TOPIC,
+            json.dumps(
+                {
+                    "room_name": name,
+                    "hostname": name,
+                    "device_name": name,
+                    "temperature": round(temperature, 1),
+                    "timestamp": time.time(),
+                }
+            ),
+            retain=True,
+        )
 
     def _broker(self):
         config = configparser.ConfigParser()
