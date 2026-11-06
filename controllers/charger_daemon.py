@@ -233,11 +233,19 @@ class OcularChargerDaemon:
             if not self.modbus_client.connected:
                 if not self.modbus_client.connect():
                     raise ConnectionError("Unable to connect to Ocular charger")
-            response = self.modbus_client.write_register(
-                address=self.CHARGER_CURRENT_LIMIT_REGISTER,
-                value=amps,
-                slave=self.CHARGER_MODBUS_SLAVE,
-            )
+            # pymodbus 3.10+ renamed "slave" to "device_id"
+            try:
+                response = self.modbus_client.write_register(
+                    address=self.CHARGER_CURRENT_LIMIT_REGISTER,
+                    value=amps,
+                    device_id=self.CHARGER_MODBUS_SLAVE,
+                )
+            except TypeError:
+                response = self.modbus_client.write_register(
+                    address=self.CHARGER_CURRENT_LIMIT_REGISTER,
+                    value=amps,
+                    slave=self.CHARGER_MODBUS_SLAVE,
+                )
             if response is None or (
                 hasattr(response, "isError") and response.isError()
             ):
