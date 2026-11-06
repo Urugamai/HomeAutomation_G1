@@ -39,12 +39,13 @@ def write_settings(path):
     )
 
 
-def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys):
+def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys, monkeypatch):
     settings_path = tmp_path / "blind-settings.yml"
     state_path = tmp_path / "blind-state.json"
     write_settings(settings_path)
     daemon = BlindAutomationDaemon(settings_path, state_path)
     daemon.client = RecordingMqttClient()
+    monkeypatch.setattr(daemon, "_now", lambda: summer_time(22))
 
     daemon._handle_environment({"light_w_m2": 49})
 
@@ -68,6 +69,18 @@ def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys):
         "reason=outside_w_m2=49.0 below close_below_w_m2=50.0; "
         "dusk delay=0m elapsed" in capsys.readouterr().out
     )
+
+
+def test_low_light_before_dusk_does_not_close_blind(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path)
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "blind-state.json")
+    daemon.client = RecordingMqttClient()
+    monkeypatch.setattr(daemon, "_now", lambda: summer_time(20))
+
+    daemon._handle_environment({"light_w_m2": 49})
+
+    assert daemon.client.messages == []
 
 
 def test_manual_hold_persists_and_blocks_automation_after_restart(tmp_path, monkeypatch):

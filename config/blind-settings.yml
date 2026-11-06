@@ -3,6 +3,10 @@ location:
   latitude: -37.868
   longitude: 144.832
 
+# Blinds only close for low light once the sun is below this elevation (-6 = civil dusk,
+# -12 = nautical dusk). Lower it to close later.
+dusk_elevation_degrees: -6
+
 devices:
   G_STDY_B_W:
     address: 31

@@ -23,7 +23,7 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
-from libraries.solar import sun_on_facing
+from libraries.solar import sun_on_facing, sun_position
 
 
 CBUS_SET_TOPIC_PATTERN = re.compile(r"^homeassistant/light/cbus_(\d{1,3})/set$")
@@ -141,6 +141,7 @@ class BlindAutomationDaemon:
                 "latitude": float(location["latitude"]),
                 "longitude": float(location["longitude"]),
             }
+            self.dusk_elevation = float(settings.get("dusk_elevation_degrees", -6.0))
         except (KeyError, TypeError, ValueError) as error:
             raise RuntimeError(
                 "blind-settings.yml requires location latitude and longitude"
@@ -556,9 +557,17 @@ class BlindAutomationDaemon:
         )
         self._save_state()
 
+    def _after_dusk(self):
+        """True once the sun is below dusk_elevation_degrees (civil dusk by default)."""
+        _, elevation = sun_position(
+            self.location["latitude"], self.location["longitude"], self._now()
+        )
+        return elevation < self.dusk_elevation
+
     def _evaluate_irradiance(self, outside_w_m2):
         now = time.time()
-        is_dark_for_any_device = any(
+        after_dusk = self._after_dusk()
+        is_dark_for_any_device = after_dusk and any(
             outside_w_m2 < policy["close_below_w_m2"]
             for policy in self.devices.values()
         )
@@ -577,6 +586,8 @@ class BlindAutomationDaemon:
                 continue
 
             if outside_w_m2 < policy["close_below_w_m2"]:
+                if not after_dusk:
+                    continue
                 delay_seconds = policy["sunset_delay_minutes"] * 60
                 if now - self.dark_since >= delay_seconds:
                     self._move(
