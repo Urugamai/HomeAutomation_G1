@@ -569,6 +569,7 @@ class BlindAutomationDaemon:
         after_dusk = self._after_dusk()
         is_dark_for_any_device = after_dusk and any(
             outside_w_m2 < policy["close_below_w_m2"]
+            and policy["sunset_delay_minutes"] > 0
             for policy in self.devices.values()
         )
         if is_dark_for_any_device and self.dark_since is None:
@@ -586,20 +587,25 @@ class BlindAutomationDaemon:
                 continue
 
             if outside_w_m2 < policy["close_below_w_m2"]:
-                if not after_dusk:
-                    continue
                 delay_seconds = policy["sunset_delay_minutes"] * 60
-                if now - self.dark_since >= delay_seconds:
-                    self._move(
-                        address,
-                        "CLOSED",
-                        automated=True,
-                        reason=(
-                            f"outside_w_m2={outside_w_m2:.1f} below "
-                            f"close_below_w_m2={policy['close_below_w_m2']:.1f}; "
-                            f"dusk delay={policy['sunset_delay_minutes']:.0f}m elapsed"
-                        ),
-                    )
+                if delay_seconds > 0:
+                    if not after_dusk or self.dark_since is None:
+                        continue
+                    if now - self.dark_since < delay_seconds:
+                        continue
+                    reason_tail = f"dusk delay={policy['sunset_delay_minutes']:.0f}m elapsed"
+                else:
+                    reason_tail = "no dusk delay; light level decides"
+                self._move(
+                    address,
+                    "CLOSED",
+                    automated=True,
+                    reason=(
+                        f"outside_w_m2={outside_w_m2:.1f} below "
+                        f"close_below_w_m2={policy['close_below_w_m2']:.1f}; "
+                        f"{reason_tail}"
+                    ),
+                )
                 continue
 
             if (

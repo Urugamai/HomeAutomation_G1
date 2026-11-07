@@ -18,7 +18,7 @@ def summer_time(hour):
     return datetime.datetime(2026, 12, 21, hour, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=11)))
 
 
-def write_settings(path):
+def write_settings(path, delay=0):
     path.write_text(
         yaml.safe_dump(
             {
@@ -27,7 +27,7 @@ def write_settings(path):
                     "close_below_w_m2": 50,
                     "open_above_w_m2": 100,
                     "open_after": "00:00",
-                    "sunset_delay_minutes": 0,
+                    "sunset_delay_minutes": delay,
                     "manual_hold_minutes": 60,
                     "automated_hold_minutes": 60,
                     "closed_state": "OFF",
@@ -57,7 +57,7 @@ def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys, monke
                 "payload": {"state": "OFF", "brightness": 0, "transition": 0},
                 "reason": (
                     "outside_w_m2=49.0 below close_below_w_m2=50.0; "
-                    "dusk delay=0m elapsed"
+                    "no dusk delay; light level decides"
                 ),
             },
             1,
@@ -67,13 +67,13 @@ def test_low_light_closes_configured_blind_via_cbus_mqtt(tmp_path, capsys, monke
     assert daemon.states["31"]["position"] == "CLOSED"
     assert (
         "reason=outside_w_m2=49.0 below close_below_w_m2=50.0; "
-        "dusk delay=0m elapsed" in capsys.readouterr().out
+        "no dusk delay; light level decides" in capsys.readouterr().out
     )
 
 
-def test_low_light_before_dusk_does_not_close_blind(tmp_path, monkeypatch):
+def test_low_light_before_dusk_does_not_close_blind_with_dusk_delay(tmp_path, monkeypatch):
     settings_path = tmp_path / "blind-settings.yml"
-    write_settings(settings_path)
+    write_settings(settings_path, delay=30)
     daemon = BlindAutomationDaemon(settings_path, tmp_path / "blind-state.json")
     daemon.client = RecordingMqttClient()
     monkeypatch.setattr(daemon, "_now", lambda: summer_time(20))
@@ -81,6 +81,18 @@ def test_low_light_before_dusk_does_not_close_blind(tmp_path, monkeypatch):
     daemon._handle_environment({"light_w_m2": 49})
 
     assert daemon.client.messages == []
+
+
+def test_zero_dusk_delay_lets_light_level_close_blind_before_dusk(tmp_path, monkeypatch):
+    settings_path = tmp_path / "blind-settings.yml"
+    write_settings(settings_path, delay=0)
+    daemon = BlindAutomationDaemon(settings_path, tmp_path / "blind-state.json")
+    daemon.client = RecordingMqttClient()
+    monkeypatch.setattr(daemon, "_now", lambda: summer_time(14))
+
+    daemon._handle_environment({"light_w_m2": 49})
+
+    assert daemon.states["31"]["position"] == "CLOSED"
 
 
 def test_manual_hold_persists_and_blocks_automation_after_restart(tmp_path, monkeypatch):
