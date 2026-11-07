@@ -116,7 +116,11 @@ class BlindAutomationDaemon:
                 raise RuntimeError(f"Invalid settings for {label}: {error}") from error
             if not 0 <= address <= 255:
                 raise RuntimeError(f"{label} has an invalid C-Bus group address: {address}")
-            if any(value < 0 for value in policy.values() if isinstance(value, float)):
+            if any(
+                value < 0
+                for key, value in policy.items()
+                if isinstance(value, float) and key != "sunset_delay_minutes"
+            ):
                 raise RuntimeError(
                     f"{label} has a negative automation duration or irradiance value"
                 )
