@@ -167,6 +167,8 @@ class MatterThermostatDaemon:
                     await self._write_attribute(
                         websocket, node_id, fan_endpoint_id, FAN_CONTROL_CLUSTER, FAN_MODE_ATTRIBUTE, FAN_MODE_OFF
                     )
+                if mode == "OFF":
+                    await self._push_safe_setpoints(websocket, node_id, endpoint_id)
                 if mode == "HEATING":
                     await self._write_attribute(
                         websocket, node_id, endpoint_id, THERMOSTAT_CLUSTER,
@@ -179,6 +181,25 @@ class MatterThermostatDaemon:
                         COOLING_SETPOINT_ATTRIBUTE,
                         round(float(self.config["active-cooling-setpoint-c"]) * 100),
                     )
+
+    async def _push_safe_setpoints(self, websocket, node_id, endpoint_id):
+        """Leave the thermostat with bounded setpoints so it limits itself if the Pi is lost."""
+        errors = []
+        for key, attribute_id in (
+            ("safe-heating-setpoint-c", HEATING_SETPOINT_ATTRIBUTE),
+            ("safe-cooling-setpoint-c", COOLING_SETPOINT_ATTRIBUTE),
+        ):
+            if self.config.get(key) is None:
+                continue
+            try:
+                await self._write_attribute(
+                    websocket, node_id, endpoint_id, THERMOSTAT_CLUSTER,
+                    attribute_id, round(float(self.config[key]) * 100),
+                )
+            except RuntimeError as error:
+                errors.append(f"{key}: {error}")
+        if errors:
+            raise RuntimeError("Safe setpoint write failed: " + "; ".join(errors))
 
     async def _write_attribute(self, websocket, node_id, endpoint_id, cluster_id, attribute_id, value):
         message_id = uuid.uuid4().hex

@@ -13,7 +13,7 @@ devices:
     close_below_w_m2: 20
     open_above_w_m2: 30
     open_after: "09:00"
-    sunset_delay_minutes: -30
+    sunset_delay_minutes: 0
     manual_hold_minutes: 60
     automated_hold_minutes: 30
     closed_state: "OFF"

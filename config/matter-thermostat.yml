@@ -8,6 +8,11 @@ fan-control-enabled: true
 active-heating-setpoint-c: 25.0
 active-cooling-setpoint-c: 21.0
 
+# Written to the thermostat whenever the Pi commands OFF, so the thermostat's own
+# setpoints stay in a comfortable band if it is later left running without the Pi.
+safe-heating-setpoint-c: 20.0
+safe-cooling-setpoint-c: 25.0
+
 # Publish the thermostat's own room temperature as an environment source.
 publish-temperature: true
 temperature-poll-seconds: 60
