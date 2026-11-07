@@ -24,6 +24,8 @@ TEMPERATURE_TOPIC = "home/environment/thermostat"
 LOCAL_TEMPERATURE_ATTRIBUTE = 0x0000
 THERMOSTAT_CLUSTER = 0x0201
 FAN_CONTROL_CLUSTER = 0x0202
+HUMIDITY_CLUSTER = 0x0405
+HUMIDITY_ATTRIBUTE = 0x0000
 SYSTEM_MODE_ATTRIBUTE = 0x001C
 HEATING_SETPOINT_ATTRIBUTE = 0x0012
 COOLING_SETPOINT_ATTRIBUTE = 0x0011
@@ -60,9 +62,9 @@ class MatterThermostatDaemon:
         interval = max(10.0, float(self.config.get("temperature-poll-seconds", 60)))
         while True:
             try:
-                temperature = asyncio.run(self._read_temperature())
+                temperature, humidity = asyncio.run(self._read_climate())
                 if temperature is not None:
-                    self._publish_temperature(temperature)
+                    self._publish_temperature(temperature, humidity)
             except (
                 KeyError, TypeError, ValueError, RuntimeError, OSError,
                 asyncio.TimeoutError, aiohttp.ClientError,
@@ -70,11 +72,12 @@ class MatterThermostatDaemon:
                 print(f"[MATTER] temperature read failed: {error}", flush=True)
             time.sleep(interval)
 
-    async def _read_temperature(self):
+    async def _read_climate(self):
         node_id = self.config.get("node-id")
         if not isinstance(node_id, int):
-            return None
+            return None, None
         endpoint_id = int(self.config.get("endpoint-id", 1))
+        humidity_endpoint_id = int(self.config.get("humidity-endpoint-id", endpoint_id))
         message_id = uuid.uuid4().hex
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(
@@ -97,24 +100,27 @@ class MatterThermostatDaemon:
                     raw = attributes.get(
                         f"{endpoint_id}/{THERMOSTAT_CLUSTER}/{LOCAL_TEMPERATURE_ATTRIBUTE}"
                     )
-                    # Matter reports centi-degrees Celsius; null when the sensor has no reading.
-                    return None if raw is None else raw / 100.0
+                    raw_humidity = attributes.get(
+                        f"{humidity_endpoint_id}/{HUMIDITY_CLUSTER}/{HUMIDITY_ATTRIBUTE}"
+                    )
+                    # Matter reports centi-degrees Celsius and centi-percent RH; null when the sensor has no reading.
+                    return (
+                        None if raw is None else raw / 100.0,
+                        None if raw_humidity is None else raw_humidity / 100.0,
+                    )
 
-    def _publish_temperature(self, temperature):
+    def _publish_temperature(self, temperature, humidity=None):
         name = str(self.config.get("room-name", "Thermostat"))
-        self.client.publish(
-            TEMPERATURE_TOPIC,
-            json.dumps(
-                {
-                    "room_name": name,
-                    "hostname": name,
-                    "device_name": name,
-                    "temperature": round(temperature, 1),
-                    "timestamp": time.time(),
-                }
-            ),
-            retain=True,
-        )
+        payload = {
+            "room_name": name,
+            "hostname": name,
+            "device_name": name,
+            "temperature": round(temperature, 1),
+            "timestamp": time.time(),
+        }
+        if humidity is not None:
+            payload["humidity"] = round(humidity, 1)
+        self.client.publish(TEMPERATURE_TOPIC, json.dumps(payload), retain=True)
 
     def _broker(self):
         config = configparser.ConfigParser()

@@ -4,6 +4,8 @@ matter-server-url: ws://127.0.0.1:5580/ws
 node-id: 1
 endpoint-id: 1
 fan-endpoint-id: 2
+# Endpoint exposing the Relative Humidity Measurement cluster (0x0405); defaults to endpoint-id.
+# humidity-endpoint-id: 1
 fan-control-enabled: true
 active-heating-setpoint-c: 25.0
 active-cooling-setpoint-c: 21.0
