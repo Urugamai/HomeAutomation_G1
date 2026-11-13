@@ -88,12 +88,13 @@ class MainWindow(QMainWindow):
         self.tabs.setStyleSheet("""
                 QTabBar::tab {
                     height: 55px;
-                    min-width: 150px;
-                    font-size: 14pt;
+                    min-width: 60px;
+                    font-size: 13pt;
                     font-weight: bold;
-                    padding: 5px;
+                    padding: 5px 8px;
                 }
             """)
+        self.tabs.setUsesScrollButtons(False)
 
         self.dashboard = AdaptiveDashboard(power_chart_grid_interval_hours)
         self.tabs.addTab(self.dashboard, "Power")
@@ -104,11 +105,11 @@ class MainWindow(QMainWindow):
         self.ground_floor_page = CbusFloorPage(
             "Ground", self._set_cbus_device
         )
-        self.tabs.addTab(self.ground_floor_page, "Ground Floor")
+        self.tabs.addTab(self.ground_floor_page, "Ground")
         self.first_floor_page = CbusFloorPage(
             "First", self._set_cbus_device
         )
-        self.tabs.addTab(self.first_floor_page, "First Floor")
+        self.tabs.addTab(self.first_floor_page, "First")
         self.charger_page = ChargerStatusPage()
         self.tabs.addTab(self.charger_page, "Charger")
         self.setCentralWidget(self.tabs)

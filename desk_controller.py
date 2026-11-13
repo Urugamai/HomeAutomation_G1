@@ -55,10 +55,10 @@ class DeskControllerWindow(QMainWindow):
             """
             QTabBar::tab {
                 height: 32px;
-                min-width: 100px;
+                min-width: 60px;
                 font-size: 10pt;
                 font-weight: bold;
-                padding: 3px 8px;
+                padding: 3px 4px;
             }
             """
         )
@@ -66,7 +66,7 @@ class DeskControllerWindow(QMainWindow):
         self.dashboard = DesktopDashboard(power_chart_grid_interval_hours)
         self.tabs.addTab(self.dashboard, "Home")
         self.environment_page = EnvironmentSourcesPage()
-        self.tabs.addTab(self.environment_page, "Environment")
+        self.tabs.addTab(self.environment_page, "Sensors")
         self.soil_page = SoilMoisturePage()
         self.tabs.addTab(self.soil_page, "Soil")
         self.ground_floor_page = CbusFloorPage(
