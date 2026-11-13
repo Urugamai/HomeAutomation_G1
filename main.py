@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 from ui.adaptive_ui import AdaptiveDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
 from ui.charger_page import ChargerStatusPage
+from ui.soil_moisture_page import SoilMoisturePage
 from libraries.mqtt_engine import MqttTelemetryListener
 
 HOME_CONTROLLER_CONFIG_PATH = (
@@ -98,6 +99,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.dashboard, "Power")
         self.environment_page = EnvironmentSourcesPage()
         self.tabs.addTab(self.environment_page, "Environment")
+        self.soil_page = SoilMoisturePage()
+        self.tabs.addTab(self.soil_page, "Soil")
         self.ground_floor_page = CbusFloorPage(
             "Ground", self._set_cbus_device
         )
@@ -185,6 +188,7 @@ class MainWindow(QMainWindow):
     def _handle_telemetry_routing(self, data: dict):
         self.dashboard.refresh_telemetry_ui(data)
         self.environment_page.refresh_sources(data.get("environment_sources", {}))
+        self.soil_page.refresh_sources(data.get("environment_sources", {}))
         cbus_devices = data.get("cbus_devices", {})
         self.ground_floor_page.refresh_devices(cbus_devices)
         self.first_floor_page.refresh_devices(cbus_devices)

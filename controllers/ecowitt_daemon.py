@@ -47,6 +47,8 @@ class EcowittLanIngestionDaemon:
         )
 
         self.mqtt_client = None
+        self._local_soil = {}
+        self._local_soil_failures = 0
         print(
             f"[CONFIG] Ecowitt API telemetry: "
             f"{'enabled' if self._api_enabled() else 'disabled'} "
@@ -88,6 +90,7 @@ class EcowittLanIngestionDaemon:
         lan_command = bytes([0xBB, 0x00, 0x06, 0x03, 0x04, 0x3D])
 
         while True:
+            self._poll_local_soil()
             if self.lan_poll_enabled:
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -171,6 +174,52 @@ class EcowittLanIngestionDaemon:
 
         except Exception as e:
             print(f"[DECODE ERROR] Failed to segment byte map array fields: {e}")
+
+    def _fetch_local_soil(self):
+        """Read WH51 soil sensors straight from the gateway's local HTTP API."""
+        request = Request(
+            f"http://{self.gateway_ip}/get_livedata_info",
+            headers={"Accept": "application/json", "User-Agent": "HomeAutomation_G1"},
+        )
+        with urlopen(request, timeout=4) as response:
+            document = json.loads(response.read().decode("utf-8"))
+        return self._parse_local_soil(document)
+
+    @classmethod
+    def _parse_local_soil(cls, document):
+        """Convert the gateway's ch_soil list into soil_moisture/battery channel fields."""
+        result = {}
+        items = document.get("ch_soil") if isinstance(document, dict) else None
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                channel = int(item.get("channel"))
+            except (TypeError, ValueError):
+                continue
+            moisture = cls._as_float(str(item.get("humidity", "")).replace("%", "").strip())
+            if moisture is not None and 0.0 <= moisture <= 100.0:
+                result[f"soil_moisture_ch{channel}"] = moisture
+            battery = cls._as_float(item.get("voltage"))
+            if battery is None:
+                # Gateways without a voltage report a 0-5 battery level.
+                level = cls._as_float(item.get("battery"))
+                battery = level * 20.0 if level is not None and level <= 5 else None
+            if battery is not None:
+                result[f"soil_battery_ch{channel}"] = battery
+        return result
+
+    def _poll_local_soil(self):
+        try:
+            self._local_soil = self._fetch_local_soil()
+            self._local_soil_failures = 0
+        except Exception as e:
+            self._local_soil_failures += 1
+            if self._local_soil_failures in (1, 30):
+                print(f"[GATEWAY WARN] Local soil sensor query failed: {e}")
+            return
+        if self._local_soil and not self.lan_poll_enabled and not self._api_enabled():
+            self._publish_payloads({}, {"timestamp": time.time()})
 
     def _api_enabled(self):
         return bool(self.api_url and self.application_key and self.user_key and self.mac_address)
@@ -284,11 +333,33 @@ class EcowittLanIngestionDaemon:
         cls._set_if_number(result, "wind_speed_kmh", wind_speed)
         cls._set_if_number(result, "wind_gust", wind_gust)
         cls._set_if_number(result, "wind_direction", wind_direction)
+        result.update(cls._extract_soil_moisture(payload))
         indoor_result = {"device_name": "ecowitt-indoor", "timestamp": time.time()}
         cls._set_if_number(indoor_result, "temperature", indoor_temperature)
         cls._set_if_number(indoor_result, "humidity", indoor_humidity)
         cls._set_if_number(indoor_result, "pressure", indoor_pressure)
         return result, indoor_result if len(indoor_result) > 2 else {}
+
+    @classmethod
+    def _extract_soil_moisture(cls, payload):
+        """Collect WH51 soil moisture channels (soil_ch1..soil_ch16) as percentages."""
+        result = {}
+        for channel in range(1, 17):
+            section = cls._find_section(payload, (f"soil_ch{channel}",))
+            if not isinstance(section, dict):
+                continue
+            measurement = cls._find_measurement(
+                section, ("soilmoisture", "soil_moisture", "moisture"))
+            if measurement is not None:
+                value = cls._as_float(measurement[0])
+                if value is not None and 0.0 <= value <= 100.0:
+                    result[f"soil_moisture_ch{channel}"] = value
+            battery = cls._find_measurement(section, ("battery", "soilbatt", "batt"))
+            if battery is not None:
+                value = cls._as_float(battery[0])
+                if value is not None:
+                    result[f"soil_battery_ch{channel}"] = value
+        return result
 
     @staticmethod
     def _find_section(value, names):
@@ -380,6 +451,8 @@ class EcowittLanIngestionDaemon:
             "wind_speed_kmh": round(16.5 + random.uniform(-1.0, 2.0), 1),
             "wind_gust": round(random.uniform(20, 35), 1),
             "wind_direction": random.randint(0, 359),
+            "soil_moisture_ch1": random.randint(30, 60),
+            "soil_battery_ch1": round(random.uniform(1.4, 1.6), 2),
             "timestamp": time.time()
         }
 
@@ -393,6 +466,9 @@ class EcowittLanIngestionDaemon:
         self._publish_payloads(indoor_payload, outdoor_payload)
 
     def _publish_payloads(self, indoor_dict, outdoor_dict):
+        # Soil readings read directly from the gateway take precedence over cloud values.
+        if self._local_soil:
+            outdoor_dict = {**outdoor_dict, **self._local_soil}
         # 1. Standard outdoor metrics
         self.mqtt_client.publish("home/environment/ecowitt", json.dumps(outdoor_dict), retain=True)
 

@@ -26,6 +26,7 @@ from ui.adaptive_ui import DesktopDashboard, EnvironmentSourcesPage
 from ui.cbus_floor_page import CbusFloorPage
 from ui.charger_page import ChargerStatusPage
 from ui.hvac_page import HvacConfigurationPage
+from ui.soil_moisture_page import SoilMoisturePage
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ class DeskControllerWindow(QMainWindow):
         self.tabs.addTab(self.dashboard, "Home")
         self.environment_page = EnvironmentSourcesPage()
         self.tabs.addTab(self.environment_page, "Environment")
+        self.soil_page = SoilMoisturePage()
+        self.tabs.addTab(self.soil_page, "Soil")
         self.ground_floor_page = CbusFloorPage(
             "Ground", self._set_cbus_device, compact=True
         )
@@ -121,6 +124,7 @@ class DeskControllerWindow(QMainWindow):
     def _handle_telemetry_routing(self, data):
         self.dashboard.refresh_telemetry_ui(data)
         self.environment_page.refresh_sources(data.get("environment_sources", {}))
+        self.soil_page.refresh_sources(data.get("environment_sources", {}))
         cbus_devices = data.get("cbus_devices", {})
         self.ground_floor_page.refresh_devices(cbus_devices)
         self.first_floor_page.refresh_devices(cbus_devices)

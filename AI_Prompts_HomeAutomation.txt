@@ -1,4 +1,8 @@
 
+add the moisture sensors connected to ecowitt to the data collected and published to MQ.
+
+Add a new tab that will show the state of all moisture sensors.  The display should be a small bar graph for each sensor. If a sensor reads below 30% or above 70% then it should be amber. If it gets below 15% or about 90% then it should be red. otherwise it should be green.  The battery status should be a second bar adjacent to the water % bar and should go red at the appropriate time to change the battery.
+
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control
