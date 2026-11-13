@@ -55,10 +55,10 @@ class DeskControllerWindow(QMainWindow):
             """
             QTabBar::tab {
                 height: 32px;
-                min-width: 60px;
+                min-width: 96px;
                 font-size: 10pt;
                 font-weight: bold;
-                padding: 3px 4px;
+                padding: 3px 6px;
             }
             """
         )
