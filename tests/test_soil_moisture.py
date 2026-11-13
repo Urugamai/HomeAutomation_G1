@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication
 from libraries.soil_moisture import (
     AMBER, GREEN, RED, battery_color, moisture_color, soil_sensors,
 )
+from libraries.soil_names import load_soil_names
 from ui.soil_moisture_page import SoilMoisturePage
 
 
@@ -34,7 +35,19 @@ def test_soil_sensors_groups_channels_in_order():
         "soil_moisture_ch10": 5, "soil_moisture_ch2": 40,
         "soil_battery_ch2": 1.4, "temperature": 20,
     })
-    assert sensors == [(2, 40.0, 1.4), (10, 5.0, None)]
+    assert sensors == [(2, 40.0, 1.4, "Soil 2"), (10, 5.0, None, "Soil 10")]
+
+
+def test_soil_sensor_names_come_from_payload():
+    sensors = soil_sensors({"soil_moisture_ch1": 40, "soil_name_ch1": "Rose bed"})
+    assert sensors == [(1, 40.0, None, "Rose bed")]
+
+
+def test_soil_names_loaded_from_yaml(tmp_path):
+    config = tmp_path / "soil.yml"
+    config.write_text("channels:\n  1: Front lawn\n  '2': Veggies\n  x: bad\n  3:\n")
+    assert load_soil_names(str(config)) == {1: "Front lawn", 2: "Veggies"}
+    assert load_soil_names(str(tmp_path / "missing.yml")) == {}
 
 
 def test_page_builds_one_widget_per_sensor():

@@ -1,0 +1,10 @@
+# Maps Ecowitt soil moisture channels (WH51 channel numbers 1-16) to location names.
+# The ecowitt daemon publishes these as soil_name_chN, so the home controller,
+# desk controller and Android app all show the same names. Unmapped channels
+# are shown as "Soil N". Changes apply on the daemon's next publish (within a minute).
+channels:
+  1: Front yard
+  2: Rear yard
+  3: Up Kitchen
+  4: Front Door Pot
+  5: BBQ Pot

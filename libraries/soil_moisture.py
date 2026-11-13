@@ -19,6 +19,7 @@ BATTERY_FULL_VOLTS = 1.6
 BATTERY_RED_PERCENT = 20.0
 
 _CHANNEL_KEY = re.compile(r"^soil_(moisture|battery)_ch(\d+)$")
+_NAME_KEY = re.compile(r"^soil_name_ch(\d+)$")
 
 
 def moisture_color(percent):
@@ -51,9 +52,15 @@ def battery_text(value):
 
 
 def soil_sensors(source):
-    """Return [(channel, moisture_or_None, battery_or_None)] sorted by channel."""
+    """Return [(channel, moisture_or_None, battery_or_None, name)] sorted by channel."""
     readings = {}
+    names = {}
     for key, value in (source or {}).items():
+        name_match = _NAME_KEY.match(str(key))
+        if name_match:
+            if str(value).strip():
+                names[int(name_match.group(1))] = str(value).strip()
+            continue
         match = _CHANNEL_KEY.match(str(key))
         if not match:
             continue
@@ -63,4 +70,7 @@ def soil_sensors(source):
             continue
         entry = readings.setdefault(int(match.group(2)), [None, None])
         entry[0 if match.group(1) == "moisture" else 1] = number
-    return [(channel, m, b) for channel, (m, b) in sorted(readings.items())]
+    return [
+        (channel, m, b, names.get(channel, f"Soil {channel}"))
+        for channel, (m, b) in sorted(readings.items())
+    ]

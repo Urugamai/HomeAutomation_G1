@@ -18,6 +18,7 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+from libraries.soil_names import load_soil_names
 
 
 class EcowittLanIngestionDaemon:
@@ -469,6 +470,12 @@ class EcowittLanIngestionDaemon:
         # Soil readings read directly from the gateway take precedence over cloud values.
         if self._local_soil:
             outdoor_dict = {**outdoor_dict, **self._local_soil}
+        names = load_soil_names()
+        for key in list(outdoor_dict):
+            if key.startswith("soil_moisture_ch") and key[16:].isdigit():
+                name = names.get(int(key[16:]))
+                if name:
+                    outdoor_dict[f"soil_name_ch{key[16:]}"] = name
         # 1. Standard outdoor metrics
         self.mqtt_client.publish("home/environment/ecowitt", json.dumps(outdoor_dict), retain=True)
 

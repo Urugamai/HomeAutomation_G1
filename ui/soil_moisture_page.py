@@ -15,21 +15,23 @@ class SoilSensorBars(QWidget):
     def __init__(self, channel, parent=None):
         super().__init__(parent)
         self.channel = channel
+        self.name = f"Soil {channel}"
         self.moisture = None
         self.battery = None
-        self.setMinimumSize(110, 170)
+        self.setMinimumSize(110, 185)
 
-    def set_values(self, moisture, battery):
+    def set_values(self, moisture, battery, name=None):
         self.moisture = moisture
         self.battery = battery
+        self.name = name or f"Soil {self.channel}"
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width, height = self.width(), self.height()
-        label_h = 18
-        top = label_h
+        label_h = 34
+        top = 18
         bottom = height - label_h
         bar_h = max(10, bottom - top)
         moisture_x = width * 0.18
@@ -40,8 +42,9 @@ class SoilSensorBars(QWidget):
         painter.setPen(QColor("#303030"))
         painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
         painter.drawText(
-            QRectF(0, height - label_h, width, label_h),
-            Qt.AlignmentFlag.AlignCenter, f"Soil {self.channel}")
+            QRectF(2, height - label_h + 2, width - 4, label_h - 2),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap, self.name)
 
         for x, fraction, color, text in (
             (
@@ -104,19 +107,19 @@ class SoilMoisturePage(QWidget):
 
     def refresh_sources(self, sources):
         sensors = soil_sensors((sources or {}).get("Ecowitt", {}))
-        wanted = {channel for channel, _, _ in sensors}
+        wanted = {channel for channel, _, _, _ in sensors}
         for channel in [c for c in self._widgets if c not in wanted]:
             widget = self._widgets.pop(channel)
             self.grid.removeWidget(widget)
             widget.deleteLater()
-        for channel, moisture, battery in sensors:
+        for channel, moisture, battery, name in sensors:
             widget = self._widgets.get(channel)
             if widget is None:
                 widget = SoilSensorBars(channel)
                 self._widgets[channel] = widget
                 index = len(self._widgets) - 1
                 self.grid.addWidget(widget, index // self.COLUMNS, index % self.COLUMNS)
-            widget.set_values(moisture, battery)
+            widget.set_values(moisture, battery, name)
         self._relayout(sensors)
         self.status_label.setText(
             f"{len(sensors)} soil moisture sensors" if sensors
@@ -124,7 +127,7 @@ class SoilMoisturePage(QWidget):
         )
 
     def _relayout(self, sensors):
-        for position, (channel, _, _) in enumerate(sensors):
+        for position, (channel, _, _, _) in enumerate(sensors):
             widget = self._widgets[channel]
             self.grid.removeWidget(widget)
             self.grid.addWidget(widget, position // self.COLUMNS, position % self.COLUMNS)
