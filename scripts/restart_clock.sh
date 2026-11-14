@@ -54,7 +54,7 @@ else
     {
         echo "$begin_marker"
         echo "test-binary = $check_script"
-        echo "test-timeout = 10"
+        echo "test-timeout = 30"
         echo "$end_marker"
     } >> "$new_conf"
 
