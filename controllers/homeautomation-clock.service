@@ -12,6 +12,8 @@ Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/markw/.Xauthority
 EnvironmentFile=-/etc/default/homeautomation-clock
 ExecStart=/usr/bin/python3 /home/markw/HomeAutomation_G1/ui/Clock/Clock.py $CLOCK_ARGS
+RuntimeDirectory=homeautomation-clock
+RuntimeDirectoryPreserve=yes
 Restart=always
 RestartSec=10
 User=markw

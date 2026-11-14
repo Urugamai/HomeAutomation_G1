@@ -1,4 +1,6 @@
 
+Implement gas sensors reading and display (perhaps add to the soil screen?)
+
 
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
@@ -19,3 +21,7 @@ With all the controls and settings we currently have, I dont think we need the f
          Start time, end time, heat-to, and cool-to temperatures
     - As the heat to or cool to temperature setting is changed, the other one changes if the separation is not sufficient
     - List of current specifications (with remove buttons on each one or a tick box and a single remove button?)
+
+NEXT PROGRAMS?
+- Cluedo - Miss Terry Solva
+- Pokemon builder, player

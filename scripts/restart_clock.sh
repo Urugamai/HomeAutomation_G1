@@ -34,6 +34,46 @@ done
 
 sudo systemctl daemon-reload
 
+# Watchdog: reboot if the clock heartbeat is not refreshed for 30 seconds.
+# The managed block is replaced on every run, so it never accumulates.
+watchdog_conf=/etc/watchdog.conf
+check_script=/usr/local/bin/clock_heartbeat_check.sh
+begin_marker="# BEGIN homeautomation-clock heartbeat"
+end_marker="# END homeautomation-clock heartbeat"
+
+echo "INSTALLING: clock_heartbeat_check.sh"
+if ! sudo install -m 0755 "$script_dir/clock_heartbeat_check.sh" "$check_script"; then
+    echo "FAILED TO INSTALL: clock_heartbeat_check.sh"
+    failed=1
+elif [[ ! -f "$watchdog_conf" ]]; then
+    echo "MISSING: $watchdog_conf (install the 'watchdog' package)"
+    failed=1
+else
+    new_conf="$(mktemp)"
+    sudo sed "/^${begin_marker}\$/,/^${end_marker}\$/d" "$watchdog_conf" > "$new_conf"
+    {
+        echo "$begin_marker"
+        echo "test-binary = $check_script"
+        echo "test-timeout = 10"
+        echo "$end_marker"
+    } >> "$new_conf"
+
+    if sudo cmp -s "$new_conf" "$watchdog_conf"; then
+        echo "WATCHDOG CONFIG UNCHANGED"
+    else
+        [[ -f "$watchdog_conf.orig" ]] || sudo cp -p "$watchdog_conf" "$watchdog_conf.orig"
+        if sudo install -m 0644 "$new_conf" "$watchdog_conf"; then
+            echo "WATCHDOG CONFIG UPDATED"
+            sudo systemctl enable watchdog >/dev/null 2>&1
+            sudo systemctl restart watchdog || { echo "FAILED TO RESTART: watchdog"; failed=1; }
+        else
+            echo "FAILED TO UPDATE: $watchdog_conf"
+            failed=1
+        fi
+    fi
+    rm -f "$new_conf"
+fi
+
 for service in "${services[@]}"; do
     if ! sudo systemctl cat "$service" >/dev/null 2>&1; then
         echo "MISSING: $service"

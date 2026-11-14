@@ -37,7 +37,9 @@ from clock_display import Ui_MainWindow
 
 LOGGER = logging.getLogger(__name__)
 CLOCK_HOST_CONFIG_PATH = REPO_ROOT / "config" / "clock-host-config.yml"
-
+HEARTBEAT_FILE = os.environ.get(
+    "CLOCK_HEARTBEAT_FILE", "/run/homeautomation-clock/heartbeat"
+)
 
 @dataclass(frozen=True)
 class ClockHostSchedule:
@@ -215,6 +217,7 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self._layout_ready = False
         self._configuring_screen = False
+        self._rain_cache = {}
         self.setupUi(self)
         self.setWindowTitle("Home Automation Clock")
         window_flags = (
@@ -513,7 +516,14 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
             label.setStyleSheet("background-color: white; color: black;")
             label.setPalette(yellow)
 
+    def _write_heartbeat(self):
+        try:
+            Path(HEARTBEAT_FILE).touch()
+        except OSError:
+            pass
+
     def _update_clock(self):
+        self._write_heartbeat()
         now = datetime.datetime.now()
         self.label_clock_display.setText(now.strftime("%H:%M:%S"))
         self.label_day_abbrev.setText(now.strftime("%a"))
@@ -627,13 +637,18 @@ class ClockWindow(QMainWindow, Ui_MainWindow):
         date_label.setText(f"{title}: ")
         range_label.setText(self._temperature_range(item))
         probability = item.get("rain_probability")
+        if probability is not None:
+            probability = max(0, min(100, int(float(probability))))
+        # Only touch the label (and re-parse its style sheet) when the value changes.
+        if rain_label in self._rain_cache and self._rain_cache[rain_label] == probability:
+            return
+        self._rain_cache[rain_label] = probability
         if probability is None:
             rain_label.setText("--%")
             rain_label.setStyleSheet(
                 "background-color: white; color: black; font-weight: bold;"
             )
             return
-        probability = max(0, min(100, int(float(probability))))
         rain_label.setText(f"{probability}%")
         red = round(255 * probability / 100)
         green = round(255 * (1 - probability / 100))
