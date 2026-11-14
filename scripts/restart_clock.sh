@@ -14,6 +14,7 @@ services=(
 #    hvac.service
 #    cbus.service
     homeautomation-clock.service
+    watchdog.service
 )
 
 failed=0
