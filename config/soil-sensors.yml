@@ -3,8 +3,12 @@
 # desk controller and Android app all show the same names. Unmapped channels
 # are shown as "Soil N". Changes apply on the daemon's next publish (within a minute).
 channels:
-  1: Front yard
-  2: Rear yard
-  3: Up Kitchen
+  1: Front yard Centre
+  2: Rear yard Corner
+  3: Up Kitchen Pot
   4: Front Door Pot
   5: BBQ Pot
+  6: Lounge Pot
+  7: Front yard Study
+  8: Rear yard West
+
