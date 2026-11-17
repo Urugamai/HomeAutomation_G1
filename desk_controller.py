@@ -166,6 +166,7 @@ class DeskControllerWindow(QMainWindow):
     def _sleep_display(self):
         self._display_is_sleeping = True
         self._idle_timer.stop()
+        self.tabs.setCurrentIndex(0)
         self._sleep_overlay.setGeometry(self.rect())
         self._sleep_overlay.raise_()
         self._sleep_overlay.show()
