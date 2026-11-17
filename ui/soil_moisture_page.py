@@ -18,7 +18,7 @@ class SoilSensorBars(QWidget):
         self.name = f"Soil {channel}"
         self.moisture = None
         self.battery = None
-        self.setMinimumSize(110, 185)
+        self.setMinimumSize(110, 130)
 
     def set_values(self, moisture, battery, name=None):
         self.moisture = moisture
