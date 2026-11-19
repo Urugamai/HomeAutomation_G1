@@ -1,7 +1,7 @@
 # Clock display schedules keyed by the device hostname.
 # Quote HHMM values so YAML preserves leading zeroes.
 bathroom-clock:
-  turn-on: "0600"
+  turn-on: "0400"
   turn-off: "1000"
   touch-on-duration: 60
 
@@ -11,12 +11,12 @@ Clock-Study:
   touch-on-duration: 60
 
 Clock-Rumpus:
-  turn-on: "0400"
+  turn-on: "0500"
   turn-off: "2200"
   touch-on-duration: 60
 
 Clock-TV-Cabinet:
-  turn-on: "0400"
+  turn-on: "1600"
   turn-off: "0100"
   touch-on-duration: 60
 
