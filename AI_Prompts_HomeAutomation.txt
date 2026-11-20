@@ -1,5 +1,5 @@
 
-Implement rain sensor reading desplay on the soil screen.  These will need to be accumulated in a file on the NAS so that we can chart it and report daily, weekly, monthly and yearly totals.  The chart needs at least two modes, one shows the rain readings over the last 24 hours and another mode to change it to show the rain for the week.  Perhaps we should add a 3rd mode to show rain for the year?
+Implement rain sensor reading display on the soil screen.  These will need to be accumulated in a file on the NAS so that we can chart it and report daily, weekly, monthly and yearly totals.  The chart needs at least two modes, one shows the rain readings over the last 24 hours and another mode to change it to show the rain for the week.  Perhaps we should add a 3rd mode to show rain for the year?
 
 Implement gas sensors reading and display (take a look at HVAC screen but if no room then use soils screen)
 
