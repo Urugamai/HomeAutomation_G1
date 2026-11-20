@@ -25,7 +25,7 @@ class SoilSensorBars(QWidget):
         self.name = f"Soil {channel}"
         self.moisture = None
         self.battery = None
-        self.setMinimumSize(110, 130)
+        self.setMinimumSize(110, 90)
 
     def set_values(self, moisture, battery, name=None):
         self.moisture = moisture
@@ -37,8 +37,8 @@ class SoilSensorBars(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         width, height = self.width(), self.height()
-        label_h = 34
-        top = 18
+        label_h = 30
+        top = 16
         bottom = height - label_h
         bar_h = max(10, bottom - top)
         moisture_x = width * 0.18
