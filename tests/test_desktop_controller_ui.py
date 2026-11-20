@@ -38,7 +38,8 @@ def test_desktop_dashboard_keeps_both_charts_without_clock():
     assert not dashboard.power_chart.isHidden()
     assert not dashboard.climate_chart.isHidden()
     assert not dashboard.climate_chart.show_title
-    assert dashboard.power_chart.minimumHeight() == 140
+    assert dashboard.power_chart.minimumHeight() == 100
+    assert not dashboard.soc_bar.isHidden()
     assert len(dashboard.climate_chart.samples) == 1
     dashboard._update_forecast_labels(
         [

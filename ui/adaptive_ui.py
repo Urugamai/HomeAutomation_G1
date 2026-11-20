@@ -917,7 +917,8 @@ class DesktopDashboard(AdaptiveDashboard):
         self.root_layout.setSpacing(4)
         self.main_layout.setSpacing(3)
         self.time_lbl.hide()
-        self.soc_bar.hide()
+        self.soc_bar.setFixedWidth(46)
+        self.soc_bar.show()
         self.temp_lbl.show()
         self.forecast_container.show()
         self.energy_container.show()
@@ -937,8 +938,8 @@ class DesktopDashboard(AdaptiveDashboard):
             flow_widget.show_value_in_bar()
             flow_widget.meter.setMinimumHeight(28)
             flow_widget.meter.set_overlay_font_size(10)
-        self.power_chart.setMinimumHeight(140)
-        self.climate_chart.setMinimumHeight(175)
+        self.power_chart.setMinimumHeight(100)
+        self.climate_chart.setMinimumHeight(120)
 
     def apply_hardware_profile(self, width: int, height: int, parent_tab_widget=None):
         self._apply_desktop_layout()
