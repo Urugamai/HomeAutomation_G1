@@ -1,9 +1,16 @@
+import datetime
+
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
-    QGridLayout, QLabel, QScrollArea, QVBoxLayout, QWidget,
+    QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout,
+    QWidget,
 )
 
+from libraries.rain_history import (
+    RainHistoryStore, daily_series, hourly_series, monthly_series,
+)
+from libraries.rain_history import totals as rain_totals
 from libraries.soil_moisture import (
     battery_color, battery_fraction, battery_text, moisture_color, soil_sensors,
 )
@@ -76,13 +83,71 @@ class SoilSensorBars(QWidget):
                 Qt.AlignmentFlag.AlignCenter, text)
 
 
+class RainChart(QWidget):
+    """Bar chart of rain: last 24 hours, last 7 days or last 12 months."""
+
+    MODES = ("24 h", "Week", "Year")
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.mode = 0
+        self.data = RainHistoryStore._empty()
+        self.now = datetime.datetime.now()
+        self.setMinimumHeight(130)
+
+    def set_mode(self, mode):
+        self.mode = mode
+        self.update()
+
+    def set_data(self, data, now):
+        self.data = data
+        self.now = now
+        self.update()
+
+    def bars(self):
+        if self.mode == 0:
+            return [(f"{start:%H}", mm) for start, mm in hourly_series(self.data, self.now)]
+        if self.mode == 1:
+            return [(f"{day:%a}", mm) for day, mm in daily_series(self.data, self.now, 7)]
+        return [(f"{month:%b}", mm) for month, mm in monthly_series(self.data, self.now)]
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        bars = self.bars()
+        left, right, top, bottom = 34, 6, 8, 18
+        plot = QRectF(left, top, self.width() - left - right, self.height() - top - bottom)
+        peak = max([mm for _, mm in bars] + [1.0])
+        painter.setPen(QColor("#505050"))
+        painter.setFont(QFont("Arial", 7))
+        painter.drawText(QRectF(0, top - 6, left - 4, 12),
+                         Qt.AlignmentFlag.AlignRight, f"{peak:.0f}" if peak >= 10 else f"{peak:.1f}")
+        painter.drawText(QRectF(0, plot.bottom() - 6, left - 4, 12),
+                         Qt.AlignmentFlag.AlignRight, "0")
+        painter.setPen(QColor("#d0d0d0"))
+        painter.drawLine(plot.bottomLeft(), plot.bottomRight())
+        slot = plot.width() / len(bars)
+        for index, (label, mm) in enumerate(bars):
+            x = plot.left() + index * slot
+            if mm > 0:
+                height = plot.height() * mm / peak
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor("#2e86de"))
+                painter.drawRect(QRectF(x + slot * 0.15, plot.bottom() - height, slot * 0.7, height))
+            if len(bars) <= 12 or index % 3 == 0:
+                painter.setPen(QColor("#505050"))
+                painter.drawText(QRectF(x - 4, plot.bottom() + 1, slot + 8, bottom - 1),
+                                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, label)
+
+
 class SoilMoisturePage(QWidget):
-    """Bar graph per Ecowitt soil moisture sensor (moisture and battery)."""
+    """Bar graph per Ecowitt soil moisture sensor (moisture and battery), plus rain."""
 
     COLUMNS = 6
 
-    def __init__(self):
+    def __init__(self, rain_history=None):
         super().__init__()
+        self.rain_history = rain_history or RainHistoryStore()
         layout = QVBoxLayout(self)
         title = QLabel("Soil Moisture")
         title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
@@ -105,8 +170,49 @@ class SoilMoisturePage(QWidget):
         layout.addWidget(scroll, 1)
         self._widgets = {}
 
+        rain_header = QHBoxLayout()
+        rain_title = QLabel("Rain")
+        rain_title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        rain_header.addWidget(rain_title)
+        self.rain_buttons = []
+        for index, label in enumerate(RainChart.MODES):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.clicked.connect(lambda _=False, i=index: self._set_rain_mode(i))
+            rain_header.addWidget(button)
+            self.rain_buttons.append(button)
+        self.rain_totals_label = QLabel("")
+        self.rain_totals_label.setStyleSheet("font-size: 9pt;")
+        rain_header.addWidget(self.rain_totals_label, 1)
+        layout.addLayout(rain_header)
+        self.rain_chart = RainChart()
+        layout.addWidget(self.rain_chart)
+        self._rain_rate = None
+        self._update_rain()
+
+    def _set_rain_mode(self, mode):
+        for index, button in enumerate(self.rain_buttons):
+            button.setChecked(index == mode)
+        self.rain_chart.set_mode(mode)
+
+    def _update_rain(self):
+        self.rain_history.reload()
+        now = datetime.datetime.now()
+        self.rain_chart.set_data(self.rain_history.data, now)
+        sums = rain_totals(self.rain_history.data, now)
+        rate = "" if self._rain_rate is None else f"Rate {self._rain_rate:.1f} mm/h  ·  "
+        self.rain_totals_label.setText(
+            f"{rate}Today {sums['day']:.1f}  ·  7 days {sums['week']:.1f}  ·  "
+            f"Month {sums['month']:.1f}  ·  Year {sums['year']:.1f} mm"
+        )
+
     def refresh_sources(self, sources):
-        sensors = soil_sensors((sources or {}).get("Ecowitt", {}))
+        outdoor = (sources or {}).get("Ecowitt", {})
+        rate = outdoor.get("rain_rate") if isinstance(outdoor, dict) else None
+        self._rain_rate = rate if isinstance(rate, (int, float)) else None
+        self._update_rain()
+        sensors = soil_sensors(outdoor)
         wanted = {channel for channel, _, _, _ in sensors}
         for channel in [c for c in self._widgets if c not in wanted]:
             widget = self._widgets.pop(channel)

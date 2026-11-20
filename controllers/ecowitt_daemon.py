@@ -1,3 +1,4 @@
+import datetime
 import sys
 import socket
 import json
@@ -18,6 +19,7 @@ except ImportError:
     sys.exit(1)
 
 from libraries.paho_compat import create_client
+from libraries.rain_history import RainHistoryStore
 from libraries.soil_names import load_soil_names
 
 
@@ -48,6 +50,7 @@ class EcowittLanIngestionDaemon:
         )
 
         self.mqtt_client = None
+        self.rain_history = RainHistoryStore()
         self._local_soil = {}
         self._local_soil_failures = 0
         print(
@@ -476,6 +479,9 @@ class EcowittLanIngestionDaemon:
                 name = names.get(int(key[16:]))
                 if name:
                     outdoor_dict[f"soil_name_ch{key[16:]}"] = name
+        rain_today = outdoor_dict.get("rain_today")
+        if isinstance(rain_today, (int, float)) and not isinstance(rain_today, bool):
+            self.rain_history.record(datetime.datetime.now(), rain_today)
         # 1. Standard outdoor metrics
         self.mqtt_client.publish("home/environment/ecowitt", json.dumps(outdoor_dict), retain=True)
 
