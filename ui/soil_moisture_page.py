@@ -93,7 +93,7 @@ class RainChart(QWidget):
         self.mode = 0
         self.data = RainHistoryStore._empty()
         self.now = datetime.datetime.now()
-        self.setMinimumHeight(130)
+        self.setFixedHeight(80)
 
     def set_mode(self, mode):
         self.mode = mode
