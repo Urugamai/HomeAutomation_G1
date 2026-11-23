@@ -102,6 +102,23 @@ def test_vehicle_soc_is_none_when_register_not_configured():
     assert daemon.vehicle_soc is None
 
 
+def test_sigen_kw_feed_is_converted_to_watts():
+    daemon = OcularChargerDaemon()
+    message = type(
+        "M", (), {
+            "topic": "home/power/sigen",
+            "payload": b'{"grid_flow": -4.32, "solar_power": 6.5, "battery_soc": 99}',
+        },
+    )()
+
+    daemon._on_message(None, None, message)
+
+    assert daemon.grid_flow_watts == -4320
+    assert daemon.solar_power_watts == 6500
+    daemon.solar_charging_active = True
+    assert daemon._target_amps(datetime.datetime(2026, 11, 28, 12, 0)) == 6
+
+
 def test_solar_charging_latches_at_full_battery_until_low_soc():
     daemon = OcularChargerDaemon()
     daemon.battery_soc = 99

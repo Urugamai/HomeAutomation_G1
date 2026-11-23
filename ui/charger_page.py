@@ -117,7 +117,7 @@ class ChargerDecisionChart(QWidget):
             painter.drawText(
                 QRectF(0, y - 8, left - 5, 16),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                f"{value:.0f}",
+                f"{value / 1000:.2f}",
             )
 
         self._draw_threshold(
@@ -207,7 +207,7 @@ class ChargerDecisionChart(QWidget):
         painter.drawText(
             int(plot.left() + 4),
             int(y - 4),
-            f"{label}: {watts:.0f} W",
+            f"{label}: {watts / 1000:.2f} kW",
         )
 
 
@@ -281,7 +281,7 @@ class ChargerStatusPage(QWidget):
             mode = "Waiting for battery to reach full threshold"
         self.current_label.setText(
             f"Command: {target_amps} A ({mode})  |  "
-            f"Grid: {grid_flow:.0f} W  |  House battery: {battery_soc:.0f}%  |  "
+            f"Grid: {grid_flow / 1000:+.2f} kW  |  House battery: {battery_soc:.0f}%  |  "
             f"Car battery: {vehicle_text}"
         )
         self.override_button.setChecked(is_override)
@@ -302,7 +302,7 @@ class ChargerStatusPage(QWidget):
             f"Start at {limits.get('battery_full_soc', '--')}% battery | "
             f"Stop below {limits.get('battery_stop_soc', '--')}% battery | "
             f"Override {limits.get('override_amps', '--')} A | "
-            f"Start export {limits.get('minimum_start_export_watts', '--')} W | "
+            f"Start export {float(limits.get('minimum_start_export_watts', 0)) / 1000:.2f} kW | "
             f"Change interval {limits.get('rate_change_interval_seconds', '--')} s"
         )
         self.chart.add_status(status)

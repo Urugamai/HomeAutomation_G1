@@ -238,11 +238,12 @@ class OcularChargerDaemon:
                 if not isinstance(payload, dict):
                     raise ValueError("Sigen payload must be an object")
                 self.battery_soc = float(payload.get("battery_soc", self.battery_soc))
-                self.grid_flow_watts = float(
-                    payload.get("grid_flow", self.grid_flow_watts)
+                # The Sigen feed reports power in kW; the charger logic works in W
+                self.grid_flow_watts = 1000 * float(
+                    payload.get("grid_flow", self.grid_flow_watts / 1000)
                 )
-                self.solar_power_watts = float(
-                    payload.get("solar_power", self.solar_power_watts)
+                self.solar_power_watts = 1000 * float(
+                    payload.get("solar_power", self.solar_power_watts / 1000)
                 )
             elif msg.topic == "home/charger/override":
                 self._set_override(payload)
