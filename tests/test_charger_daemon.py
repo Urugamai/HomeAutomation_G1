@@ -35,6 +35,43 @@ def test_charger_status_publishes_limits_and_commanded_state():
     assert payload["limits"]["battery_stop_soc"] == 60
 
 
+def test_cheap_power_window_is_weekdays_0900_to_1700():
+    daemon = OcularChargerDaemon()
+    in_window = datetime.datetime
+    assert daemon._in_cheap_power_period(in_window(2026, 11, 23, 9, 0))  # Mon
+    assert daemon._in_cheap_power_period(in_window(2026, 11, 27, 16, 59))  # Fri
+    assert not daemon._in_cheap_power_period(in_window(2026, 11, 23, 8, 59))
+    assert not daemon._in_cheap_power_period(in_window(2026, 11, 23, 17, 0))
+    assert not daemon._in_cheap_power_period(in_window(2026, 11, 28, 12, 0))  # Sat
+
+
+def test_cheap_power_charges_only_above_battery_reserve():
+    daemon = OcularChargerDaemon()
+    monday_noon = datetime.datetime(2026, 11, 23, 12, 0)
+    daemon.battery_soc = 59
+    assert daemon._target_amps(monday_noon) == 0
+    daemon.battery_soc = 60
+    assert daemon._target_amps(monday_noon) == daemon.CHEAP_POWER_AMPS
+    assert daemon._target_amps(datetime.datetime(2026, 11, 28, 12, 0)) == 0
+
+
+def test_settings_loaded_from_yaml(tmp_path):
+    path = tmp_path / "charger.yml"
+    path.write_text(
+        "solar:\n  battery-stop-soc: 70\n"
+        "cheap-power:\n  days: [sat, sun]\n  start: '22:00'\n  end: '06:00'\n"
+        "  min-battery-soc: 40\n",
+        encoding="utf-8",
+    )
+    daemon = OcularChargerDaemon(config_path=path)
+
+    assert daemon.BATTERY_STOP_SOC == 70
+    assert daemon.CHEAP_POWER_MIN_SOC == 40
+    assert daemon._in_cheap_power_period(datetime.datetime(2026, 11, 28, 23, 0))
+    assert daemon._in_cheap_power_period(datetime.datetime(2026, 11, 29, 5, 0))
+    assert not daemon._in_cheap_power_period(datetime.datetime(2026, 12, 1, 5, 0))
+
+
 def test_solar_charging_latches_at_full_battery_until_low_soc():
     daemon = OcularChargerDaemon()
     daemon.battery_soc = 99

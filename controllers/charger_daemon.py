@@ -2,9 +2,14 @@ import sys
 import time
 import json
 import math
-from datetime import datetime
+from datetime import datetime, time as dtime
 from pathlib import Path
 import configparser
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
@@ -43,9 +48,18 @@ class OcularChargerDaemon:
     AMPS_CHANGE_INTERVAL_SECONDS = 10 * 60
     CHARGER_CURRENT_LIMIT_REGISTER = 200
     CHARGER_MODBUS_SLAVE = 1
+    CHEAP_POWER_ENABLED = True
+    CHEAP_POWER_DAYS = (0, 1, 2, 3, 4)
+    CHEAP_POWER_START = dtime(9, 0)
+    CHEAP_POWER_END = dtime(17, 0)
+    CHEAP_POWER_AMPS = MAX_SOLAR_AMPS
+    CHEAP_POWER_MIN_SOC = 60
+    DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    DEFAULT_CONFIG_PATH = project_root / "config" / "charger.yml"
 
-    def __init__(self):
+    def __init__(self, config_path=None):
         print("[INIT] Launching Ocular EV Charger Controller Daemon...")
+        self._load_settings(Path(config_path) if config_path else self.DEFAULT_CONFIG_PATH)
         self.broker_ip = self._get_config_str("MQTT", "broker", "localhost")
         self.charger_ip = self._get_config_str("CHARGER", "ip_address", "192.168.1.50")
         self.charger_port = int(self._get_config_str("CHARGER", "port", "502"))
@@ -63,6 +77,105 @@ class OcularChargerDaemon:
             self.modbus_client = ModbusTcpClient(self.charger_ip, port=self.charger_port)
         else:
             self.modbus_client = None
+
+    def _load_settings(self, path):
+        config = {}
+        if yaml is None:
+            print("[CONFIG] PyYAML missing; using built-in charger defaults.")
+        elif path.exists():
+            try:
+                with path.open("r", encoding="utf-8") as config_file:
+                    config = yaml.safe_load(config_file) or {}
+                if not isinstance(config, dict):
+                    raise ValueError("top level must be a mapping")
+            except (OSError, ValueError, yaml.YAMLError) as error:
+                print(f"[CONFIG ERROR] {path.name}: {error}; using defaults.")
+                config = {}
+
+        def section(name):
+            value = config.get(name)
+            return value if isinstance(value, dict) else {}
+
+        def setting(attr, values, key, convert):
+            if key not in values:
+                return
+            try:
+                setattr(self, attr, convert(values[key]))
+            except (TypeError, ValueError) as error:
+                print(f"[CONFIG ERROR] Ignoring {key}={values[key]!r}: {error}")
+
+        solar, electrical = section("solar"), section("electrical")
+        setting("MIN_SOLAR_AMPS", solar, "min-amps", int)
+        setting("MAX_SOLAR_AMPS", solar, "max-amps", int)
+        setting("BATTERY_FULL_SOC", solar, "battery-full-soc", float)
+        setting("BATTERY_STOP_SOC", solar, "battery-stop-soc", float)
+        setting("PHASE_VOLTAGE", electrical, "phase-voltage", float)
+        setting("PHASE_COUNT", electrical, "phase-count", int)
+        setting(
+            "AMPS_CHANGE_INTERVAL_SECONDS",
+            section("timing"),
+            "amps-change-interval-seconds",
+            float,
+        )
+        modbus = section("modbus")
+        setting("CHARGER_CURRENT_LIMIT_REGISTER", modbus, "current-limit-register", int)
+        setting("CHARGER_MODBUS_SLAVE", modbus, "slave", int)
+
+        # Defaults that follow the (possibly overridden) max amps
+        self.OVERRIDE_AMPS = self.MAX_SOLAR_AMPS
+        self.CHEAP_POWER_AMPS = self.MAX_SOLAR_AMPS
+        setting("OVERRIDE_AMPS", section("override"), "amps", int)
+
+        cheap = section("cheap-power")
+        setting("CHEAP_POWER_ENABLED", cheap, "enabled", self._parse_bool)
+        setting("CHEAP_POWER_DAYS", cheap, "days", self._parse_days)
+        setting("CHEAP_POWER_START", cheap, "start", self._parse_time)
+        setting("CHEAP_POWER_END", cheap, "end", self._parse_time)
+        setting("CHEAP_POWER_AMPS", cheap, "amps", int)
+        setting("CHEAP_POWER_MIN_SOC", cheap, "min-battery-soc", float)
+
+        for attr in ("OVERRIDE_AMPS", "CHEAP_POWER_AMPS"):
+            if not self.MIN_SOLAR_AMPS <= getattr(self, attr) <= self.MAX_SOLAR_AMPS:
+                print(f"[CONFIG ERROR] {attr} outside amp limits; using maximum.")
+                setattr(self, attr, self.MAX_SOLAR_AMPS)
+
+    @staticmethod
+    def _parse_bool(value):
+        if not isinstance(value, bool):
+            raise ValueError("must be true or false")
+        return value
+
+    @classmethod
+    def _parse_days(cls, value):
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("must be a list of day names")
+        days = set()
+        for item in value:
+            name = str(item).strip().lower()[:3]
+            if name not in cls.DAY_NAMES:
+                raise ValueError(f"unknown day {item!r}")
+            days.add(cls.DAY_NAMES.index(name))
+        return tuple(sorted(days))
+
+    @staticmethod
+    def _parse_time(value):
+        if isinstance(value, int):  # YAML reads 09:00 style times as base-60 ints
+            if not 0 <= value < 24 * 60:
+                raise ValueError("time out of range")
+            return dtime(value // 60, value % 60)
+        hour, minute = str(value).strip().split(":")
+        return dtime(int(hour), int(minute))
+
+    def _in_cheap_power_period(self, now):
+        if not self.CHEAP_POWER_ENABLED:
+            return False
+        start, end, current = self.CHEAP_POWER_START, self.CHEAP_POWER_END, now.time()
+        if start <= end:
+            return now.weekday() in self.CHEAP_POWER_DAYS and start <= current < end
+        # Window crosses midnight; the day listed is the day it starts on
+        if current >= start:
+            return now.weekday() in self.CHEAP_POWER_DAYS
+        return (now.weekday() - 1) % 7 in self.CHEAP_POWER_DAYS and current < end
 
     def _get_config_str(self, section, key, fallback) -> str:
         config_path = Path(__file__).resolve().parent.parent / "config.ini"
@@ -119,7 +232,7 @@ class OcularChargerDaemon:
     def _evaluate_charging_logic(self):
         now = datetime.now()
         self._update_solar_charging_state()
-        target_amps = self._target_amps()
+        target_amps = self._target_amps(now)
         self._request_rate(target_amps)
         self._publish_status(now, target_amps)
 
@@ -149,9 +262,14 @@ class OcularChargerDaemon:
                 f"{self.BATTERY_FULL_SOC}%; enabling solar EV charging."
             )
 
-    def _target_amps(self):
+    def _target_amps(self, now=None):
         if self.override_enabled:
             return self.OVERRIDE_AMPS
+        if (
+            self._in_cheap_power_period(now or datetime.now())
+            and self.battery_soc >= self.CHEAP_POWER_MIN_SOC
+        ):
+            return self.CHEAP_POWER_AMPS
         if not self.solar_charging_active:
             return 0
 
@@ -208,7 +326,14 @@ class OcularChargerDaemon:
                     self.MIN_SOLAR_AMPS * self.PHASE_VOLTAGE * self.PHASE_COUNT
                 ),
                 "rate_change_interval_seconds": self.AMPS_CHANGE_INTERVAL_SECONDS,
+                "cheap_power_enabled": self.CHEAP_POWER_ENABLED,
+                "cheap_power_days": [self.DAY_NAMES[day] for day in self.CHEAP_POWER_DAYS],
+                "cheap_power_start": self.CHEAP_POWER_START.strftime("%H:%M"),
+                "cheap_power_end": self.CHEAP_POWER_END.strftime("%H:%M"),
+                "cheap_power_amps": self.CHEAP_POWER_AMPS,
+                "cheap_power_min_battery_soc": self.CHEAP_POWER_MIN_SOC,
             },
+            "cheap_power_active": self._in_cheap_power_period(now),
         }
         try:
             self.mqtt_client.publish(

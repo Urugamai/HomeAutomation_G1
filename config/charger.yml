@@ -1,0 +1,31 @@
+# Ocular EV charger settings. Restart charger.service after editing.
+# Any key left out falls back to the default shown here.
+
+solar:
+  min-amps: 6
+  max-amps: 32
+  battery-full-soc: 99   # start solar charging once the house battery reaches this %
+  battery-stop-soc: 60   # stop solar charging if the house battery drops below this %
+
+override:
+  amps: 32
+
+electrical:
+  phase-voltage: 240
+  phase-count: 3
+
+timing:
+  amps-change-interval-seconds: 600
+
+# Grid charging at the cheap tariff.
+cheap-power:
+  enabled: true
+  days: [mon, tue, wed, thu, fri]
+  start: "09:00"
+  end: "17:00"           # exclusive; start later than end wraps past midnight
+  amps: 32
+  min-battery-soc: 60    # charge only while the house battery is at or above this %
+
+modbus:
+  current-limit-register: 200
+  slave: 1
