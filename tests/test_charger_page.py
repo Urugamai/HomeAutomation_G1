@@ -33,7 +33,7 @@ def test_charger_page_displays_current_state_limits_and_chart_history():
     assert "Start at 99% battery" in page.limits_label.text()
     assert "Start export 4320 W" in page.limits_label.text()
     assert page.override_button.text() == "Enable Charge Override"
-    assert page.chart.samples == [(status["timestamp"], -2800.0, 76.0, 12)]
+    assert page.chart.samples == [(status["timestamp"], -2800.0, 76.0, 12, None)]
     page.resize(800, 480)
     page.show()
     app.processEvents()

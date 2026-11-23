@@ -29,3 +29,9 @@ cheap-power:
 modbus:
   current-limit-register: 200
   slave: 1
+  # Car battery SOC reported by the charger. Set `register` from the IOCAH13-22S
+  # Modbus register map; leave it null to disable. `scale` converts the raw value to %.
+  vehicle-soc:
+    register: null
+    type: holding        # holding or input
+    scale: 1.0

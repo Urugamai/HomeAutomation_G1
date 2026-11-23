@@ -48,6 +48,9 @@ class OcularChargerDaemon:
     AMPS_CHANGE_INTERVAL_SECONDS = 10 * 60
     CHARGER_CURRENT_LIMIT_REGISTER = 200
     CHARGER_MODBUS_SLAVE = 1
+    VEHICLE_SOC_REGISTER = None  # set in config/charger.yml once known
+    VEHICLE_SOC_REGISTER_TYPE = "holding"
+    VEHICLE_SOC_SCALE = 1.0
     CHEAP_POWER_ENABLED = True
     CHEAP_POWER_DAYS = (0, 1, 2, 3, 4)
     CHEAP_POWER_START = dtime(9, 0)
@@ -72,6 +75,7 @@ class OcularChargerDaemon:
         self.last_modbus_write_succeeded = False
         self.solar_charging_active = False
         self.override_enabled = False
+        self.vehicle_soc = None
 
         if MODBUS_AVAILABLE:
             self.modbus_client = ModbusTcpClient(self.charger_ip, port=self.charger_port)
@@ -120,6 +124,11 @@ class OcularChargerDaemon:
         modbus = section("modbus")
         setting("CHARGER_CURRENT_LIMIT_REGISTER", modbus, "current-limit-register", int)
         setting("CHARGER_MODBUS_SLAVE", modbus, "slave", int)
+        vehicle_soc = modbus.get("vehicle-soc")
+        vehicle_soc = vehicle_soc if isinstance(vehicle_soc, dict) else {}
+        setting("VEHICLE_SOC_REGISTER", vehicle_soc, "register", self._parse_optional_int)
+        setting("VEHICLE_SOC_REGISTER_TYPE", vehicle_soc, "type", self._parse_register_type)
+        setting("VEHICLE_SOC_SCALE", vehicle_soc, "scale", float)
 
         # Defaults that follow the (possibly overridden) max amps
         self.OVERRIDE_AMPS = self.MAX_SOLAR_AMPS
@@ -138,6 +147,17 @@ class OcularChargerDaemon:
             if not self.MIN_SOLAR_AMPS <= getattr(self, attr) <= self.MAX_SOLAR_AMPS:
                 print(f"[CONFIG ERROR] {attr} outside amp limits; using maximum.")
                 setattr(self, attr, self.MAX_SOLAR_AMPS)
+
+    @staticmethod
+    def _parse_optional_int(value):
+        return None if value is None else int(value)
+
+    @staticmethod
+    def _parse_register_type(value):
+        value = str(value).strip().lower()
+        if value not in ("holding", "input"):
+            raise ValueError("must be holding or input")
+        return value
 
     @staticmethod
     def _parse_bool(value):
@@ -231,10 +251,47 @@ class OcularChargerDaemon:
 
     def _evaluate_charging_logic(self):
         now = datetime.now()
+        self._update_vehicle_soc()
         self._update_solar_charging_state()
         target_amps = self._target_amps(now)
         self._request_rate(target_amps)
         self._publish_status(now, target_amps)
+
+    def _update_vehicle_soc(self):
+        """Read the connected car's SOC from the charger; None when unavailable."""
+        self.vehicle_soc = None
+        if self.VEHICLE_SOC_REGISTER is None or not self.modbus_client:
+            return
+        try:
+            if not self.modbus_client.connected and not self.modbus_client.connect():
+                raise ConnectionError("Unable to connect to Ocular charger")
+            read = (
+                self.modbus_client.read_input_registers
+                if self.VEHICLE_SOC_REGISTER_TYPE == "input"
+                else self.modbus_client.read_holding_registers
+            )
+            # pymodbus 3.10+ renamed "slave" to "device_id"
+            try:
+                response = read(
+                    address=self.VEHICLE_SOC_REGISTER,
+                    count=1,
+                    device_id=self.CHARGER_MODBUS_SLAVE,
+                )
+            except TypeError:
+                response = read(
+                    address=self.VEHICLE_SOC_REGISTER,
+                    count=1,
+                    slave=self.CHARGER_MODBUS_SLAVE,
+                )
+            if response is None or (
+                hasattr(response, "isError") and response.isError()
+            ):
+                raise RuntimeError("Charger rejected vehicle SOC read")
+            soc = response.registers[0] * self.VEHICLE_SOC_SCALE
+            if 0 <= soc <= 100:
+                self.vehicle_soc = soc
+        except (ConnectionError, OSError, RuntimeError, IndexError, ModbusException) as error:
+            print(f"[MODBUS ERROR] Unable to read vehicle SOC: {error}")
 
     def _set_override(self, payload):
         if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
@@ -312,6 +369,7 @@ class OcularChargerDaemon:
             "grid_flow_watts": self.grid_flow_watts,
             "solar_power_watts": self.solar_power_watts,
             "battery_soc": self.battery_soc,
+            "vehicle_soc": self.vehicle_soc,
             "is_override": self.override_enabled,
             "solar_charging_active": self.solar_charging_active,
             "modbus_write_succeeded": self.last_modbus_write_succeeded,

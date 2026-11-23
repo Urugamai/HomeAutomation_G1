@@ -25,10 +25,12 @@ class ChargerDecisionChart(QWidget):
             grid_flow = float(status["grid_flow_watts"])
             battery_soc = float(status["battery_soc"])
             target_amps = int(status.get("target_amps", 0))
+            vehicle_soc = status.get("vehicle_soc")
+            vehicle_soc = None if vehicle_soc is None else float(vehicle_soc)
         except (KeyError, TypeError, ValueError):
             return
         self.limits = dict(status.get("limits") or self.limits)
-        self.samples.append((timestamp, grid_flow, battery_soc, target_amps))
+        self.samples.append((timestamp, grid_flow, battery_soc, target_amps, vehicle_soc))
         cutoff = timestamp - self.HISTORY_SECONDS
         self.samples = [sample for sample in self.samples if sample[0] >= cutoff]
         self.update()
@@ -65,8 +67,8 @@ class ChargerDecisionChart(QWidget):
         painter.drawText(
             8,
             31,
-            "Grid flow: blue (negative = export) | Battery SOC: purple | "
-            "Charging: green strip | Target grid flow: zero",
+            "Grid flow: blue (negative = export) | House battery: purple | "
+            "Car battery: orange | Charging: green strip | Target grid flow: zero",
         )
         painter.setPen(QPen(QColor("#202020"), 1))
         painter.drawRect(plot)
@@ -160,6 +162,19 @@ class ChargerDecisionChart(QWidget):
                 ),
             )
 
+            if first[4] is not None and second[4] is not None:
+                painter.setPen(QPen(QColor("#fd7e14"), 2))
+                painter.drawLine(
+                    QPointF(
+                        point_for(first[0], first[1]).x(),
+                        plot.bottom() - first[4] / 100 * plot.height(),
+                    ),
+                    QPointF(
+                        point_for(second[0], second[1]).x(),
+                        plot.bottom() - second[4] / 100 * plot.height(),
+                    ),
+                )
+
             if first[3] > 0:
                 start = point_for(first[0], first[1]).x()
                 end = point_for(second[0], second[1]).x()
@@ -242,6 +257,8 @@ class ChargerStatusPage(QWidget):
             target_amps = int(status.get("target_amps", 0))
             grid_flow = float(status.get("grid_flow_watts", 0.0))
             battery_soc = float(status.get("battery_soc", 0.0))
+            vehicle_soc = status.get("vehicle_soc")
+            vehicle_text = "--" if vehicle_soc is None else f"{float(vehicle_soc):.0f}%"
         except (TypeError, ValueError):
             self.state_label.setText("Charger: Invalid status received")
             return
@@ -264,7 +281,8 @@ class ChargerStatusPage(QWidget):
             mode = "Waiting for battery to reach full threshold"
         self.current_label.setText(
             f"Command: {target_amps} A ({mode})  |  "
-            f"Grid: {grid_flow:.0f} W  |  Battery: {battery_soc:.0f}%"
+            f"Grid: {grid_flow:.0f} W  |  House battery: {battery_soc:.0f}%  |  "
+            f"Car battery: {vehicle_text}"
         )
         self.override_button.setChecked(is_override)
         self.override_button.setText(

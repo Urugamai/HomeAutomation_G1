@@ -72,6 +72,36 @@ def test_settings_loaded_from_yaml(tmp_path):
     assert not daemon._in_cheap_power_period(datetime.datetime(2026, 12, 1, 5, 0))
 
 
+def test_vehicle_soc_read_from_configured_register(tmp_path):
+    path = tmp_path / "charger.yml"
+    path.write_text(
+        "modbus:\n  vehicle-soc:\n    register: 300\n    scale: 0.1\n",
+        encoding="utf-8",
+    )
+    daemon = OcularChargerDaemon(config_path=path)
+
+    class Client:
+        connected = True
+
+        def read_holding_registers(self, address, count, device_id):
+            assert (address, count) == (300, 1)
+            return type("R", (), {"registers": [655], "isError": lambda s: False})()
+
+    daemon.modbus_client = Client()
+    daemon._update_vehicle_soc()
+    assert daemon.vehicle_soc == 65.5
+
+    daemon.mqtt_client = FakeMqttClient()
+    daemon._publish_status(datetime.datetime(2026, 11, 23, 12, 0), target_amps=0)
+    assert daemon.mqtt_client.published[0][1]["vehicle_soc"] == 65.5
+
+
+def test_vehicle_soc_is_none_when_register_not_configured():
+    daemon = OcularChargerDaemon()
+    daemon._update_vehicle_soc()
+    assert daemon.vehicle_soc is None
+
+
 def test_solar_charging_latches_at_full_battery_until_low_soc():
     daemon = OcularChargerDaemon()
     daemon.battery_soc = 99
