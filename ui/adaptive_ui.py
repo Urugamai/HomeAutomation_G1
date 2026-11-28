@@ -523,7 +523,7 @@ class EnvironmentSourcesPage(QWidget):
     """Table of the latest telemetry received from each environment source."""
 
     COLUMNS = (
-        "Source", "Hostname", "Temperature", "Humidity", "Pressure",
+        "Source", "Hostname", "Temp", "Humid", "Pressure", "Gas",
         "Irradiance (W/m²)", "Updated",
     )
 
@@ -578,6 +578,16 @@ class EnvironmentSourcesPage(QWidget):
             return str(value)
 
     @classmethod
+    def _gas_reading(cls, source):
+        value = cls._value(source, "gas_resistance_ohms", default=None)
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value) / 1000.0:.1f} kΩ"
+        except (TypeError, ValueError):
+            return str(value)
+
+    @classmethod
     def _light_reading(cls, source, is_ecowitt):
         if is_ecowitt:
             return cls._number(source, "solar_radiation", suffix=" W/m²")
@@ -599,6 +609,7 @@ class EnvironmentSourcesPage(QWidget):
             cls._number(source, "temperature", "outside_temp", "outdoor_temp", suffix=" °C"),
             cls._number(source, "humidity", "outside_humidity", suffix=" %"),
             cls._number(source, "pressure", suffix=" hPa"),
+            cls._gas_reading(source),
             cls._light_reading(source, is_ecowitt),
             cls._timestamp(source.get("timestamp")),
         )

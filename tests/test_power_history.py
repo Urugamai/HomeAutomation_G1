@@ -138,7 +138,13 @@ def test_environment_timestamp_is_formatted_as_local_datetime():
 def test_environment_light_irradiance_is_displayed_without_conversion():
     row = EnvironmentSourcesPage._source_row("living", {"light_w_m2": 320})
 
-    assert row[5] == "320.0 W/m²"
+    assert row[6] == "320.0 W/m²"
+
+
+def test_environment_gas_resistance_is_displayed_in_kilohms():
+    row = EnvironmentSourcesPage._source_row("living", {"gas_resistance_ohms": 52300})
+    assert row[5] == "52.3 kΩ"
+    assert EnvironmentSourcesPage._source_row("living", {})[5] == "--"
 
 
 def test_environment_indoor_average_excludes_ecowitt_outdoor_source():

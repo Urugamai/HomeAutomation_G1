@@ -48,6 +48,7 @@ class LivingAreaHardwareController:
         self.bme_sensor_type = None
         self.bme_calibration_params = None
         self.bme680_sensor = None
+        self.gas_resistance_ohms = None
         self.veml_is_online = False
         self._shared_null_published = False
         self._next_hardware_retry_at = 0.0
@@ -96,6 +97,10 @@ class LivingAreaHardwareController:
                                 "bme680 Python package is not installed"
                             )
                         self.bme680_sensor = bme680.BME680(addr)
+                        self.bme680_sensor.set_gas_status(bme680.ENABLE_GAS_MEAS)
+                        self.bme680_sensor.set_gas_heater_temperature(320)
+                        self.bme680_sensor.set_gas_heater_duration(150)
+                        self.bme680_sensor.select_gas_heater_profile(0)
                         self.bme_sensor_type = "BME680"
                     else:
                         raise RuntimeError(
@@ -288,6 +293,7 @@ class LivingAreaHardwareController:
             import random
             return round(21.5 + random.uniform(-0.1, 0.1), 1), 52.0, 320.0, 1013.0
         self._retry_missing_hardware()
+        self.gas_resistance_ohms = None
         if not self.bus:
             return None, None, None, None
 
@@ -313,6 +319,10 @@ class LivingAreaHardwareController:
                     temp_c = round(self.bme680_sensor.data.temperature, 1)
                     humidity = round(self.bme680_sensor.data.humidity, 1)
                     pressure = round(self.bme680_sensor.data.pressure, 1)
+                    if self.bme680_sensor.data.heat_stable:
+                        self.gas_resistance_ohms = round(
+                            self.bme680_sensor.data.gas_resistance
+                        )
             except Exception as error:
                 print(
                     f"[I2C ERROR] Lost BME680 sensor: {error}. "
@@ -588,6 +598,7 @@ class LivingAreaHardwareController:
             "temperature": temp,
             "humidity": humidity,
             "pressure": pressure,
+            "gas_resistance_ohms": getattr(self, "gas_resistance_ohms", None),
             "light_w_m2": round(lux, 1) if lux is not None else None,
             "timestamp": time.time()
         }
