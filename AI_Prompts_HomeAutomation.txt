@@ -1,6 +1,4 @@
 
-Implement gas sensors reading and display it on the soils screen below the existing data and only for the sensors that exist
-
 google:
     Mount google drive to each raspi and then store data and configuration on the gdrive.
 	wireless solar powered hvac vent control
